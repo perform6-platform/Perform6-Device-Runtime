@@ -38,7 +38,7 @@ jobs:
           cd .release && zip -r ../perform6-touchscreen-ci.zip .
           cd ..
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: brightsign-bundle
           path: perform6-touchscreen-ci.zip
