@@ -1,0 +1,53 @@
+name: Release to R2
+
+on:
+  push:
+    tags: ['touchscreen-v*.*.*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+
+      - name: Create BrightSign bundle ZIP
+        run: |
+          VERSION="${GITHUB_REF_NAME#touchscreen-v}"
+          mkdir -p .release
+          cp brightsign/autorun.brs .release/autorun.brs
+          cp dist/index.html .release/index.html
+          cp -r dist/assets .release/assets
+          cd .release && zip -r "../perform6-touchscreen-${VERSION}.zip" .
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+
+      - name: Upload to Cloudflare R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          pip install awscli --quiet
+          aws s3 cp "perform6-touchscreen-${VERSION}.zip" \
+            "s3://${{ vars.R2_BUCKET_RELEASES }}/releases/touchscreen/perform6-touchscreen-${VERSION}.zip" \
+            --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
+            --content-type application/zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-zip
+          path: perform6-touchscreen-*.zip

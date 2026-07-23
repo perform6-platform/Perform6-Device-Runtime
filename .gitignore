@@ -1,0 +1,9 @@
+node_modules
+dist
+releases
+.release
+.env
+.env.local
+*.log
+.DS_Store
+perform6-*.zip

@@ -1,0 +1,20 @@
+name: Bug report
+description: Touchscreen or BrightSign player issue
+labels: ["bug", "triage"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Where?
+      options:
+        - browser dev
+        - BrightSign player
+        - both
+    validations:
+      required: true

@@ -1,0 +1,37 @@
+{
+  "name": "perform6-touchscreen",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Perform6 BrightSign touchscreen app — React, offline-first",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "release:zip": "node scripts/build-profile-zip.mjs XT2145",
+    "release:zip:xt2145": "node scripts/build-profile-zip.mjs XT2145",
+    "release:zip:xc4055": "node scripts/build-profile-zip.mjs XC4055",
+    "release:zip:hd226": "node scripts/build-profile-zip.mjs HD226",
+    "release:zip:all": "node scripts/build-all-profile-zips.mjs"
+  },
+  "dependencies": {
+    "framer-motion": "^11.15.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.1.1",
+    "zustand": "^5.0.2"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@tailwindcss/vite": "^4.1.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.6"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
