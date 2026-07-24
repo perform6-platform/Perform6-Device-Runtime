@@ -55,3 +55,16 @@ export function useTouchVideos(manifest: PlaybackManifest | null | undefined) {
 
   return { idle, startHere, phase1, phase2, fullProgram };
 }
+
+/** Media identity for telemetry (id = mediaVersionId from sync manifest). */
+export function getTouchSlotMedia(
+  manifest: PlaybackManifest | null | undefined,
+  slotId: TouchPlaybackSlot,
+): { mediaVersionId: string | null; title: string | null } {
+  const screen = manifest ? findTouchScreen(manifest, slotId) : undefined;
+  const video = getCurrentVideo(screen);
+  return {
+    mediaVersionId: video?.id ?? null,
+    title: video?.title ?? null,
+  };
+}

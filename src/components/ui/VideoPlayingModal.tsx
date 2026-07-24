@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { cn } from '../../lib/cn';
 import { useRuntimeStore } from '../../stores/runtimeStore';
 import { DisplayVolumeControl } from './DisplayVolumeControl';
@@ -36,27 +35,13 @@ export function VideoPlayingModal({
   const toggleDisplayPaused = useRuntimeStore((s) => s.toggleDisplayPaused);
   const restartDisplayVideo = useRuntimeStore((s) => s.restartDisplayVideo);
 
-  useEffect(() => {
-    if (!open) return;
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [open, onClose]);
-
   if (!open) return null;
 
   const isFullProgram = variant === 'full-program';
   const message = sessionLabel ? `Now video play ${sessionLabel}` : 'Now video play';
 
   return (
-    <div
-      className="p6-modal-overlay p6-modal-overlay--contained"
-      onClick={isFullProgram ? undefined : onClose}
-    >
+    <div className="p6-modal-overlay p6-modal-overlay--contained">
       <div
         role="dialog"
         aria-modal="true"
@@ -66,7 +51,6 @@ export function VideoPlayingModal({
           `p6-session-modal--${accent}`,
           isFullProgram && 'p6-video-playing-modal--program',
         )}
-        onClick={(e) => e.stopPropagation()}
       >
         {!isFullProgram && (
           <button

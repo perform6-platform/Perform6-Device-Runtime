@@ -1,11 +1,16 @@
 import { useEffect, useRef } from 'react';
 import { useRuntimeStore } from '../stores/runtimeStore';
+import { useVideoPlaybackTelemetry } from '../hooks/useVideoPlaybackTelemetry';
 
 interface DisplayVideoPlayerProps {
   src: string | null;
   label?: string;
   loop?: boolean;
   className?: string;
+  /** Logical screen id for admin live preview (e.g. SCREEN_1). */
+  screenKey?: string;
+  mediaVersionId?: string | null;
+  mediaTitle?: string | null;
 }
 
 export function DisplayVideoPlayer({
@@ -13,6 +18,9 @@ export function DisplayVideoPlayer({
   label,
   loop: loopProp,
   className = '',
+  screenKey,
+  mediaVersionId,
+  mediaTitle,
 }: DisplayVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const paused = useRuntimeStore((s) => s.displayPaused);
@@ -20,8 +28,26 @@ export function DisplayVideoPlayer({
   const volume = useRuntimeStore((s) => s.displayVolume);
   const restartNonce = useRuntimeStore((s) => s.displayRestartNonce);
   const storeLoop = useRuntimeStore((s) => s.displayVideoLoop);
+  const storeMeta = useRuntimeStore((s) => s.displayPlaybackMeta);
   const setDisplayPaused = useRuntimeStore((s) => s.setDisplayPaused);
   const loop = loopProp ?? storeLoop;
+
+  const resolvedScreenKey = screenKey ?? storeMeta?.screenKey ?? null;
+  const resolvedMediaVersionId =
+    mediaVersionId ?? storeMeta?.mediaVersionId ?? null;
+  const resolvedTitle = mediaTitle ?? storeMeta?.title ?? label ?? null;
+
+  useVideoPlaybackTelemetry(
+    videoRef,
+    resolvedScreenKey
+      ? {
+          screenKey: resolvedScreenKey,
+          mediaVersionId: resolvedMediaVersionId,
+          title: resolvedTitle,
+        }
+      : null,
+    Boolean(src && resolvedScreenKey),
+  );
 
   useEffect(() => {
     const video = videoRef.current;
@@ -54,6 +80,8 @@ export function DisplayVideoPlayer({
     const onEnded = () => {
       video.pause();
       setDisplayPaused(true);
+      // Touch Full Program (and any non-loop display play) can return to menu via this hook.
+      useRuntimeStore.getState().displayVideoEndedHandler?.();
     };
 
     video.addEventListener('ended', onEnded);

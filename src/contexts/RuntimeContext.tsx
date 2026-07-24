@@ -23,6 +23,7 @@ import {
   fetchAndStoreCredentials,
   clearCachedMediaVersionIds,
 } from '../services';
+import { sendPlaybackTelemetry } from '../services/playbackTelemetryApi';
 import { ApiError } from '../services/api';
 import type { ClusterMember, DeviceInfo, DeviceRegistrationStatus } from '../shared/types';
 import type { MockDeviceOptions } from '../shared/mockDevice';
@@ -659,6 +660,23 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     const id = window.setInterval(tick, runtimeConfig.heartbeatIntervalMs);
     return () => window.clearInterval(id);
   }, [deviceInfo, hasCredentials, pushDebugLog, setHeartbeat]);
+
+  // Lightweight playhead flush for admin live preview (~8s; avoids heartbeat_logs bloat).
+  useEffect(() => {
+    if (!isDeviceReady()) return;
+
+    const tick = () => {
+      const auth = getCredentials();
+      if (!auth) return;
+      void sendPlaybackTelemetry(auth).catch(() => {
+        /* best-effort — monitoring only */
+      });
+    };
+
+    tick();
+    const id = window.setInterval(tick, 8_000);
+    return () => window.clearInterval(id);
+  }, [deviceInfo, hasCredentials]);
 
   const value = useMemo(
     () => ({

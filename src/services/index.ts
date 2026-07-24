@@ -3,6 +3,8 @@ export type { ApiEnvelope } from './api';
 export * from './pairing';
 export * from './device';
 export * from './heartbeat';
+export * from './playbackTelemetry';
+export * from './playbackTelemetryApi';
 export * from './sync';
 export * from './syncEngine';
 export * from './manifest';

@@ -301,6 +301,20 @@ body,
     'divider divider'
     'phase1  full'
     'phase2  full';
+  transition: opacity 280ms ease, visibility 280ms ease;
+}
+
+/* Idle / attract: hide all touch chrome; default video fills the touch surface. */
+.p6-home--attract .p6-home__grid {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.p6-home--attract .p6-home__logo {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .p6-home__logo {

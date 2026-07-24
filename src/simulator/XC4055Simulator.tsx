@@ -34,6 +34,9 @@ function SimulatorScreenPane({
     <DisplayScreen
       label={paneLabel}
       videoSrc={videoSrc}
+      screenKey={target}
+      mediaVersionId={video?.id ?? null}
+      mediaTitle={video?.title ?? null}
       meta={{
         day: screen?.rotationDay ?? manifest?.deployment.currentDay,
         library: categoryLabel ?? paneLabel,

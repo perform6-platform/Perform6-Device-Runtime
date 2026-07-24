@@ -94,6 +94,12 @@ export default function HD226Simulator() {
           <DisplayScreen
             label={screen?.label ?? activeMember}
             videoSrc={videoSrc}
+            screenKey={
+              screen?.displayTarget ??
+              `SCREEN_${ALL_MEMBERS.indexOf(activeMember) + 1}`
+            }
+            mediaVersionId={video?.id ?? null}
+            mediaTitle={video?.title ?? null}
             meta={{
               day: screen?.rotationDay ?? manifest?.deployment.currentDay,
               library: screen?.label ?? manifest?.deployment.libraryName,

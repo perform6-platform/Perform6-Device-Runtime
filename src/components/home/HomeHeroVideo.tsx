@@ -3,9 +3,11 @@ import { useEffect, useRef } from 'react';
 type HomeHeroVideoProps = {
   src: string | null;
   paused?: boolean;
+  /** Attract / idle: full-bleed default video without menu vignette. */
+  attract?: boolean;
 };
 
-export function HomeHeroVideo({ src, paused = false }: HomeHeroVideoProps) {
+export function HomeHeroVideo({ src, paused = false, attract = false }: HomeHeroVideoProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -22,7 +24,7 @@ export function HomeHeroVideo({ src, paused = false }: HomeHeroVideoProps) {
   }, [paused, src]);
 
   return (
-    <div className="p6-home__hero" aria-hidden>
+    <div className={`p6-home__hero${attract ? ' p6-home__hero--attract' : ''}`} aria-hidden>
       {src ? (
         <video
           ref={videoRef}
@@ -36,8 +38,12 @@ export function HomeHeroVideo({ src, paused = false }: HomeHeroVideoProps) {
           draggable={false}
         />
       ) : null}
-      <div className="p6-home__hero-glow" />
-      <div className="p6-home__hero-fade" />
+      {!attract ? (
+        <>
+          <div className="p6-home__hero-glow" />
+          <div className="p6-home__hero-fade" />
+        </>
+      ) : null}
     </div>
   );
 }

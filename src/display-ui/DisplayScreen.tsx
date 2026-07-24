@@ -4,6 +4,9 @@ interface DisplayScreenProps {
   label: string;
   videoSrc: string | null;
   loop?: boolean;
+  screenKey?: string;
+  mediaVersionId?: string | null;
+  mediaTitle?: string | null;
   meta?: {
     day?: number;
     library?: string;
@@ -11,7 +14,15 @@ interface DisplayScreenProps {
   };
 }
 
-export function DisplayScreen({ label, videoSrc, loop = true, meta }: DisplayScreenProps) {
+export function DisplayScreen({
+  label,
+  videoSrc,
+  loop = true,
+  screenKey,
+  mediaVersionId,
+  mediaTitle,
+  meta,
+}: DisplayScreenProps) {
   return (
     <section className="p6-display-screen flex h-full flex-col overflow-hidden rounded-xl border border-slate-700 bg-slate-950">
       <header className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
@@ -25,7 +36,14 @@ export function DisplayScreen({ label, videoSrc, loop = true, meta }: DisplayScr
         )}
       </header>
       <div className="min-h-0 flex-1">
-        <DisplayVideoPlayer src={videoSrc} label={label} loop={loop} />
+        <DisplayVideoPlayer
+          src={videoSrc}
+          label={label}
+          loop={loop}
+          screenKey={screenKey}
+          mediaVersionId={mediaVersionId}
+          mediaTitle={mediaTitle}
+        />
       </div>
     </section>
   );

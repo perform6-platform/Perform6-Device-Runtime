@@ -18,11 +18,18 @@ interface RuntimeStoreState {
   startedAt: number;
   debugLogs: DebugLogEntry[];
   displayVideoSrc: string | null;
+  displayPlaybackMeta: {
+    screenKey: string;
+    mediaVersionId: string | null;
+    title: string | null;
+  } | null;
   displayPaused: boolean;
   displayMuted: boolean;
   displayVolume: number;
   displayRestartNonce: number;
   displayVideoLoop: boolean;
+  /** Fired when a non-looping display video reaches ended (touch Full Program). */
+  displayVideoEndedHandler: (() => void) | null;
   simulatorSessionActive: boolean;
   pendingRoute: string | null;
   setDeviceInfo: (info: DeviceInfo) => void;
@@ -30,13 +37,21 @@ interface RuntimeStoreState {
   setConnectionStatus: (status: ConnectionStatus) => void;
   setSyncState: (partial: Partial<SyncState>) => void;
   setPlaybackManifest: (manifest: PlaybackManifest | null) => void;
-  setDisplayVideoSrc: (src: string | null) => void;
+  setDisplayVideoSrc: (
+    src: string | null,
+    meta?: {
+      screenKey?: string;
+      mediaVersionId?: string | null;
+      title?: string | null;
+    } | null,
+  ) => void;
   resetDisplayControls: () => void;
   toggleDisplayPaused: () => void;
   toggleDisplayMuted: () => void;
   setDisplayVolume: (volume: number) => void;
   setDisplayVideoLoop: (loop: boolean) => void;
   setDisplayPaused: (paused: boolean) => void;
+  setDisplayVideoEndedHandler: (handler: (() => void) | null) => void;
   restartDisplayVideo: () => void;
   setPlaybackPlaying: (isPlaying: boolean) => void;
   setHeartbeat: (payload: { at: string; ok: boolean }) => void;
@@ -76,11 +91,13 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
   startedAt: Date.now(),
   debugLogs: [],
   displayVideoSrc: null,
+  displayPlaybackMeta: null,
   displayPaused: false,
   displayMuted: true,
   displayVolume: 1,
   displayRestartNonce: 0,
   displayVideoLoop: true,
+  displayVideoEndedHandler: null,
   simulatorSessionActive: false,
   pendingRoute: null,
   setDeviceInfo: (deviceInfo) => set({ deviceInfo }),
@@ -100,7 +117,17 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
         currentScreenId: manifest?.screens[0]?.id ?? null,
       },
     }),
-  setDisplayVideoSrc: (displayVideoSrc) => set({ displayVideoSrc }),
+  setDisplayVideoSrc: (displayVideoSrc, meta) =>
+    set({
+      displayVideoSrc,
+      displayPlaybackMeta: displayVideoSrc
+        ? {
+            screenKey: meta?.screenKey ?? 'SCREEN_1',
+            mediaVersionId: meta?.mediaVersionId ?? null,
+            title: meta?.title ?? null,
+          }
+        : null,
+    }),
   resetDisplayControls: () =>
     set({
       displayPaused: false,
@@ -135,6 +162,7 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
     set({ displayPaused });
     set({ playbackState: { ...get().playbackState, isPlaying: !displayPaused } });
   },
+  setDisplayVideoEndedHandler: (displayVideoEndedHandler) => set({ displayVideoEndedHandler }),
   restartDisplayVideo: () =>
     set({ displayRestartNonce: get().displayRestartNonce + 1, displayPaused: false }),
   setPlaybackPlaying: (isPlaying) =>

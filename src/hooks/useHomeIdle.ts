@@ -5,6 +5,11 @@ type UseHomeIdleOptions = {
   blocked: boolean;
 };
 
+/**
+ * After `delayMs` without interaction, enter attract mode (`isOpen`).
+ * Attract = hide touch UI / show full default video — not a modal.
+ * Any pointer activity while attracted wakes the menu again.
+ */
 export function useHomeIdle({ delayMs, blocked }: UseHomeIdleOptions) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -26,7 +31,13 @@ export function useHomeIdle({ delayMs, blocked }: UseHomeIdleOptions) {
   }, [blocked, clearTimer, delayMs]);
 
   useEffect(() => {
-    if (blocked || isOpen) {
+    if (blocked) {
+      clearTimer();
+      setIsOpen(false);
+      return;
+    }
+
+    if (isOpen) {
       clearTimer();
       return;
     }
@@ -36,15 +47,24 @@ export function useHomeIdle({ delayMs, blocked }: UseHomeIdleOptions) {
   }, [blocked, isOpen, schedule, clearTimer]);
 
   const onActivity = useCallback(() => {
-    if (isOpen || blocked) return;
+    if (blocked) return;
+
+    // Wake from attract → show buttons again.
+    if (isOpen) {
+      setIsOpen(false);
+      return;
+    }
+
+    // Menu visible → reset idle countdown.
     schedule();
-  }, [isOpen, blocked, schedule]);
+  }, [blocked, isOpen, schedule]);
 
   const close = useCallback(() => {
     setIsOpen(false);
   }, []);
 
   return {
+    /** Attract mode active (UI hidden). */
     isOpen,
     close,
     onActivity,

@@ -38,6 +38,7 @@ export default function XT2145Simulator() {
             label="HDMI Out"
             videoSrc={externalSrc}
             loop={displayVideoLoop}
+            screenKey="SCREEN_1"
             meta={{
               day: manifest?.deployment.currentDay,
               library: manifest?.deployment.libraryName,
