@@ -12,9 +12,9 @@ Edit the profile env file before building (local API for lab, production API for
 | XC4055 | `.env.brightsign-xc4055` |
 | HD226 | `.env.brightsign-hd226` |
 
-Set `VITE_API_BASE_URL` (e.g. `https://api.yourdomain.com/api/v1`).
+Set `VITE_API_BASE_URL` (e.g. `http://143.110.164.23:3000/api/v1` or your domain).
 
-## 2. Build packages (saved under `releases/`)
+## 2. Build packages → local `releases/` + Cloudflare R2
 
 ```bash
 # One profile (version optional — default package.json version)
@@ -29,46 +29,28 @@ npm run release:zip:hd226 -- 1.0.0 DEVICE_B
 npm run release:zip:all -- 1.0.0
 ```
 
-Each run writes **both**:
+Each run:
 
-- a **ready folder** (no extract needed)
-- a matching **`.zip`** (optional — cloud / R2 / single-file share)
+1. Builds with baked `VITE_API_BASE_URL` from `.env.brightsign-*`
+2. Writes folder + ZIP under `releases/<profile>/`
+3. Uploads that profile to R2 (`perform6-releases`) using `backend/perform6-api/.env` credentials
 
-```
-releases/xt2145/perform6-xt2145-1.0.0/
-releases/xt2145/perform6-xt2145-1.0.0.zip
-releases/xc4055/perform6-xc4055-1.0.0/
-releases/hd226/perform6-hd226-device_a-1.0.0/
-```
+Skip upload: `SKIP_R2_UPLOAD=1 npm run release:zip:hd226 -- 1.0.0`
 
-## 3. Copy to SD card (player storage root)
+## 3. Admin Portal + SD card
 
-**Admin Portal:** Startup Files → **Download folder** (Chrome/Edge). Pick a parent once (e.g. Downloads) — a ready folder such as `perform6-xt2145-0.1.0` is written there (not a ZIP). Copy that folder's **contents** to the card **root**.
+With API `STORAGE_DRIVER=r2`, **Startup Files** lists/downloads packages **from R2**.
 
-**From disk / build output:** open the release **folder** and copy its **contents** to the card **root** (do not nest the folder itself on the card):
+Pick a parent once → folder like `perform6-xt2145-0.1.0` is saved → copy its **contents** to the SD **root**:
 
 | File / folder | Required |
 |---------------|----------|
 | `autorun.brs` | yes |
 | `index.html` | yes |
 | `assets/` | yes |
-| `perform6-release.json` | optional (build metadata) |
+| `perform6-release.json` | optional |
 
 Insert SD → boot → pairing code → Admin claim/register → sync → playback.
-
-## 4. Production R2 (later)
-
-Upload the `.zip` files to your releases bucket, e.g.:
-
-```
-releases/xt2145/perform6-xt2145-1.0.0.zip
-releases/xc4055/perform6-xc4055-1.0.0.zip
-releases/hd226/perform6-hd226-device_a-1.0.0.zip
-```
-
-Then publish via Admin Releases / `GET /devices/me/app-update` OTA metadata.
-
-GitHub workflow `release-r2.yml` can be extended to a profile matrix; local `releases/` is the source of truth for now.
 
 ## Dev without device
 

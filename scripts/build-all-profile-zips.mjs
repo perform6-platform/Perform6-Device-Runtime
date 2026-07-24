@@ -19,4 +19,4 @@ for (const profile of ['XT2145', 'XC4055', 'HD226']) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-console.log(`\n[release:zip:all] Done — see releases/*/perform6-*-${version}/ (and .zip) for v${version}`);
+console.log(`\n[release:zip:all] Done — local releases/*/perform6-*-${version}/ + R2 upload (unless SKIP_R2_UPLOAD=1)`);

@@ -98,6 +98,31 @@ function zipDirectory(packageFolder, zipPath) {
   if (result.status !== 0) fail(`zip failed for ${zipPath} (is "zip" installed?)`);
 }
 
+/** Upload this profile's releases/* to R2 (uses backend .env credentials). */
+function uploadProfileToR2(profileSlug) {
+  if (process.env.SKIP_R2_UPLOAD === '1') {
+    console.log('[release:zip] SKIP_R2_UPLOAD=1 — skipping R2 upload');
+    return;
+  }
+
+  const apiRoot = path.resolve(root, '../../backend/perform6-api');
+  const uploadScript = path.join(apiRoot, 'scripts', 'upload-startup-releases-r2.mjs');
+  if (!fs.existsSync(uploadScript)) {
+    console.warn(`[release:zip] R2 upload script missing (${uploadScript}) — skip`);
+    return;
+  }
+
+  console.log(`[release:zip] Uploading releases/${profileSlug}/ → R2…`);
+  const result = spawnSync(process.execPath, [uploadScript, profileSlug], {
+    cwd: apiRoot,
+    stdio: 'inherit',
+    env: process.env,
+  });
+  if (result.status !== 0) {
+    fail('R2 upload failed — fix credentials in backend/perform6-api/.env or set SKIP_R2_UPLOAD=1');
+  }
+}
+
 function main() {
   const profileKey = (process.argv[2] || '').toUpperCase();
   const version = process.argv[3] || process.env.npm_package_version || '0.1.0';
@@ -188,12 +213,14 @@ function main() {
   // Optional single-file package for cloud / R2 / email
   zipDirectory(outFolder, outZip);
 
+  uploadProfileToR2(profile.slug);
+
   console.log(`\n[release:zip] Folder: ${path.relative(root, outFolder)}`);
   console.log(`[release:zip] ZIP:    ${path.relative(root, outZip)}`);
   console.log('[release:zip] SD card: copy folder CONTENTS to card root (not the folder itself)');
   console.log('[release:zip] Required on SD root: autorun.brs, index.html, assets/');
   console.log(
-    `[release:zip] Later R2 key suggestion: releases/${profile.slug}/${packageBase}.zip`,
+    `[release:zip] R2 keys: releases/${profile.slug}/${packageBase}/… and .zip`,
   );
 }
 
