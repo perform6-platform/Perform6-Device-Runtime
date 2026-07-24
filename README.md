@@ -46,7 +46,7 @@ docker compose up -d --build
 docker compose -f docker-compose.dev.yml up --build
 ```
 
-BrightSign ZIP (local `releases/`):
+BrightSign package (local `releases/` — ready folder + optional ZIP):
 
 ```bash
 npm run release:zip:xt2145 -- 1.0.0
@@ -56,7 +56,7 @@ npm run release:zip:hd226 -- 1.0.0
 npm run release:zip:all -- 1.0.0
 ```
 
-Edit `.env.brightsign-*` → `VITE_API_BASE_URL` before production builds. See [docs/deploy-to-player.md](./docs/deploy-to-player.md).
+Copy the release **folder contents** to the SD card root (`autorun.brs`, `index.html`, `assets/`). Edit `.env.brightsign-*` → `VITE_API_BASE_URL` before production builds. See [docs/deploy-to-player.md](./docs/deploy-to-player.md).
 
 
 ## Build for player

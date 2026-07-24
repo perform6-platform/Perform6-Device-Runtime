@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Build a BrightSign SD-card ZIP for one hardware profile.
+ * Build a BrightSign SD-card package for one hardware profile.
  *
  * Usage:
  *   node scripts/build-profile-zip.mjs <XT2145|XC4055|HD226> [version] [CLUSTER_MEMBER]
@@ -9,11 +9,12 @@
  *   node scripts/build-profile-zip.mjs XT2145 1.0.0
  *   node scripts/build-profile-zip.mjs HD226 1.0.0 DEVICE_B
  *
- * Output: releases/<profile-lower>/perform6-<profile-lower>[-member]-<version>.zip
+ * Output (under releases/<profile-lower>/):
+ *   perform6-<profile>[-member]-<version>/   ← ready folder (copy contents to SD root)
+ *   perform6-<profile>[-member]-<version>.zip ← same contents (optional download / R2)
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -65,15 +66,19 @@ function run(command, args, env = {}) {
   }
 }
 
-function zipDirectory(sourceDir, zipPath) {
+function zipDirectory(packageFolder, zipPath) {
+  // Zip the folder itself so Extract All creates perform6-…/ in Downloads.
   fs.mkdirSync(path.dirname(zipPath), { recursive: true });
   if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
+
+  const parent = path.dirname(packageFolder);
+  const base = path.basename(packageFolder);
 
   if (process.platform === 'win32') {
     const ps = [
       'Compress-Archive',
       '-Path',
-      `"${path.join(sourceDir, '*')}"`,
+      `"${packageFolder}"`,
       '-DestinationPath',
       `"${zipPath}"`,
       '-Force',
@@ -86,8 +91,8 @@ function zipDirectory(sourceDir, zipPath) {
     return;
   }
 
-  const result = spawnSync('zip', ['-r', zipPath, '.'], {
-    cwd: sourceDir,
+  const result = spawnSync('zip', ['-r', zipPath, base], {
+    cwd: parent,
     stdio: 'inherit',
   });
   if (result.status !== 0) fail(`zip failed for ${zipPath} (is "zip" installed?)`);
@@ -122,9 +127,10 @@ function main() {
 
   const member = profileKey === 'HD226' ? memberArg || 'DEVICE_A' : '';
   const memberSuffix = member ? `-${member.toLowerCase()}` : '';
-  const outName = `perform6-${profile.slug}${memberSuffix}-${version}.zip`;
+  const packageBase = `perform6-${profile.slug}${memberSuffix}-${version}`;
   const outDir = path.join(root, 'releases', profile.slug);
-  const outZip = path.join(outDir, outName);
+  const outFolder = path.join(outDir, packageBase);
+  const outZip = path.join(outDir, `${packageBase}.zip`);
 
   console.log(`[release:zip] profile=${profileKey} version=${version}` +
     (member ? ` member=${member}` : ''));
@@ -135,7 +141,7 @@ function main() {
   if (member) {
     buildEnv.VITE_CLUSTER_MEMBER = member;
   }
-  // Keep runtime version aligned with ZIP version when provided.
+  // Keep runtime version aligned with package version when provided.
   buildEnv.VITE_RUNTIME_VERSION = version;
 
   const viteBin = path.join(
@@ -154,37 +160,40 @@ function main() {
     fail('Build output incomplete (need dist/index.html, dist/assets, brightsign/autorun.brs)');
   }
 
-  const staging = fs.mkdtempSync(path.join(os.tmpdir(), `perform6-${profile.slug}-`));
-  try {
-    fs.copyFileSync(autorun, path.join(staging, 'autorun.brs'));
-    fs.copyFileSync(distIndex, path.join(staging, 'index.html'));
-    fs.cpSync(distAssets, path.join(staging, 'assets'), { recursive: true });
-
-    // Small manifest for humans / R2 catalog later
-    fs.writeFileSync(
-      path.join(staging, 'perform6-release.json'),
-      JSON.stringify(
-        {
-          profile: profileKey,
-          version,
-          clusterMember: member || null,
-          builtAt: new Date().toISOString(),
-          files: ['autorun.brs', 'index.html', 'assets/'],
-        },
-        null,
-        2,
-      ),
-    );
-
-    zipDirectory(staging, outZip);
-  } finally {
-    fs.rmSync(staging, { recursive: true, force: true });
+  // Persist ready-to-copy folder (no extract step for SD deploy)
+  if (fs.existsSync(outFolder)) {
+    fs.rmSync(outFolder, { recursive: true, force: true });
   }
+  fs.mkdirSync(outFolder, { recursive: true });
 
-  console.log(`\n[release:zip] Created ${path.relative(root, outZip)}`);
-  console.log('[release:zip] SD card root contents: autorun.brs, index.html, assets/');
+  fs.copyFileSync(autorun, path.join(outFolder, 'autorun.brs'));
+  fs.copyFileSync(distIndex, path.join(outFolder, 'index.html'));
+  fs.cpSync(distAssets, path.join(outFolder, 'assets'), { recursive: true });
+
+  fs.writeFileSync(
+    path.join(outFolder, 'perform6-release.json'),
+    JSON.stringify(
+      {
+        profile: profileKey,
+        version,
+        clusterMember: member || null,
+        builtAt: new Date().toISOString(),
+        files: ['autorun.brs', 'index.html', 'assets/'],
+      },
+      null,
+      2,
+    ),
+  );
+
+  // Optional single-file package for cloud / R2 / email
+  zipDirectory(outFolder, outZip);
+
+  console.log(`\n[release:zip] Folder: ${path.relative(root, outFolder)}`);
+  console.log(`[release:zip] ZIP:    ${path.relative(root, outZip)}`);
+  console.log('[release:zip] SD card: copy folder CONTENTS to card root (not the folder itself)');
+  console.log('[release:zip] Required on SD root: autorun.brs, index.html, assets/');
   console.log(
-    `[release:zip] Later R2 key suggestion: releases/${profile.slug}/${outName}`,
+    `[release:zip] Later R2 key suggestion: releases/${profile.slug}/${packageBase}.zip`,
   );
 }
 

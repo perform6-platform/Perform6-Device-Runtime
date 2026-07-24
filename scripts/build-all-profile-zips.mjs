@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Build BrightSign ZIPs for XT2145, XC4055, and HD226 (DEVICE_A default).
+ * Build BrightSign packages (ready folder + ZIP) for XT2145, XC4055, and HD226 (DEVICE_A default).
  * Usage: node scripts/build-all-profile-zips.mjs [version]
  */
 import { spawnSync } from 'node:child_process';
@@ -19,4 +19,4 @@ for (const profile of ['XT2145', 'XC4055', 'HD226']) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-console.log(`\n[release:zip:all] Done — see releases/ for v${version}`);
+console.log(`\n[release:zip:all] Done — see releases/*/perform6-*-${version}/ (and .zip) for v${version}`);
