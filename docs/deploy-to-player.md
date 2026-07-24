@@ -12,7 +12,7 @@ Edit the profile env file before building (local API for lab, production API for
 | XC4055 | `.env.brightsign-xc4055` |
 | HD226 | `.env.brightsign-hd226` |
 
-Set `VITE_API_BASE_URL` (e.g. `http://143.110.164.23:3000/api/v1` or your domain).
+Set `VITE_API_BASE_URL` (production: `https://portal.perform6.com/api/v1`).
 
 ## 2. Build packages → local `releases/` + Cloudflare R2
 
