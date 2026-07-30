@@ -3,6 +3,11 @@ import { createPortal } from 'react-dom';
 import { cn } from '../../lib/cn';
 import type { P6Accent } from './types';
 
+export type SessionModalItem = {
+  title: string;
+  description?: string;
+};
+
 type SessionModalProps = {
   open: boolean;
   onClose: () => void;
@@ -10,7 +15,11 @@ type SessionModalProps = {
   onPrimary?: () => void;
   title: string;
   eyebrow?: string;
-  items: string[];
+  items: Array<string | SessionModalItem>;
+  /** Shown under the title with a clock icon, e.g. "5-10 Minutes". */
+  sessionDuration?: string;
+  /** Centered divider label, e.g. "THIS SESSION WILL HELP YOU". */
+  sectionLabel?: string;
   duration?: string;
   showDuration?: boolean;
   backLabel?: string;
@@ -20,24 +29,25 @@ type SessionModalProps = {
   className?: string;
 };
 
+function normalizeItems(items: Array<string | SessionModalItem>): SessionModalItem[] {
+  return items.map((item) => (typeof item === 'string' ? { title: item } : item));
+}
+
 function PlayIcon() {
   return (
-    <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden>
-      <path
-        d="M8 5.5v11l9-5.5-9-5.5z"
-        fill="currentColor"
-      />
+    <svg width="14" height="16" viewBox="0 0 14 16" fill="none" aria-hidden>
+      <path d="M1 1.2v13.6L12.5 8 1 1.2z" fill="currentColor" />
     </svg>
   );
 }
 
-function CheckIcon() {
+function BackArrowIcon() {
   return (
-    <svg width="10" height="8" viewBox="0 0 10 8" fill="none" aria-hidden>
+    <svg width="18" height="14" viewBox="0 0 18 14" fill="none" aria-hidden>
       <path
-        d="M1 4l2.5 2.5L9 1"
+        d="M7.5 1.5L1.5 7l6 5.5M1.5 7H16.5"
         stroke="currentColor"
-        strokeWidth="1.5"
+        strokeWidth="1.6"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -45,14 +55,30 @@ function CheckIcon() {
   );
 }
 
-function CloseIcon() {
+function ClockIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+    <svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <circle cx="8" cy="8" r="6.25" stroke="currentColor" strokeWidth="1.4" />
       <path
-        d="M2 2l10 10M12 2L2 12"
+        d="M8 4.75V8l2.25 1.5"
         stroke="currentColor"
         strokeWidth="1.4"
         strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 12 10" fill="none" aria-hidden>
+      <path
+        d="M1.5 5l3 3L10.5 1.5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   );
@@ -66,14 +92,17 @@ export function SessionModal({
   title,
   eyebrow,
   items,
+  sessionDuration,
+  sectionLabel,
   duration,
   showDuration = true,
-  backLabel = 'BACK',
+  backLabel = 'Back',
   primaryLabel = 'BEGIN SESSION',
   accent = 'blue',
-  icon,
   className,
 }: SessionModalProps) {
+  const normalizedItems = normalizeItems(items);
+
   useEffect(() => {
     if (!open) return;
 
@@ -98,38 +127,46 @@ export function SessionModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="p6-session-modal-title"
-        className={cn('p6-session-modal', `p6-session-modal--${accent}`, className)}
+        className={cn(
+          'p6-session-modal',
+          'p6-session-modal--confirm',
+          `p6-session-modal--${accent}`,
+          className,
+        )}
         onClick={(e) => e.stopPropagation()}
       >
-        <button
-          type="button"
-          className="p6-session-modal__close"
-          onClick={onClose}
-          aria-label="Close"
-        >
-          <CloseIcon />
-        </button>
-
-        <div className="p6-session-modal__icon-wrap">
-          <div className="p6-session-modal__icon-ring">
-            <div className="p6-session-modal__icon">
-              {icon ?? <PlayIcon />}
-            </div>
-          </div>
-        </div>
-
         <h2 id="p6-session-modal-title" className="p6-session-modal__title">
           {eyebrow && <span className="p6-session-modal__eyebrow">{eyebrow}</span>}
           {title}
         </h2>
 
+        {sessionDuration && (
+          <p className="p6-session-modal__session-duration">
+            <ClockIcon />
+            <span>{sessionDuration}</span>
+          </p>
+        )}
+
+        {sectionLabel && (
+          <div className="p6-session-modal__section">
+            <span className="p6-session-modal__section-line" aria-hidden />
+            <span className="p6-session-modal__section-label">{sectionLabel}</span>
+            <span className="p6-session-modal__section-line" aria-hidden />
+          </div>
+        )}
+
         <ul className="p6-session-modal__list">
-          {items.map((item) => (
-            <li key={item} className="p6-session-modal__item">
+          {normalizedItems.map((item) => (
+            <li key={item.title} className="p6-session-modal__item">
               <span className="p6-session-modal__check" aria-hidden>
                 <CheckIcon />
               </span>
-              <span className="p6-session-modal__item-text">{item}</span>
+              <span className="p6-session-modal__item-body">
+                <span className="p6-session-modal__item-text">{item.title}</span>
+                {item.description && (
+                  <span className="p6-session-modal__item-desc">{item.description}</span>
+                )}
+              </span>
             </li>
           ))}
         </ul>
@@ -141,17 +178,19 @@ export function SessionModal({
         <div className="p6-session-modal__actions">
           <button
             type="button"
-            className="p6-session-modal__btn p6-session-modal__btn--back"
-            onClick={handleBack}
-          >
-            {backLabel}
-          </button>
-          <button
-            type="button"
             className="p6-session-modal__btn p6-session-modal__btn--primary"
             onClick={onPrimary}
           >
-            {primaryLabel}
+            <PlayIcon />
+            <span>{primaryLabel}</span>
+          </button>
+          <button
+            type="button"
+            className="p6-session-modal__btn p6-session-modal__btn--back"
+            onClick={handleBack}
+          >
+            <BackArrowIcon />
+            <span>{backLabel}</span>
           </button>
         </div>
       </div>

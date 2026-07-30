@@ -1,9 +1,18 @@
 const PHASE2_VIDEO = '/videos/phase1-gym.mp4';
 
 export const PHASE2_ITEMS = [
-  'Strength training',
-  'Energy development',
-  'Recovery protocols',
+  {
+    title: 'Build Strength',
+    description: 'Increase your ability to produce and control force',
+  },
+  {
+    title: 'Improve Conditioning',
+    description: 'Train longer and perform at a higher intensity',
+  },
+  {
+    title: 'Recover Faster',
+    description: 'Recover more efficiently between training sessions',
+  },
 ];
 
 export function getPhase2DefaultSessionConfig() {

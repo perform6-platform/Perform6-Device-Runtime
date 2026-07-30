@@ -5,7 +5,6 @@ import { useTouchVideos, getTouchSlotMedia } from '../hooks/useOfflineVideoSrc';
 import { useRuntimeStore } from '../stores/runtimeStore';
 import type { TouchPlaybackSlot } from '../services/playback';
 import {
-  CardThumbnail,
   FullProgramContent,
   GlowCard,
   Logo,
@@ -27,16 +26,19 @@ import {
 } from '../lib/touchSessionPolicy';
 import type { P6Accent } from '../components/ui';
 
-const IMAGES = {
-  phase1: 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=400&q=80&auto=format&fit=crop',
-  phase2: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400&q=80&auto=format&fit=crop',
-  fullProgram: 'https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=700&q=80&auto=format&fit=crop',
-};
-
 const START_HERE_ITEMS = [
-  'Learn the Perform6 system',
-  'Complete the Safety Check',
-  'Prepare your body for training',
+  {
+    title: 'Learn the Perform6 System',
+    description: 'Understand how the 6 Steps work together to improve performance',
+  },
+  {
+    title: 'Identify movement limitations',
+    description: 'with the pre-exercise Safety Check',
+  },
+  {
+    title: 'Prepare your body for training',
+    description: 'with the Pre-Workout foam rolling sequence',
+  },
 ];
 
 const HOME_IDLE_DELAY_MS = 30000;
@@ -232,62 +234,56 @@ export default function Home() {
         >
           <StartHereContent
             title="Start Here"
-            bullets="The 6-Step System • Safety Check • Prep"
-            description="Learn the system. Check movement. Prepare for performance."
-            duration="UP TO 45 MIN"
+            bullets="The 6-Step System • Safety Check • Pre-Workout"
+            description="Learn the system. Check movement. Prepare for training."
+            duration="5-10 Minutes"
           />
         </GlowCard>
 
-        <SectionDivider className="p6-home__divider">Choose Your Mode</SectionDivider>
+        <SectionDivider className="p6-home__divider">
+           CHOOSE YOUR EXPERIENCE
+        </SectionDivider>
 
-        <GlowCard variant="cyan" className="p6-home__phase1" onClick={handlePhase1Open}>
+        <div className="p6-home__col-header p6-home__col-left">
+          <span className="p6-heading">Self-Guided</span>
+          <span className="p6-small p6-muted">Complete individual phases</span>
+        </div>
+
+        <div className="p6-home__col-header p6-home__col-right">
+          <span className="p6-heading">Guided</span>
+          <span className="p6-small p6-muted">Complete the full guided session</span>
+        </div>
+
+        <GlowCard variant="blue" className="p6-home__phase1" onClick={handlePhase1Open}>
           <PhaseCardContent
             title="Phase 1"
             keywords="Mobility • Stability • Power"
-            description="Foundation Training"
-            duration="UP TO 45 MIN"
-            variant="cyan"
-            thumbnail={
-              <CardThumbnail
-                src={IMAGES.phase1}
-                alt="Phase 1"
-                className="aspect-[13/11] h-full w-[4.75rem] sm:w-[5.5rem] md:w-[6.5rem]"
-              />
-            }
+            description="Move Better. Build the Foundation."
+            duration="15-20 Minutes"
           />
         </GlowCard>
 
-        <GlowCard variant="purple" className="p6-home__phase2" onClick={handlePhase2Open}>
+        <div className="p6-home__phase-arrow" aria-hidden>
+          <svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor">
+            <path d="M9 12L0.5 1.5h17L9 12z" />
+          </svg>
+        </div>
+
+        <GlowCard variant="blue" className="p6-home__phase2" onClick={handlePhase2Open}>
           <PhaseCardContent
             title="Phase 2"
             keywords="Strength • Energy • Recovery"
-            description="Performance Training"
-            duration="UP TO 45 MIN"
-            variant="purple"
-            thumbnail={
-              <CardThumbnail
-                src={IMAGES.phase2}
-                alt="Phase 2"
-                className="aspect-[13/11] h-full w-[4.75rem] sm:w-[5.5rem] md:w-[6.5rem]"
-              />
-            }
+            description="Get Stronger. Elevate Performance."
+            duration="20-30 Minutes"
           />
         </GlowCard>
 
-        <GlowCard variant="gold" className="p6-home__full-program" onClick={handleFullProgramOpen}>
+        <GlowCard variant="blue" className="p6-home__full-program" onClick={handleFullProgramOpen}>
           <FullProgramContent
             title="Full Program"
-            subtitle="All 6 Steps"
-            description="Complete Guided Training"
-            duration="PLAY ONCE"
-            image={
-              <img
-                src={IMAGES.fullProgram}
-                alt=""
-                className="h-full w-full object-cover object-center"
-                draggable={false}
-              />
-            }
+            subtitle="All 6 Performance Steps"
+            description="Experience the complete Perform6 training system."
+            duration="60 Minutes"
           />
         </GlowCard>
 
@@ -303,8 +299,10 @@ export default function Home() {
           beginSession('start-here', touchVideos.startHere);
         }}
         title="Start Here"
+        sessionDuration="5-10 Minutes"
+        sectionLabel="This Session Will Help You"
         items={START_HERE_ITEMS}
-        duration="Loops up to 45 minutes, then returns to menu"
+        showDuration={false}
         accent="blue"
       />
 
@@ -317,8 +315,10 @@ export default function Home() {
           beginSession('full-program', touchVideos.fullProgram);
         }}
         title="Full Program"
+        sessionDuration="60 Minutes"
+        sectionLabel="Program Outcomes"
         items={FULL_PROGRAM_ITEMS}
-        duration="Plays once, then returns to menu"
+        showDuration={false}
         accent="blue"
       />
 
@@ -331,9 +331,11 @@ export default function Home() {
           beginSession('phase1', touchVideos.phase1);
         }}
         title="Phase 1"
+        sessionDuration="15-20 Minutes"
+        sectionLabel="This Phase Will Help You"
         items={PHASE1_ITEMS}
-        duration="Loops up to 45 minutes, then returns to menu"
-        accent="cyan"
+        showDuration={false}
+        accent="blue"
       />
 
       <SessionModal
@@ -345,17 +347,47 @@ export default function Home() {
           beginSession('phase2', touchVideos.phase2);
         }}
         title="Phase 2"
+        sessionDuration="20-30 Minutes"
+        sectionLabel="This Phase Will Help You"
         items={PHASE2_ITEMS}
-        duration="Loops up to 45 minutes, then returns to menu"
-        accent="purple"
+        showDuration={false}
+        accent="blue"
       />
 
       <VideoPlayingModal
         open={sessionOpen}
         onClose={returnToMainMenu}
-        accent={activeSession?.accent ?? 'cyan'}
+        accent="blue"
         variant={activeSession?.source === 'full-program' ? 'full-program' : 'simple'}
         sessionLabel={activeSession ? SESSION_LABEL[activeSession.source] : undefined}
+        title={activeSession ? SESSION_LABEL[activeSession.source] : undefined}
+        sessionDuration={
+          activeSession?.source === 'full-program'
+            ? '60 Minutes'
+            : activeSession?.source === 'phase1'
+              ? '15-20 Minutes'
+              : activeSession?.source === 'phase2'
+                ? '20-30 Minutes'
+                : '5-10 Minutes'
+        }
+        sectionLabel={
+          activeSession?.source === 'full-program'
+            ? 'Program Outcomes'
+            : activeSession?.source === 'phase1' || activeSession?.source === 'phase2'
+              ? 'This Phase Will Help You'
+              : 'This Session Will Help You'
+        }
+        items={
+          activeSession?.source === 'full-program'
+            ? FULL_PROGRAM_ITEMS
+            : activeSession?.source === 'phase1'
+              ? PHASE1_ITEMS
+              : activeSession?.source === 'phase2'
+                ? PHASE2_ITEMS
+                : START_HERE_ITEMS
+        }
+        startedAt={activeSession?.startedAt}
+        totalSeconds={activeSession?.source === 'full-program' ? 3600 : 45 * 60}
       />
     </main>
   );
