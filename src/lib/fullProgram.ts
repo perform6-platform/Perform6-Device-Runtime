@@ -1,8 +1,26 @@
 export const FULL_PROGRAM_VIDEO = '/videos/phase1-gym.mp4';
 
 export const FULL_PROGRAM_ITEMS = [
-  'All 6 Steps',
-  'Immersive Guided Training Experience',
+  {
+    title: 'Move Better',
+    description: 'Improve mobility, stability, and movement efficiency',
+  },
+  {
+    title: 'Build Strength & Power',
+    description: 'Increase force production and explosive performance',
+  },
+  {
+    title: 'Improve Conditioning',
+    description: 'Train longer and perform at a higher intensity',
+  },
+  {
+    title: 'Recover Faster',
+    description: 'Stay ready for your next training session',
+  },
+  {
+    title: 'Improve Overall Performance',
+    description: 'Develop the physical qualities that drive performance',
+  },
 ];
 
 export function getFullProgramSessionConfig() {
