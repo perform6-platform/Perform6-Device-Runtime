@@ -5,12 +5,13 @@ export function getTouchScreenRoute(): string {
   return '/touch';
 }
 
+/** Real-device display routes (also used by simulator after profile pick). */
 export function getDisplayRoute(profile: HardwareProfile): string {
   switch (profile) {
     case 'XC4055':
-      return '/simulator/xc4055';
+      return '/display/xc4055';
     case 'HD226':
-      return `/simulator/hd226/${runtimeConfig.clusterMember.toLowerCase()}`;
+      return '/display/hd226';
     case 'XT2145':
     default:
       return getTouchScreenRoute();
@@ -19,12 +20,15 @@ export function getDisplayRoute(profile: HardwareProfile): string {
 
 export function getPostRegistrationRoute(profile: HardwareProfile): string {
   if (runtimeConfig.isSimulator) {
-    // Keep XT on the split touch + HDMI-out simulator (not bare /touch).
+    // Simulator chrome: split XT layout + multi-pane XC/HD previews
     if (profile === 'XT2145') return '/simulator/xt2145';
-    if (profile === 'XC4055' || profile === 'HD226') {
-      return getDisplayRoute(profile);
+    if (profile === 'XC4055') return '/simulator/xc4055';
+    if (profile === 'HD226') {
+      return `/simulator/hd226/${runtimeConfig.clusterMember.toLowerCase()}`;
     }
   }
+
+  // BrightSign / production builds
   if (profile === 'XC4055' || profile === 'HD226') {
     return getDisplayRoute(profile);
   }

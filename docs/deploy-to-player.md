@@ -41,16 +41,18 @@ Skip upload: `SKIP_R2_UPLOAD=1 npm run release:zip:hd226 -- 1.0.0`
 
 With API `STORAGE_DRIVER=r2`, **Startup Files** lists/downloads packages **from R2**.
 
-Pick a parent once → folder like `perform6-xt2145-0.1.0` is saved → copy its **contents** to the SD **root**:
+Pick a parent once → folder like `perform6-hd226-device_a-1.1.0` is saved → copy its **contents** to the SD **root** (not nested in a subfolder):
 
 | File / folder | Required |
 |---------------|----------|
-| `autorun.brs` | yes |
+| `autorun.brs` | yes — BrightSign boots this from storage root |
 | `index.html` | yes |
 | `assets/` | yes |
 | `perform6-release.json` | optional |
 
-Insert SD → boot → pairing code → Admin claim/register → sync → playback.
+BrightSign production builds use **HashRouter** (`file:///index.html#/…`) so routing works under `file://`.
+
+Insert SD → boot → pairing UI (`#/pairing`) → Admin claim/register → sync → playback.
 
 ## Dev without device
 
