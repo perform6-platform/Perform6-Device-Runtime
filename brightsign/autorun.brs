@@ -7,7 +7,9 @@ Sub Main()
   msgPort = CreateObject("roMessagePort")
 
   touch = CreateObject("roTouchScreen")
-  touch.Enable(true)
+  if type(touch) = "roTouchScreen" then
+    touch.EnableCursor(true)
+  end if
 
   vm = CreateObject("roVideoMode")
   rect = CreateObject("roRectangle", 0, 0, vm.GetResX(), vm.GetResY())
