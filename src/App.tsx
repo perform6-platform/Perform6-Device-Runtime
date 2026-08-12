@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { runtimeConfig } from './config/runtime';
 import { RequirePaired } from './components/routing/RequirePaired';
 import { DebugConsole } from './components/debug/DebugConsole';
+import { DeviceStatusOverlay } from './components/status';
 import Home from './pages/Home';
 import Pairing from './pages/Pairing';
 import RuntimeDashboard from './pages/RuntimeDashboard';
@@ -20,6 +21,7 @@ function RootRedirect() {
 export default function App() {
   return (
     <>
+      <DeviceStatusOverlay />
       <Routes>
         <Route path="/" element={<RootRedirect />} />
         <Route path="/pairing" element={<Pairing />} />

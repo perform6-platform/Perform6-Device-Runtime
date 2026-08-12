@@ -4,15 +4,69 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Perform6</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: #00050a;
+        color: #ffffff;
+        font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+      }
+      #boot-status {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        text-align: center;
+        padding: 32px;
+      }
+      #boot-status .brand {
+        font-size: 14px;
+        letter-spacing: 0.28em;
+        text-transform: uppercase;
+        color: #00e5ff;
+        font-weight: 600;
+      }
+      #boot-status .msg {
+        font-size: 28px;
+        font-weight: 600;
+      }
+      #boot-status .hint {
+        font-size: 15px;
+        color: rgba(255, 255, 255, 0.55);
+        max-width: 28rem;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="boot-status">
+        <div class="brand">Perform6</div>
+        <div class="msg" id="boot-msg">Loading...</div>
+        <div class="hint" id="boot-hint">
+          Starting device runtime. If this stays here, the app script failed to load. Check that
+          the assets/ folder is on the SD card root next to index.html.
+        </div>
+      </div>
+    </div>
+    <script>
+      // If React never mounts, surface a clear on-device message (BrightSign file://).
+      window.setTimeout(function () {
+        if (!document.getElementById('root') || document.getElementById('boot-status')) {
+          var msg = document.getElementById('boot-msg');
+          var hint = document.getElementById('boot-hint');
+          if (msg) msg.textContent = 'App script did not start';
+          if (hint) {
+            hint.textContent =
+              'Verify SD root has autorun.brs, index.html, and assets/*.js. Then reboot the player.';
+          }
+        }
+      }, 15000);
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

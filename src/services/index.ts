@@ -16,3 +16,4 @@ export * from './runtime';
 export * from './credentialStore';
 export * from './credentials';
 export * from './registrationWatcher';
+export * from './networkHealth';

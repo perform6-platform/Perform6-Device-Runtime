@@ -319,11 +319,19 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
 
         pairingStarted.current = false;
         setRegistrationStatus('error');
-        setSyncState({ runtimePhase: 'error' });
+        const errMsg =
+          e instanceof ApiError
+            ? `Pairing failed: ${e.message}`
+            : e instanceof TypeError
+              ? 'Internet / network not connected to this device'
+              : e instanceof Error
+                ? e.message
+                : 'Pairing failed';
+        setSyncState({ runtimePhase: 'error', error: errMsg });
         setConnectionStatus('offline');
         pushDebugLog({
           category: 'pairing',
-          message: e instanceof ApiError ? `Pairing failed: ${e.message}` : 'Pairing failed',
+          message: errMsg,
         });
       }
     },
