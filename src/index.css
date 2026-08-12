@@ -17,8 +17,9 @@
   --color-p6-text-dim: rgba(255, 255, 255, 0.38);
 
   /* Typography scale (touchscreen 1920×1080) */
-  --font-p6: 'Inter', system-ui, sans-serif;
-  --font-p6-display: 'Inter', system-ui, sans-serif;
+  /* System fonts only — no Google Fonts CDN (BrightSign file:// / offline) */
+  --font-p6: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-p6-display: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --text-p6-hero: 2.75rem;
   --text-p6-title: 1.625rem;
   --text-p6-heading: 1.25rem;

@@ -1,11 +1,14 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { runtimeConfig } from './config/runtime';
+import { getPostRegistrationRoute } from './services/runtime';
 import { RequirePaired } from './components/routing/RequirePaired';
 import { DebugConsole } from './components/debug/DebugConsole';
 import { DeviceStatusOverlay } from './components/status';
 import Home from './pages/Home';
 import Pairing from './pages/Pairing';
 import RuntimeDashboard from './pages/RuntimeDashboard';
+import XC4055Display from './pages/display/XC4055Display';
+import HD226Display from './pages/display/HD226Display';
 import SimulatorLauncher from './simulator/SimulatorLauncher';
 import XT2145Simulator from './simulator/XT2145Simulator';
 import XC4055Simulator from './simulator/XC4055Simulator';
@@ -15,7 +18,15 @@ function RootRedirect() {
   if (runtimeConfig.isSimulator) {
     return <Navigate to="/simulator" replace />;
   }
-  return <Navigate to="/touch" replace />;
+  // BrightSign: land on the profile home (RequirePaired → /pairing until claimed)
+  return <Navigate to={getPostRegistrationRoute(runtimeConfig.hardwareProfile)} replace />;
+}
+
+function Paired({ children }: { children: React.ReactNode }) {
+  if (runtimeConfig.isSimulator) {
+    return <>{children}</>;
+  }
+  return <RequirePaired redirectTo="/pairing">{children}</RequirePaired>;
 }
 
 export default function App() {
@@ -26,6 +37,24 @@ export default function App() {
         <Route path="/" element={<RootRedirect />} />
         <Route path="/pairing" element={<Pairing />} />
         <Route path="/dashboard" element={<RuntimeDashboard />} />
+
+        {/* Production BrightSign display surfaces (also reachable in sim for smoke tests) */}
+        <Route
+          path="/display/xc4055"
+          element={
+            <Paired>
+              <XC4055Display />
+            </Paired>
+          }
+        />
+        <Route
+          path="/display/hd226"
+          element={
+            <Paired>
+              <HD226Display />
+            </Paired>
+          }
+        />
 
         {runtimeConfig.isSimulator && (
           <>
@@ -70,8 +99,9 @@ export default function App() {
           }
         />
 
-        {/* Legacy route — preserve direct access to touch UI */}
         <Route path="/home" element={<Navigate to="/touch" replace />} />
+        {/* Unknown paths → profile home (helps file:// / hash recovery) */}
+        <Route path="*" element={<RootRedirect />} />
       </Routes>
 
       {runtimeConfig.isSimulator && <DebugConsole />}
