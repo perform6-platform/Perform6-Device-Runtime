@@ -1,29 +1,11 @@
 ' Perform6 platform startup — hardened for mixed BrightSignOS (Series 5/6)
 ' Deploy: copy this file + index.html + assets/ to SD card ROOT (not a subfolder).
-' BrightSign looks for autorun.brs at the storage root.
 '
 ' Design goals:
-' - Never call methods on invalid objects (avoids ERR LED x10 script crash)
-' - EnableZoneSupport + auto video mode before HtmlWidget
-' - Dual HtmlWidget create paths (config AA, then classic SetUrl)
-' - Optional touch only; skip EnableCursor (HTML mouse_enabled is enough)
-' - Best-effort DWS on :80 for browser debugging without serial
-
-Sub EnableDiagnosticWebServer()
-  nc = CreateObject("roNetworkConfiguration", 0)
-  if type(nc) <> "roNetworkConfiguration" then
-    nc = CreateObject("roNetworkConfiguration", 1)
-  end if
-
-  if type(nc) = "roNetworkConfiguration" then
-    dws = {
-      port: "80"
-      password: ""
-    }
-    nc.SetupDWS(dws)
-    nc.Apply()
-  end if
-End Sub
+' - Prefer HtmlWidget config AA so brightsign_js_objects_enabled works (BSDeviceInfo)
+' - AllowJavaScriptUrls for local pages
+' - Never call methods on invalid objects (avoids ERR LED x10)
+' - Best-effort DWS on :80
 
 Sub Main()
   print "=== Perform6: autorun start ==="
@@ -47,7 +29,6 @@ Sub Main()
     HangForever()
   end if
 
-  ' Let HDMI/EDID settle on a real mode before sizing the widget
   vm.SetMode("auto")
   Sleep(1000)
 
@@ -68,12 +49,11 @@ Sub Main()
     HangForever()
   end if
 
-  EnableDiagnosticWebServer()
+  EnableJsObjectsSafe(html)
 
   print "=== Perform6: Show() HtmlWidget ==="
   html.Show()
 
-  ' Stay alive; print HTML load events for serial / console debugging
   while true
     ev = wait(0, msgPort)
     if type(ev) = "roHtmlWidgetEvent" then
@@ -95,8 +75,6 @@ Sub HangForever()
   end while
 End Sub
 
-' Touch hardware is optional (e.g. HD226 display-only). Never call EnableCursor —
-' that method has caused issues on builds without a cursor bitmap / mouse.
 Sub InitTouchSafe()
   touch = CreateObject("roTouchScreen")
   if type(touch) <> "roTouchScreen" then
@@ -130,21 +108,20 @@ Function GetVideoSize(vm as Object) as Object
   return size
 End Function
 
-' Classic SetUrl first (widest OS support, avoids 3-arg ctor aborts on older BOS).
-' Config AA second (enables brightsign_js_objects when available).
+' Config AA first (JS objects). Classic fallback second.
 Function CreateHtmlWidgetSafe(rect as Object, msgPort as Object) as Object
   url$ = "file:///index.html"
 
-  html = CreateHtmlWidgetClassic(rect, msgPort, url$)
-  if type(html) = "roHtmlWidget" then
-    print "=== Perform6: HtmlWidget path = classic ==="
-    return html
-  end if
-
-  print "=== Perform6: classic failed — trying config AA ==="
   html = CreateHtmlWidgetConfig(rect, msgPort, url$)
   if type(html) = "roHtmlWidget" then
     print "=== Perform6: HtmlWidget path = config AA ==="
+    return html
+  end if
+
+  print "=== Perform6: config AA failed — trying classic ==="
+  html = CreateHtmlWidgetClassic(rect, msgPort, url$)
+  if type(html) = "roHtmlWidget" then
+    print "=== Perform6: HtmlWidget path = classic ==="
     return html
   end if
 
@@ -183,7 +160,23 @@ Function CreateHtmlWidgetClassic(rect as Object, msgPort as Object, url$ as Stri
   return html
 End Function
 
-' Helps debugging via http://<player-ip>/ without a serial cable.
+' Enable BSDeviceInfo / BrightScript-JS objects for local file:// pages.
+Sub EnableJsObjectsSafe(html as Object)
+  if type(html) <> "roHtmlWidget" then
+    return
+  end if
+
+  urls = CreateObject("roAssociativeArray")
+  if type(urls) <> "roAssociativeArray" then
+    return
+  end if
+
+  ' all classes for local + any URL (safest for file:///index.html)
+  urls.all = "*"
+  html.AllowJavaScriptUrls(urls)
+  print "=== Perform6: AllowJavaScriptUrls(all=*) ==="
+End Sub
+
 Sub EnableDiagnosticWebServer()
   nc = CreateObject("roNetworkConfiguration", 0)
   if type(nc) <> "roNetworkConfiguration" then

@@ -5,6 +5,7 @@ import { defineConfig } from 'vite';
 /**
  * BrightSign loads via file:/// — ES modules + crossorigin often leave a stuck boot screen.
  * Ship a single classic IIFE script (deferred) so the HTML widget can execute offline.
+ * Stable filenames (app.js / style.css) avoid hash mismatch when copying packages.
  */
 function brightsignHtmlPlugin() {
   return {
@@ -20,9 +21,16 @@ function brightsignHtmlPlugin() {
       next = next.replace(
         /<script(?![^>]*\bdefer\b)([^>]*\ssrc="\.\/assets\/[^"]+\.js"[^>]*)><\/script>/gi,
         (_m, attrs) => {
-          moved.push(`<script defer${attrs}></script>`);
+          const fixed = attrs.replace(/src="\.\/assets\/[^"]+\.js"/i, 'src="./assets/app.js"');
+          moved.push(`<script defer${fixed}></script>`);
           return '';
         },
+      );
+
+      // Prefer stable CSS name when present
+      next = next.replace(
+        /href="\.\/assets\/[^"]+\.css"/gi,
+        'href="./assets/style.css"',
       );
 
       if (moved.length > 0) {
@@ -48,8 +56,12 @@ export default defineConfig({
       output: {
         format: 'iife',
         inlineDynamicImports: true,
-        entryFileNames: 'assets/[name]-[hash].js',
-        assetFileNames: 'assets/[name]-[hash][extname]',
+        entryFileNames: 'assets/app.js',
+        assetFileNames: (info) => {
+          const name = info.name ?? '';
+          if (name.endsWith('.css')) return 'assets/style.css';
+          return 'assets/[name]-[hash][extname]';
+        },
       },
     },
   },

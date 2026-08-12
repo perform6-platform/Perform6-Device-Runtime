@@ -6,6 +6,10 @@ import type {
   DisplayTarget,
   HardwareProfile,
 } from '../shared/types';
+import {
+  readBrightSignDeviceInfo,
+  shouldUseBrightSignDeviceApis,
+} from '../platform/brightsignDevice';
 
 const STORAGE_PREFIX = 'perform6-sim-serial';
 
@@ -109,6 +113,23 @@ export async function collectDeviceInfo(
     return createMockDeviceInfo(overrides);
   }
 
-  // BrightSign hardware: extend with brightsign platform APIs later
-  return createMockDeviceInfo(overrides);
+  if (shouldUseBrightSignDeviceApis()) {
+    const real = readBrightSignDeviceInfo(overrides);
+    if (real) {
+      console.info('[Perform6] Device info from BSDeviceInfo', {
+        model: real.model,
+        serialNumber: real.serialNumber,
+        macAddress: real.macAddress,
+        firmwareVersion: real.firmwareVersion,
+      });
+      return real;
+    }
+    console.warn('[Perform6] Falling back to baked profile device info (no BSDeviceInfo)');
+  }
+
+  return createMockDeviceInfo({
+    ...overrides,
+    serialNumber: overrides.serialNumber ?? (runtimeConfig.simSerialNumber || undefined),
+    ipAddress: overrides.ipAddress ?? '',
+  });
 }

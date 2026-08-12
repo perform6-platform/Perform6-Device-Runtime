@@ -203,11 +203,37 @@ function main() {
         version,
         clusterMember: member || null,
         builtAt: new Date().toISOString(),
-        files: ['autorun.brs', 'index.html', 'assets/'],
+        files: ['autorun.brs', 'index.html', 'assets/', 'README-SD.txt'],
+        entryScript: 'assets/app.js',
       },
       null,
       2,
     ),
+  );
+
+  fs.writeFileSync(
+    path.join(outFolder, 'README-SD.txt'),
+    [
+      `Perform6 BrightSign package — ${profileKey}${member ? ` / ${member}` : ''}`,
+      `Version: ${version}`,
+      '',
+      'IMPORTANT: Use this zip ONLY on matching hardware.',
+      `  XT2145  -> perform6-xt2145-*.zip`,
+      `  XC4055  -> perform6-xc4055-*.zip`,
+      `  HD226   -> perform6-hd226-*.zip`,
+      'Do NOT mix files from different zips.',
+      '',
+      'SD card root (copy CONTENTS of this folder, not the folder itself):',
+      '  autorun.brs',
+      '  index.html',
+      '  assets/app.js',
+      '  assets/style.css',
+      '  assets/*.png',
+      '',
+      'After copy, reboot the player.',
+      'DWS (browser): http://<player-ip>/',
+      '',
+    ].join('\n'),
   );
 
   // Optional single-file package for cloud / R2 / email
