@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useDeviceContext } from '../../contexts/DeviceContext';
 import { usePairing, useRuntime, useSync } from '../../hooks/useRuntime';
-import { runtimeConfig } from '../../config/runtime';
 import {
   probeApiReachability,
   type NetworkHealth,
@@ -24,8 +23,7 @@ export function DeviceStatusOverlay() {
   const [busy, setBusy] = useState(false);
 
   const runProbe = useCallback(async () => {
-    setHealth('checking');
-    setDetail('Checking network…');
+    // Avoid flipping UI through a "checking" flash every poll on BrightSign.
     const result = await probeApiReachability();
     setHealth(result.health);
     setDetail(result.detail);
@@ -60,18 +58,13 @@ export function DeviceStatusOverlay() {
   const phaseError = syncState.runtimePhase === 'error' || registrationStatus === 'error';
   const storeOffline = connectionStatus === 'offline';
 
+  // Do not cover Pairing with a full-screen "checking" layer — that causes a
+  // bright flash on BrightSign. Pairing/Home already show boot status.
   let kind: OverlayKind = 'none';
-  if (health === 'checking' && connectionStatus === 'connecting') {
-    kind = 'checking';
+  if (phaseError || syncError) {
+    kind = 'error';
   } else if (health === 'offline' || (storeOffline && phaseError)) {
     kind = 'offline';
-  } else if (phaseError || syncError) {
-    kind = 'error';
-  }
-
-  // Simulator launcher / happy path — don't block UI with checking flash
-  if (runtimeConfig.isSimulator && kind === 'checking') {
-    kind = 'none';
   }
 
   if (kind === 'none') return null;
@@ -79,19 +72,15 @@ export function DeviceStatusOverlay() {
   const title =
     kind === 'offline'
       ? 'Internet is not connected to this device'
-      : kind === 'checking'
-        ? 'Connecting…'
-        : 'A problem occurred';
+      : 'A problem occurred';
 
   const body =
     kind === 'offline'
       ? detail ||
         'Check the Ethernet / Wi‑Fi cable and router. The player cannot reach the Perform6 server.'
-      : kind === 'checking'
-        ? 'Please wait while the player checks the network and starts up.'
-        : syncError ||
-          detail ||
-          'Pairing or sync failed. See details below and retry.';
+      : syncError ||
+        detail ||
+        'Pairing or sync failed. See details below and retry.';
 
   async function handleRetry() {
     setBusy(true);

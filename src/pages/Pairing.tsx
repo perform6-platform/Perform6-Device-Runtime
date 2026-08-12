@@ -101,8 +101,24 @@ export default function Pairing() {
 
   if (loading && !deviceInfo) {
     return (
-      <main className="flex h-full items-center justify-center">
-        <p className="text-slate-400">Collecting device information…</p>
+      <main className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
+        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-p6-cyan">Perform6</p>
+        <p className="text-2xl font-semibold text-white">Collecting device information…</p>
+        <p className="max-w-md text-sm text-slate-400">
+          Reading BrightSign hardware identity and starting pairing.
+        </p>
+      </main>
+    );
+  }
+
+  if (!runtimeConfig.isSimulator && !deviceInfo) {
+    return (
+      <main className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
+        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-p6-cyan">Perform6</p>
+        <p className="text-2xl font-semibold text-white">Starting device runtime…</p>
+        <p className="max-w-md text-sm text-slate-400">
+          Please wait. If this stays here, reboot the player or check the SD card package.
+        </p>
       </main>
     );
   }

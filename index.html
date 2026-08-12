@@ -9,7 +9,7 @@
       body {
         height: 100%;
         margin: 0;
-        background: #00050a;
+        background: #000000;
         color: #ffffff;
         font-family: system-ui, -apple-system, Segoe UI, sans-serif;
       }
@@ -23,22 +23,25 @@
         gap: 12px;
         text-align: center;
         padding: 32px;
+        z-index: 2147483647;
       }
       #boot-status .brand {
-        font-size: 14px;
+        font-size: 18px;
         letter-spacing: 0.28em;
         text-transform: uppercase;
         color: #00e5ff;
-        font-weight: 600;
+        font-weight: 700;
       }
       #boot-status .msg {
-        font-size: 28px;
-        font-weight: 600;
+        font-size: 32px;
+        font-weight: 700;
+        color: #ffffff;
       }
       #boot-status .hint {
-        font-size: 15px;
-        color: rgba(255, 255, 255, 0.55);
-        max-width: 28rem;
+        font-size: 16px;
+        color: rgba(255, 255, 255, 0.7);
+        max-width: 32rem;
+        line-height: 1.45;
       }
     </style>
   </head>
@@ -46,26 +49,35 @@
     <div id="root">
       <div id="boot-status">
         <div class="brand">Perform6</div>
-        <div class="msg" id="boot-msg">Loading...</div>
-        <div class="hint" id="boot-hint">
-          Starting device runtime. If this stays here, the app script failed to load. Check that
-          assets/app.js is on the SD card root next to index.html (do not mix XT/HD/XC zips).
-        </div>
+        <div class="msg" id="boot-msg">Loading app...</div>
+        <div class="hint" id="boot-hint">Please wait while the player starts.</div>
       </div>
     </div>
     <script>
-      // If React never mounts, surface a clear on-device message (BrightSign file://).
-      window.setTimeout(function () {
-        if (!document.getElementById('root') || document.getElementById('boot-status')) {
+      (function () {
+        function fail(title, detail) {
           var msg = document.getElementById('boot-msg');
           var hint = document.getElementById('boot-hint');
-          if (msg) msg.textContent = 'App script did not start';
-          if (hint) {
-            hint.textContent =
-              'Verify SD root has autorun.brs, index.html, and assets/*.js. Then reboot the player.';
-          }
+          if (msg) msg.textContent = title;
+          if (hint) hint.textContent = detail;
         }
-      }, 15000);
+
+        window.__perform6ScriptFailed = function () {
+          fail(
+            'Could not load assets/app.js',
+            'Missing or nested assets folder. Copy assets/ next to index.html on the SD root, then reboot.'
+          );
+        };
+
+        window.setTimeout(function () {
+          if (document.getElementById('boot-status')) {
+            fail(
+              'App did not start',
+              'SD card root must contain: autorun.brs, index.html, and assets/app.js (same folder level). Extract the zip, open the folder, copy those items to the card root - not inside another folder.'
+            );
+          }
+        }, 20000);
+      })();
     </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>

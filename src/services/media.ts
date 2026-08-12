@@ -114,7 +114,9 @@ export async function downloadMediaItem(
     }
   }
 
-  const blob = new Blob(chunks, { type: response.headers.get('content-type') ?? 'video/mp4' });
+  const blob = new Blob(chunks as BlobPart[], {
+    type: response.headers.get('content-type') ?? 'video/mp4',
+  });
 
   if (item.checksum) {
     const actual = await sha256Hex(blob);

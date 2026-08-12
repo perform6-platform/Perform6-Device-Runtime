@@ -86,6 +86,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
 
   const pairingStarted = useRef(false);
   const registeredNavigated = useRef(false);
+  const brightSignBootStarted = useRef(false);
   const activeDeviceInfo = useRef<DeviceInfo | null>(null);
 
   const credentialFetchStarted = useRef(false);
@@ -527,6 +528,57 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     pairingStarted.current = false;
     void executePairing(info);
   }, [deviceInfo, executePairing]);
+
+  // BrightSign / file:// production: collect hardware identity on boot.
+  // Existing idle→executePairing effect starts pairing once deviceInfo is set.
+  // Simulator uses beginSimulatorProfile() instead — do not auto-boot there.
+  useEffect(() => {
+    if (runtimeConfig.isSimulator) return;
+    if (brightSignBootStarted.current) return;
+    brightSignBootStarted.current = true;
+
+    void (async () => {
+      try {
+        pushDebugLog({
+          category: 'device',
+          message: `BrightSign boot — collecting device info (${runtimeConfig.hardwareProfile})`,
+        });
+        console.info(
+          '[Perform6] BrightSign boot — collecting device info',
+          runtimeConfig.hardwareProfile,
+        );
+
+        const info = await refreshDeviceInfo({
+          hardwareProfile: runtimeConfig.hardwareProfile,
+          deploymentType: profileDefaultDeployment(runtimeConfig.hardwareProfile),
+          displayTarget:
+            runtimeConfig.hardwareProfile === 'XC4055' ? runtimeConfig.displayTarget : undefined,
+          clusterMember:
+            runtimeConfig.hardwareProfile === 'HD226' ? runtimeConfig.clusterMember : undefined,
+        });
+
+        console.info('[Perform6] BrightSign boot — device ready', {
+          model: info.model,
+          serialNumber: info.serialNumber,
+          hardwareProfile: info.hardwareProfile,
+        });
+      } catch (e) {
+        const errMsg =
+          e instanceof Error ? e.message : 'Failed to start device runtime on BrightSign';
+        console.error('[Perform6] BrightSign boot failed', e);
+        setRegistrationStatus('error');
+        setSyncState({ runtimePhase: 'error', error: errMsg });
+        setConnectionStatus('offline');
+        pushDebugLog({ category: 'device', message: errMsg });
+      }
+    })();
+  }, [
+    pushDebugLog,
+    refreshDeviceInfo,
+    setConnectionStatus,
+    setRegistrationStatus,
+    setSyncState,
+  ]);
 
   useEffect(() => {
     if (runtimeConfig.isSimulator) return;

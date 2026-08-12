@@ -41,7 +41,7 @@ body,
   overflow: hidden;
   touch-action: manipulation;
   user-select: none;
-  background: var(--color-p6-bg);
+  background: #000000;
   color: var(--color-p6-text);
   font-family: var(--font-p6);
   -webkit-font-smoothing: antialiased;

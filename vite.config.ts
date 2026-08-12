@@ -21,8 +21,9 @@ function brightsignHtmlPlugin() {
       next = next.replace(
         /<script(?![^>]*\bdefer\b)([^>]*\ssrc="\.\/assets\/[^"]+\.js"[^>]*)><\/script>/gi,
         (_m, attrs) => {
-          const fixed = attrs.replace(/src="\.\/assets\/[^"]+\.js"/i, 'src="./assets/app.js"');
-          moved.push(`<script defer${fixed}></script>`);
+          moved.push(
+            `<script defer src="./assets/app.js" onerror="window.__perform6ScriptFailed&&window.__perform6ScriptFailed()"></script>`,
+          );
           return '';
         },
       );
@@ -31,6 +32,12 @@ function brightsignHtmlPlugin() {
       next = next.replace(
         /href="\.\/assets\/[^"]+\.css"/gi,
         'href="./assets/style.css"',
+      );
+
+      // Ensure deferred app.js has a hard failure path on BrightSign file://
+      next = next.replace(
+        /<script([^>]*\ssrc="\.\/assets\/app\.js"[^>]*)><\/script>/gi,
+        '<script defer src="./assets/app.js" onerror="window.__perform6ScriptFailed&&window.__perform6ScriptFailed()"></script>',
       );
 
       if (moved.length > 0) {
