@@ -299,7 +299,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        const isNetworkError = e instanceof TypeError;
+        const isNetworkError =
+          e instanceof TypeError || (e instanceof ApiError && e.status === 0);
         if (runtimeConfig.isSimulator && isNetworkError) {
           const mockCode = Math.floor(100000 + Math.random() * 900000).toString();
           setPairing({
@@ -324,10 +325,11 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           e instanceof ApiError
             ? `Pairing failed: ${e.message}`
             : e instanceof TypeError
-              ? 'Internet / network not connected to this device'
+              ? 'Internet / network not connected to this device (or HTTPS/TLS to API failed)'
               : e instanceof Error
                 ? e.message
                 : 'Pairing failed';
+        console.error('[Perform6] Pairing API failed', e);
         setSyncState({ runtimePhase: 'error', error: errMsg });
         setConnectionStatus('offline');
         pushDebugLog({

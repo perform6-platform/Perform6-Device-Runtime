@@ -62,6 +62,8 @@
           if (hint) hint.textContent = detail;
         }
 
+        window.__perform6ShowBootError = fail;
+
         window.__perform6ScriptFailed = function () {
           fail(
             'Could not load assets/app.js',
@@ -69,13 +71,23 @@
           );
         };
 
+        // Distinguish: script missing vs script ran but React never replaced #boot-status.
         window.setTimeout(function () {
-          if (document.getElementById('boot-status')) {
+          if (!document.getElementById('boot-status')) return;
+          if (window.__perform6Mounted) return;
+
+          if (window.__perform6ScriptStarted) {
             fail(
-              'App did not start',
-              'SD card root must contain: autorun.brs, index.html, and assets/app.js (same folder level). Extract the zip, open the folder, copy those items to the card root - not inside another folder.'
+              'App script ran but UI did not mount',
+              'assets/app.js loaded. React failed to replace this screen. Check DWS / serial logs for [Perform6] React mount failed.'
             );
+            return;
           }
+
+          fail(
+            'App did not start',
+            'SD card root must contain: autorun.brs, index.html, and assets/app.js (same folder level). Extract the zip, open the inner folder, copy those items to the card root — not inside another folder.'
+          );
         }, 20000);
       })();
     </script>

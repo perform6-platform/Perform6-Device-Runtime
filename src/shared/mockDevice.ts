@@ -41,7 +41,11 @@ function persistSerial(
   serialNumber: string,
   clusterMember?: ClusterMember,
 ): void {
-  localStorage.setItem(storageKey(profile, clusterMember), serialNumber);
+  try {
+    localStorage.setItem(storageKey(profile, clusterMember), serialNumber);
+  } catch {
+    // BrightSign / private-mode storage can throw — serial still works in-memory this boot.
+  }
 }
 
 /** Backend expects format like XC4055-001234 */
