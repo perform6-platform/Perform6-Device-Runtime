@@ -46,12 +46,20 @@ export interface NormalizedPairingResult {
   apiToken?: string;
 }
 
+/** Full device snapshot for POST /devices/pair — stored by backend in hardwareInfo. */
 export function deviceInfoToPairPayload(device: DeviceInfo): PairDevicePayload {
+  const { raw, ...deviceCore } = device;
+
   const hardwareInfo: Record<string, unknown> = {
+    // Entire DeviceInfo JSON (admin can see full player identity)
+    device: deviceCore,
+    ...(raw ?? {}),
     hardwareProfile: device.hardwareProfile,
     deploymentType: device.deploymentType,
     runtimeMode: runtimeConfig.runtimeMode,
+    runtimeVersion: runtimeConfig.runtimeVersion,
     simulator: runtimeConfig.isSimulator,
+    collectedAt: new Date().toISOString(),
   };
 
   if (device.hardwareProfile === 'XC4055') {
@@ -99,10 +107,12 @@ export function normalizePairResponse(data: PairDeviceResponseData): NormalizedP
 }
 
 export async function pairDevice(device: DeviceInfo): Promise<NormalizedPairingResult> {
+  const payload = deviceInfoToPairPayload(device);
+  console.info('[Perform6] Pair payload → backend', payload);
   try {
     const data = await apiFetchData<PairDeviceResponseData>('/devices/pair', {
       method: 'POST',
-      body: JSON.stringify(deviceInfoToPairPayload(device)),
+      body: JSON.stringify(payload),
     });
     return normalizePairResponse(data);
   } catch (e) {

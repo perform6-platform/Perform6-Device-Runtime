@@ -4,6 +4,7 @@ import { getPostRegistrationRoute } from './services/runtime';
 import { RequirePaired } from './components/routing/RequirePaired';
 import { DebugConsole } from './components/debug/DebugConsole';
 import { DeviceStatusOverlay, BootSplash } from './components/status';
+import { isDeviceReady } from './stores/deviceStore';
 import Home from './pages/Home';
 import Pairing from './pages/Pairing';
 import RuntimeDashboard from './pages/RuntimeDashboard';
@@ -18,7 +19,10 @@ function RootRedirect() {
   if (runtimeConfig.isSimulator) {
     return <Navigate to="/simulator" replace />;
   }
-  // BrightSign: land on the profile home (RequirePaired → /pairing until claimed)
+  // Unpaired BrightSign players always land on LCD pairing screen.
+  if (!isDeviceReady()) {
+    return <Navigate to="/pairing" replace />;
+  }
   return <Navigate to={getPostRegistrationRoute(runtimeConfig.hardwareProfile)} replace />;
 }
 

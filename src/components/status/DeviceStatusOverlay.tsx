@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useDeviceContext } from '../../contexts/DeviceContext';
 import { usePairing, useRuntime, useSync } from '../../hooks/useRuntime';
+import { useDeviceStore } from '../../stores/deviceStore';
 import {
   probeApiReachability,
   type NetworkHealth,
@@ -10,20 +11,20 @@ type OverlayKind = 'none' | 'checking' | 'offline' | 'error';
 
 /**
  * Full-screen status layers for BrightSign (and real runtime errors).
- * Keeps the display from looking like a silent black screen when offline or failing.
+ * Never covers an active pairing-code LCD — offline probe must not hide digits.
  */
 export function DeviceStatusOverlay() {
   const { deviceInfo } = useDeviceContext();
   const { connectionStatus } = useRuntime();
   const { registrationStatus, retryPairing } = usePairing();
   const { syncState } = useSync();
+  const pairingCode = useDeviceStore((s) => s.pairingCode);
 
   const [health, setHealth] = useState<NetworkHealth>('checking');
   const [detail, setDetail] = useState('Checking network…');
   const [busy, setBusy] = useState(false);
 
   const runProbe = useCallback(async () => {
-    // Avoid flipping UI through a "checking" flash every poll on BrightSign.
     const result = await probeApiReachability();
     setHealth(result.health);
     setDetail(result.detail);
@@ -58,12 +59,17 @@ export function DeviceStatusOverlay() {
   const phaseError = syncState.runtimePhase === 'error' || registrationStatus === 'error';
   const storeOffline = connectionStatus === 'offline';
 
-  // Do not cover Pairing with a full-screen "checking" layer — that causes a
-  // bright flash on BrightSign. Pairing/Home already show boot status.
+  // Pairing LCD owns the screen while a code is shown or claim is pending.
+  const pairingLcdActive =
+    Boolean(pairingCode) ||
+    registrationStatus === 'waiting_for_registration' ||
+    registrationStatus === 'paired' ||
+    registrationStatus === 'pairing';
+
   let kind: OverlayKind = 'none';
   if (phaseError || syncError) {
     kind = 'error';
-  } else if (health === 'offline' || (storeOffline && phaseError)) {
+  } else if (!pairingLcdActive && (health === 'offline' || (storeOffline && phaseError))) {
     kind = 'offline';
   }
 
@@ -89,6 +95,8 @@ export function DeviceStatusOverlay() {
     try {
       const next = await runProbe();
       if (next === 'online' && (registrationStatus === 'error' || phaseError)) {
+        retryPairing();
+      } else if (registrationStatus === 'error' || phaseError) {
         retryPairing();
       }
     } finally {

@@ -18,6 +18,12 @@ export interface ApiEnvelope<T> {
   timestamp?: string;
 }
 
+export type ApiFetchOptions = RequestInit & {
+  token?: string;
+  deviceId?: string;
+  timeoutMs?: number;
+};
+
 /** Prefer backend `message` / `error` fields so LCD can show a short readable string. */
 export function formatApiFailureMessage(status: number, path: string, body: string): string {
   const prefix = `API ${status} ${path}`;
@@ -46,22 +52,43 @@ export function formatApiFailureMessage(status: number, path: string, body: stri
   }
 }
 
-export async function apiFetch<T>(
-  path: string,
-  options: RequestInit & { token?: string; deviceId?: string } = {},
-): Promise<T> {
-  const { token, deviceId, ...init } = options;
+export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
+  const { token, deviceId, timeoutMs = 45_000, signal: outerSignal, ...init } = options;
   const headers = new Headers(init.headers);
   headers.set('Content-Type', 'application/json');
   if (token) headers.set('Authorization', `Bearer ${token}`);
   if (deviceId) headers.set('X-Device-Id', deviceId);
 
   const url = `${runtimeConfig.apiBaseUrl}${path}`;
-  let res: Response;
+  const controller = new AbortController();
+  const timer =
+    timeoutMs > 0 ? window.setTimeout(() => controller.abort(), timeoutMs) : undefined;
+  if (outerSignal) {
+    if (outerSignal.aborted) controller.abort();
+    else outerSignal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+
   try {
-    res = await fetch(url, { ...init, headers });
+    const res = await fetch(url, { ...init, headers, signal: controller.signal });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new ApiError(res.status, path, formatApiFailureMessage(res.status, path, body));
+    }
+
+    if (res.status === 204) return undefined as T;
+    return (await res.json()) as T;
   } catch (e) {
+    if (e instanceof ApiError) throw e;
     const raw = e instanceof Error ? e.message : String(e);
+    const name = e instanceof Error ? e.name : '';
+    if (name === 'AbortError') {
+      throw new ApiError(
+        0,
+        path,
+        `Request timed out after ${timeoutMs}ms for ${path}. Check network path to ${runtimeConfig.apiBaseUrl}`,
+      );
+    }
     const lower = raw.toLowerCase();
     const tlsHint =
       lower.includes('cert') ||
@@ -78,22 +105,13 @@ export async function apiFetch<T>(
           ? `Network request failed for ${path}. Check Ethernet/Wi-Fi and that the player can reach ${runtimeConfig.apiBaseUrl}`
           : `Network request failed for ${path}: ${raw}`,
     );
+  } finally {
+    if (timer !== undefined) window.clearTimeout(timer);
   }
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new ApiError(res.status, path, formatApiFailureMessage(res.status, path, body));
-  }
-
-  if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
 }
 
 /** Unwraps Perform6 API `{ success, data }` envelope. */
-export async function apiFetchData<T>(
-  path: string,
-  options: RequestInit & { token?: string; deviceId?: string } = {},
-): Promise<T> {
+export async function apiFetchData<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const envelope = await apiFetch<ApiEnvelope<T>>(path, options);
   return envelope.data;
 }

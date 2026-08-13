@@ -29,6 +29,10 @@ export interface BrightSignDeviceInfoLike {
   GetBootVersion?: () => string;
   getFamily?: () => string;
   GetFamily?: () => string;
+  getDeviceFamily?: () => string;
+  GetDeviceFamily?: () => string;
+  getDeviceId?: () => string;
+  GetDeviceId?: () => string;
 }
 
 export function isBrightSignPlayer(): boolean {

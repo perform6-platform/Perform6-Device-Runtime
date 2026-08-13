@@ -91,11 +91,13 @@ export function readBrightSignDeviceInfo(
   }
 
   const model = callString(di, 'getModel', 'GetModel') || runtimeConfig.hardwareProfile;
+  const osVersion = callString(di, 'getVersion', 'GetVersion');
+  const bootVersion = callString(di, 'getBootVersion', 'GetBootVersion');
   const firmwareVersion =
-    callString(di, 'getVersion', 'GetVersion', 'getBootVersion', 'GetBootVersion') ||
-    runtimeConfig.simFirmwareVersion ||
-    'unknown';
+    osVersion || bootVersion || runtimeConfig.simFirmwareVersion || 'unknown';
   const uniqueId = callString(di, 'getDeviceUniqueId', 'GetDeviceUniqueId');
+  const deviceId = callString(di, 'getDeviceId', 'GetDeviceId');
+  const family = callString(di, 'getFamily', 'GetFamily', 'getDeviceFamily', 'GetDeviceFamily');
 
   // Serial must stay stable for pairing; prefer hardware unique id / serial.
   const serialNumber = overrides.serialNumber || uniqueId || model;
@@ -116,6 +118,9 @@ export function readBrightSignDeviceInfo(
       ? (overrides.clusterMember ?? runtimeConfig.clusterMember)
       : undefined;
 
+  const userAgent =
+    typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+
   return {
     serialNumber,
     model,
@@ -130,6 +135,26 @@ export function readBrightSignDeviceInfo(
       hardwareProfile === 'XC4055'
         ? (overrides.displayTarget ?? runtimeConfig.displayTarget)
         : undefined,
+    raw: {
+      source: 'BSDeviceInfo',
+      uniqueId: uniqueId || null,
+      deviceId: deviceId || null,
+      family: family || null,
+      osVersion: osVersion || null,
+      bootVersion: bootVersion || null,
+      userAgent: userAgent || null,
+      screen:
+        typeof window !== 'undefined'
+          ? {
+              width: window.screen?.width ?? null,
+              height: window.screen?.height ?? null,
+              availWidth: window.screen?.availWidth ?? null,
+              availHeight: window.screen?.availHeight ?? null,
+              devicePixelRatio: window.devicePixelRatio ?? null,
+            }
+          : null,
+      collectedAt: new Date().toISOString(),
+    },
   };
 }
 

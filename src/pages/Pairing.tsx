@@ -37,6 +37,94 @@ function statusLabel(status: string): string {
   }
 }
 
+/** BrightSign LCD: full-screen pairing code (no debug tables). */
+function DevicePairingLcd() {
+  const { deviceInfo, loading, error } = useDeviceContext();
+  const { pairingCode, registrationStatus, retryPairing, isReady, needsCredentials } =
+    usePairing();
+  const { syncState } = useSync();
+
+  if (isReady) {
+    return (
+      <main className="flex h-full flex-col items-center justify-center gap-8 bg-black p-10 text-center text-white">
+        <p className="text-sm font-bold uppercase tracking-[0.4em] text-cyan-400">Perform6</p>
+        <h1 className="text-4xl font-semibold sm:text-5xl">Device ready</h1>
+        <p className="max-w-xl text-lg text-white/70">Credentials acquired. Opening runtime…</p>
+        {deviceInfo && (
+          <Link
+            to={getPostRegistrationRoute(deviceInfo.hardwareProfile)}
+            className="rounded-xl bg-cyan-400 px-10 py-4 text-lg font-semibold text-black"
+          >
+            Open Runtime UI
+          </Link>
+        )}
+      </main>
+    );
+  }
+
+  if (pairingCode) {
+    return (
+      <main className="flex h-full flex-col items-center justify-center gap-10 bg-black px-10 py-12 text-white">
+        <PairingCodeDisplay
+          code={pairingCode}
+          status={registrationStatus}
+          clusterMember={deviceInfo?.clusterMember}
+          lcd
+          model={deviceInfo?.model}
+          serialNumber={deviceInfo?.serialNumber}
+        />
+        {needsCredentials && (
+          <div className="w-full max-w-xl">
+            <CredentialInjectionForm />
+          </div>
+        )}
+      </main>
+    );
+  }
+
+  if (registrationStatus === 'error' || syncState.error || error) {
+    return (
+      <main className="flex h-full flex-col items-center justify-center gap-8 bg-black px-10 py-12 text-center text-white">
+        <p className="text-sm font-bold uppercase tracking-[0.4em] text-cyan-400">Perform6</p>
+        <h1 className="text-4xl font-semibold text-red-300">Pairing failed</h1>
+        <p className="max-w-2xl text-xl text-white/80">
+          {syncState.error || error || 'Could not get a pairing code from the server.'}
+        </p>
+        {deviceInfo && (
+          <p className="font-mono text-base text-white/45">
+            {deviceInfo.model} · {deviceInfo.serialNumber}
+          </p>
+        )}
+        <button
+          type="button"
+          className="rounded-xl bg-cyan-400 px-10 py-4 text-lg font-semibold text-black"
+          onClick={retryPairing}
+        >
+          Retry pairing
+        </button>
+      </main>
+    );
+  }
+
+  return (
+    <main className="flex h-full flex-col items-center justify-center gap-6 bg-black px-10 py-12 text-center text-white">
+      <p className="text-sm font-bold uppercase tracking-[0.4em] text-cyan-400">Perform6</p>
+      <h1 className="text-4xl font-semibold sm:text-5xl">
+        {loading || !deviceInfo
+          ? 'Collecting device information…'
+          : registrationStatus === 'pairing'
+            ? 'Requesting pairing code…'
+            : 'Starting pairing…'}
+      </h1>
+      <p className="max-w-xl text-lg text-white/65">
+        {deviceInfo
+          ? `${deviceInfo.model} · ${deviceInfo.serialNumber}`
+          : 'Reading BrightSign hardware identity and contacting Perform6.'}
+      </p>
+    </main>
+  );
+}
+
 export default function Pairing() {
   const { deviceInfo, loading, error } = useDeviceContext();
   const {
@@ -82,7 +170,12 @@ export default function Pairing() {
     }
   }
 
-  if (runtimeConfig.isSimulator && !simulatorSessionActive && !pairingCode && registrationStatus === 'idle') {
+  // Production BrightSign / device builds: LCD-first pairing screen only.
+  if (!runtimeConfig.isSimulator) {
+    return <DevicePairingLcd />;
+  }
+
+  if (!simulatorSessionActive && !pairingCode && registrationStatus === 'idle') {
     return (
       <main className="flex h-full flex-col items-center justify-center gap-6 p-8 text-center">
         <h1 className="p6-title">Select a Simulator Profile</h1>
@@ -106,18 +199,6 @@ export default function Pairing() {
         <p className="text-2xl font-semibold text-white">Collecting device information…</p>
         <p className="max-w-md text-sm text-slate-400">
           Reading BrightSign hardware identity and starting pairing.
-        </p>
-      </main>
-    );
-  }
-
-  if (!runtimeConfig.isSimulator && !deviceInfo) {
-    return (
-      <main className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
-        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-p6-cyan">Perform6</p>
-        <p className="text-2xl font-semibold text-white">Starting device runtime…</p>
-        <p className="max-w-md text-sm text-slate-400">
-          Please wait. If this stays here, reboot the player or check the SD card package.
         </p>
       </main>
     );
@@ -186,6 +267,7 @@ export default function Pairing() {
           code={pairingCode}
           status={registrationStatus}
           clusterMember={deviceInfo?.clusterMember}
+          lcd={false}
         />
       )}
 

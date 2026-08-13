@@ -39,6 +39,8 @@ export interface DeviceInfo {
   deploymentType: DeploymentType;
   clusterMember?: ClusterMember;
   displayTarget?: DisplayTarget;
+  /** Extra BrightSign / platform fields — sent to backend in hardwareInfo. */
+  raw?: Record<string, unknown>;
 }
 
 export interface PairingResponse {

@@ -107,6 +107,11 @@ export function createMockDeviceInfo(overrides: MockDeviceOptions = {}): DeviceI
       hardwareProfile === 'XC4055'
         ? (overrides.displayTarget ?? runtimeConfig.displayTarget)
         : undefined,
+    raw: {
+      source: 'simulator',
+      runtimeVersion: runtimeConfig.runtimeVersion,
+      collectedAt: new Date().toISOString(),
+    },
   };
 }
 

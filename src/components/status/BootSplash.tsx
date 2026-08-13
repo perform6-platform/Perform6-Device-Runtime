@@ -38,6 +38,7 @@ export function BootSplash() {
     return null;
   }
 
+  // Hand off to /pairing LCD as soon as we have a code or claim/register state.
   const pairingUiReady =
     Boolean(pairingCode) ||
     registrationStatus === 'waiting_for_registration' ||
@@ -63,7 +64,7 @@ export function BootSplash() {
       <p className="text-sm font-bold uppercase tracking-[0.35em] text-cyan-400">Perform6</p>
       <h1 className="mt-4 text-4xl font-semibold sm:text-5xl">{headline}</h1>
       <p className="mt-3 max-w-3xl text-lg text-white/70">
-        Player is booting. Status updates appear below until the pairing screen is ready.
+        Connecting to Perform6. Pairing code will fill the screen when ready.
       </p>
 
       {deviceInfo && (

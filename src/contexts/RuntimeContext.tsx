@@ -239,6 +239,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   const executePairing = useCallback(
     async (info: DeviceInfo) => {
       if (isDeviceReady()) {
+        console.info('[Perform6] Skipping pair — credentials already stored');
         pushDebugLog({ category: 'pairing', message: 'Skipping pair — credentials already stored' });
         return;
       }
@@ -249,14 +250,26 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       setConnectionStatus('connecting');
       setSyncState({ runtimePhase: 'unpaired', error: null });
       pushBootLine(`POST /devices/pair (${info.hardwareProfile})`);
+      console.info('[Perform6] POST /devices/pair', {
+        serialNumber: info.serialNumber,
+        model: info.model,
+        hardwareProfile: info.hardwareProfile,
+      });
       pushDebugLog({
         category: 'pairing',
         message: `POST /devices/pair as ${info.hardwareProfile}`,
         data: info,
       });
 
+      if (!runtimeConfig.isSimulator) {
+        navigate('/pairing', { replace: true });
+      }
+
       try {
         const res = await pairDevice(info);
+        if (!res.pairingCode) {
+          throw new Error('Pairing API returned empty pairingCode');
+        }
         setPairing({
           pairingId: res.pairingId,
           pairingCode: res.pairingCode,
@@ -284,17 +297,22 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         }
 
         pushBootLine(`Pairing code ${res.pairingCode}`);
+        console.info('[Perform6] Pairing code:', res.pairingCode, res.rawStatus);
         pushDebugLog({
           category: 'pairing',
           message: `Pairing code: ${res.pairingCode} (${res.rawStatus})`,
           data: res,
         });
         setConnectionStatus('online');
+        if (!runtimeConfig.isSimulator) {
+          navigate('/pairing', { replace: true });
+        }
       } catch (e) {
         if (e instanceof PairingConflictError) {
           setRegistrationStatus('registered');
           setSyncState({ runtimePhase: 'waiting_credentials', error: null });
           pushBootLine('Already registered (409) — credentials');
+          console.info('[Perform6] Already registered (409) — fetching credentials');
           pushDebugLog({
             category: 'pairing',
             message: 'Device already registered (409) — fetching credentials',
@@ -318,6 +336,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
             registrationStatus: 'waiting_for_registration',
           });
           setSyncState({ runtimePhase: 'waiting_claim', error: null });
+          console.info('[Perform6] Simulated pairing:', mockCode);
           pushDebugLog({ category: 'pairing', message: `Simulated pairing: ${mockCode}` });
           setConnectionStatus('online');
           return;
@@ -333,11 +352,10 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
               : e instanceof Error
                 ? e.message
                 : 'Pairing failed';
-        console.error('[Perform6] Pairing API failed', e);
+        console.error('[Perform6] Pairing API failed', errMsg, e);
         setSyncState({ runtimePhase: 'error', error: errMsg });
         setConnectionStatus('offline');
         pushBootLine(errMsg);
-        console.error('[Perform6] Pairing API failed', errMsg, e);
         pushDebugLog({
           category: 'pairing',
           message: errMsg,
@@ -345,6 +363,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       }
     },
     [
+      navigate,
       pushBootLine,
       pushDebugLog,
       recordHdPairing,
@@ -538,8 +557,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     void executePairing(info);
   }, [deviceInfo, executePairing]);
 
-  // BrightSign / file:// production: collect hardware identity on boot.
-  // Existing idle→executePairing effect starts pairing once deviceInfo is set.
+  // BrightSign / file:// production: collect hardware identity, then pair immediately.
   // Simulator uses beginSimulatorProfile() instead — do not auto-boot there.
   useEffect(() => {
     if (runtimeConfig.isSimulator) return;
@@ -548,6 +566,26 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
 
     void (async () => {
       try {
+        // Clear stuck persist (e.g. registrationStatus=pairing with no code) so boot can re-pair.
+        const persisted = useDeviceStore.getState();
+        if (!isDeviceReady()) {
+          const stuckNoCode =
+            !persisted.pairingCode &&
+            (persisted.registrationStatus === 'pairing' ||
+              persisted.registrationStatus === 'error' ||
+              persisted.registrationStatus === 'waiting_for_registration' ||
+              persisted.registrationStatus === 'paired' ||
+              persisted.registrationStatus === 'registered');
+          if (stuckNoCode) {
+            console.info(
+              '[Perform6] Resetting stuck pairing state',
+              persisted.registrationStatus,
+            );
+            clearDeviceStore();
+            pairingStarted.current = false;
+          }
+        }
+
         pushBootLine(`Collecting device info (${runtimeConfig.hardwareProfile})`);
         pushDebugLog({
           category: 'device',
@@ -573,15 +611,36 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           hardwareProfile: info.hardwareProfile,
         });
         pushBootLine(`Device ready ${info.model} / ${info.serialNumber}`);
-        pushBootLine('Starting pairing request…');
         pushDebugLog({
           category: 'device',
           message: `Device ready ${info.model} / ${info.serialNumber}`,
         });
+
+        navigate('/pairing', { replace: true });
+
+        const afterReset = useDeviceStore.getState();
+        if (isDeviceReady()) {
+          console.info('[Perform6] Credentials already stored — skipping pair');
+          return;
+        }
+
+        if (afterReset.pairingCode) {
+          console.info('[Perform6] Restored pairing code:', afterReset.pairingCode);
+          pushBootLine(`Restored pairing code ${afterReset.pairingCode}`);
+          pushDebugLog({
+            category: 'pairing',
+            message: `Restored pairing code: ${afterReset.pairingCode}`,
+          });
+          return;
+        }
+
+        pushBootLine('Starting pairing request…');
+        console.info('[Perform6] Starting pairing request…');
         pushDebugLog({
           category: 'pairing',
           message: 'Starting pairing request…',
         });
+        await executePairing(info);
       } catch (e) {
         const errMsg =
           e instanceof Error ? e.message : 'Failed to start device runtime on BrightSign';
@@ -594,6 +653,9 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       }
     })();
   }, [
+    clearDeviceStore,
+    executePairing,
+    navigate,
     pushBootLine,
     pushDebugLog,
     refreshDeviceInfo,
@@ -602,11 +664,13 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     setSyncState,
   ]);
 
+  // Backup: if deviceInfo appears without boot path completing pair (rare), still pair.
   useEffect(() => {
     if (runtimeConfig.isSimulator) return;
-    if (deviceInfo && registrationStatus === 'idle' && !pairingStarted.current && !isDeviceReady()) {
-      void executePairing(deviceInfo);
-    }
+    if (!deviceInfo || pairingStarted.current || isDeviceReady()) return;
+    if (useDeviceStore.getState().pairingCode) return;
+    if (registrationStatus !== 'idle' && registrationStatus !== 'error') return;
+    void executePairing(deviceInfo);
   }, [deviceInfo, registrationStatus, executePairing]);
 
   useEffect(() => {
