@@ -56,7 +56,30 @@ export async function apiFetch<T>(
   if (token) headers.set('Authorization', `Bearer ${token}`);
   if (deviceId) headers.set('X-Device-Id', deviceId);
 
-  const res = await fetch(`${runtimeConfig.apiBaseUrl}${path}`, { ...init, headers });
+  const url = `${runtimeConfig.apiBaseUrl}${path}`;
+  let res: Response;
+  try {
+    res = await fetch(url, { ...init, headers });
+  } catch (e) {
+    const raw = e instanceof Error ? e.message : String(e);
+    const lower = raw.toLowerCase();
+    const tlsHint =
+      lower.includes('cert') ||
+      lower.includes('ssl') ||
+      lower.includes('tls') ||
+      lower.includes('nss') ||
+      lower.includes('certificate');
+    throw new ApiError(
+      0,
+      path,
+      tlsHint
+        ? `HTTPS/TLS failed talking to API (${raw}). Player certificate store may be outdated (NSS). Update BrightSignOS or check VITE_API_BASE_URL.`
+        : raw === 'Failed to fetch' || e instanceof TypeError
+          ? `Network request failed for ${path}. Check Ethernet/Wi-Fi and that the player can reach ${runtimeConfig.apiBaseUrl}`
+          : `Network request failed for ${path}: ${raw}`,
+    );
+  }
+
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new ApiError(res.status, path, formatApiFailureMessage(res.status, path, body));

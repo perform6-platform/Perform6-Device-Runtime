@@ -50,12 +50,21 @@ export async function probeApiReachability(timeoutMs = 8000): Promise<NetworkPro
       };
     }
 
+    const lower = message.toLowerCase();
+    const tlsHint =
+      lower.includes('cert') ||
+      lower.includes('ssl') ||
+      lower.includes('tls') ||
+      lower.includes('nss') ||
+      lower.includes('certificate');
+
     return {
       health: 'offline',
-      detail:
-        message && message !== 'Failed to fetch'
+      detail: tlsHint
+        ? `HTTPS/TLS to API failed (${message}). BrightSign certificate store may need a firmware update.`
+        : message && message !== 'Failed to fetch'
           ? message
-          : 'Internet / network not connected to this device',
+          : 'Internet / network not connected to this device (or HTTPS to API failed)',
       checkedAt,
     };
   } finally {

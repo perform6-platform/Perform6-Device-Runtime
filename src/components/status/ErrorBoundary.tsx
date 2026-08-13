@@ -21,6 +21,11 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('[Perform6] ErrorBoundary', error, info.componentStack);
+    try {
+      window.__perform6Mounted = true;
+    } catch {
+      /* ignore */
+    }
   }
 
   private handleReload = () => {

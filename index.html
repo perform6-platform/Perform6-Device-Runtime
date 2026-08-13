@@ -71,6 +71,8 @@
           if (hint) hint.textContent = detail;
         }
 
+        window.__perform6ShowBootError = fail;
+
         window.__perform6ScriptFailed = function () {
           fail(
             'Could not load assets/app.js',
