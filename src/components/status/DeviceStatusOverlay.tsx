@@ -72,7 +72,9 @@ export function DeviceStatusOverlay() {
   const title =
     kind === 'offline'
       ? 'Internet is not connected to this device'
-      : 'A problem occurred';
+      : registrationStatus === 'error'
+        ? 'Pairing failed'
+        : 'A problem occurred';
 
   const body =
     kind === 'offline'

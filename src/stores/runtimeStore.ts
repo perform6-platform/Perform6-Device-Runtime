@@ -7,6 +7,7 @@ import type {
   PlaybackState,
   SyncState,
 } from '../shared/types';
+import { createId } from '../shared/createId';
 
 interface RuntimeStoreState {
   deviceInfo: DeviceInfo | null;
@@ -32,6 +33,8 @@ interface RuntimeStoreState {
   displayVideoEndedHandler: (() => void) | null;
   simulatorSessionActive: boolean;
   pendingRoute: string | null;
+  /** On-device startup lines shown until pairing UI is ready */
+  bootLines: string[];
   setDeviceInfo: (info: DeviceInfo) => void;
   setSimulatorSession: (payload: { active: boolean; pendingRoute?: string | null }) => void;
   setConnectionStatus: (status: ConnectionStatus) => void;
@@ -56,6 +59,7 @@ interface RuntimeStoreState {
   setPlaybackPlaying: (isPlaying: boolean) => void;
   setHeartbeat: (payload: { at: string; ok: boolean }) => void;
   pushDebugLog: (entry: Omit<DebugLogEntry, 'id' | 'timestamp'>) => void;
+  pushBootLine: (line: string) => void;
   clearDebugLogs: () => void;
 }
 
@@ -100,6 +104,7 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
   displayVideoEndedHandler: null,
   simulatorSessionActive: false,
   pendingRoute: null,
+  bootLines: ['Perform6 runtime starting…'],
   setDeviceInfo: (deviceInfo) => set({ deviceInfo }),
   setSimulatorSession: ({ active, pendingRoute = null }) =>
     set({
@@ -171,10 +176,15 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
   pushDebugLog: (entry) => {
     const log: DebugLogEntry = {
       ...entry,
-      id: crypto.randomUUID(),
+      id: createId(),
       timestamp: new Date().toISOString(),
     };
-    set({ debugLogs: [log, ...get().debugLogs].slice(0, 200) });
+    const bootLine = `${entry.category}: ${entry.message}`;
+    set({
+      debugLogs: [log, ...get().debugLogs].slice(0, 200),
+      bootLines: [...get().bootLines, bootLine].slice(-40),
+    });
   },
+  pushBootLine: (line) => set({ bootLines: [...get().bootLines, line].slice(-40) }),
   clearDebugLogs: () => set({ debugLogs: [] }),
 }));

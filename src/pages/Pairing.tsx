@@ -136,16 +136,18 @@ export default function Pairing() {
         ) : null}
       </div>
 
-      {error && (
-        <p className="rounded-lg border border-red-800 bg-red-950/40 px-4 py-2 text-sm text-red-300">
-          {error}
-        </p>
-      )}
-
-      {pairNextError && (
-        <p className="rounded-lg border border-red-800 bg-red-950/40 px-4 py-2 text-sm text-red-300">
-          {pairNextError}
-        </p>
+      {(error || syncState.error || pairNextError) && (
+        <div
+          className="w-full max-w-lg rounded-xl border border-red-500/60 bg-red-950/50 px-5 py-4 text-left"
+          role="alert"
+        >
+          <p className="text-xs font-semibold uppercase tracking-widest text-red-300">
+            Pairing / API error
+          </p>
+          <p className="mt-2 text-base text-red-100">
+            {syncState.error || error || pairNextError}
+          </p>
+        </div>
       )}
 
       {deviceInfo && (

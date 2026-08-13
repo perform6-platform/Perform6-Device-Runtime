@@ -18,6 +18,34 @@ export interface ApiEnvelope<T> {
   timestamp?: string;
 }
 
+/** Prefer backend `message` / `error` fields so LCD can show a short readable string. */
+export function formatApiFailureMessage(status: number, path: string, body: string): string {
+  const prefix = `API ${status} ${path}`;
+  const raw = body?.trim() ?? '';
+  if (!raw) {
+    return `${prefix}: empty response body (no backend message)`;
+  }
+
+  const clipped = raw.replace(/\s+/g, ' ').trim().slice(0, 240);
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const candidates = [parsed.message, parsed.error, parsed.detail, parsed.title];
+    for (const c of candidates) {
+      if (typeof c === 'string' && c.trim()) {
+        return `${prefix}: ${c.trim()}`;
+      }
+      if (Array.isArray(c) && c.length > 0) {
+        const joined = c.map(String).filter(Boolean).join('; ');
+        if (joined) return `${prefix}: ${joined}`;
+      }
+    }
+    return `${prefix}: JSON error body has no message/error field — ${clipped}`;
+  } catch {
+    return `${prefix}: non-JSON error body — ${clipped}`;
+  }
+}
+
 export async function apiFetch<T>(
   path: string,
   options: RequestInit & { token?: string; deviceId?: string } = {},
@@ -31,7 +59,7 @@ export async function apiFetch<T>(
   const res = await fetch(`${runtimeConfig.apiBaseUrl}${path}`, { ...init, headers });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new ApiError(res.status, path, body || undefined);
+    throw new ApiError(res.status, path, formatApiFailureMessage(res.status, path, body));
   }
 
   if (res.status === 204) return undefined as T;

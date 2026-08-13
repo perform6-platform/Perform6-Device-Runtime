@@ -3,7 +3,7 @@ import { runtimeConfig } from './config/runtime';
 import { getPostRegistrationRoute } from './services/runtime';
 import { RequirePaired } from './components/routing/RequirePaired';
 import { DebugConsole } from './components/debug/DebugConsole';
-import { DeviceStatusOverlay } from './components/status';
+import { DeviceStatusOverlay, BootSplash } from './components/status';
 import Home from './pages/Home';
 import Pairing from './pages/Pairing';
 import RuntimeDashboard from './pages/RuntimeDashboard';
@@ -32,6 +32,7 @@ function Paired({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <>
+      <BootSplash />
       <DeviceStatusOverlay />
       <Routes>
         <Route path="/" element={<RootRedirect />} />

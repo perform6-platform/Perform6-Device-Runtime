@@ -13,6 +13,7 @@
         color: #ffffff;
         font-family: system-ui, -apple-system, Segoe UI, sans-serif;
       }
+      /* Outside #root so React mount does not wipe this shell. */
       #boot-status {
         position: fixed;
         inset: 0;
@@ -24,6 +25,10 @@
         text-align: center;
         padding: 32px;
         z-index: 2147483647;
+        background: #000000;
+      }
+      #boot-status[hidden] {
+        display: none !important;
       }
       #boot-status .brand {
         font-size: 18px;
@@ -43,21 +48,25 @@
         max-width: 32rem;
         line-height: 1.45;
       }
+      #root {
+        height: 100%;
+      }
     </style>
   </head>
   <body>
-    <div id="root">
-      <div id="boot-status">
-        <div class="brand">Perform6</div>
-        <div class="msg" id="boot-msg">Loading app...</div>
-        <div class="hint" id="boot-hint">Please wait while the player starts.</div>
-      </div>
+    <div id="boot-status" role="status" aria-live="polite">
+      <div class="brand">Perform6</div>
+      <div class="msg" id="boot-msg">Loading app...</div>
+      <div class="hint" id="boot-hint">Please wait while the player starts.</div>
     </div>
+    <div id="root"></div>
     <script>
       (function () {
         function fail(title, detail) {
+          var shell = document.getElementById('boot-status');
           var msg = document.getElementById('boot-msg');
           var hint = document.getElementById('boot-hint');
+          if (shell) shell.hidden = false;
           if (msg) msg.textContent = title;
           if (hint) hint.textContent = detail;
         }
@@ -69,13 +78,22 @@
           );
         };
 
+        window.__perform6MountFailed = function (detail) {
+          fail(
+            'App failed to start',
+            detail || 'React could not mount. Check serial logs and SD package layout.'
+          );
+        };
+
+        window.__perform6AppMounted = false;
+
         window.setTimeout(function () {
-          if (document.getElementById('boot-status')) {
-            fail(
-              'App did not start',
-              'SD card root must contain: autorun.brs, index.html, and assets/app.js (same folder level). Extract the zip, open the folder, copy those items to the card root - not inside another folder.'
-            );
-          }
+          if (window.__perform6AppMounted) return;
+          if (!document.getElementById('boot-status')) return;
+          fail(
+            'App did not start',
+            'SD card root must contain: autorun.brs, index.html, and assets/app.js (same folder level). Extract the zip, open the folder, copy those items to the card root - not inside another folder.'
+          );
         }, 20000);
       })();
     </script>

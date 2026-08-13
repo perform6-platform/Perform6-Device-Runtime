@@ -56,7 +56,7 @@ export default defineConfig({
     outDir: 'dist',
     assetsDir: 'assets',
     emptyOutDir: true,
-    target: 'es2018',
+    target: 'es2017',
     cssCodeSplit: false,
     modulePreload: false,
     rollupOptions: {

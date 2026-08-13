@@ -11,7 +11,7 @@ function callString(obj: BrightSignDeviceInfoLike, ...names: (keyof BrightSignDe
         const value = (fn as () => unknown).call(obj);
         if (value != null && String(value).trim()) return String(value).trim();
       } catch {
-        /* try next */
+        /* try next name / firmware variant */
       }
     }
   }
@@ -30,24 +30,55 @@ export function formatMacAddress(raw: string): string {
   return raw;
 }
 
-function readIpFromBrowser(): string {
-  // Best-effort; BrightSign HTML often has no WebRTC. Leave empty for caller fallback.
-  return '';
+/**
+ * Resolve BSDeviceInfo constructor across OS / Chromium variants.
+ * Some firmwares expose it on window, some only on globalThis, some as @brightsign module.
+ */
+function resolveDeviceInfoCtor(): (new () => BrightSignDeviceInfoLike) | null {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const g = globalThis as any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const w = typeof window !== 'undefined' ? (window as any) : null;
+
+  const candidates = [
+    w?.BSDeviceInfo,
+    g?.BSDeviceInfo,
+    w?.BrightSignDeviceInfo,
+    g?.BrightSignDeviceInfo,
+  ];
+
+  for (const c of candidates) {
+    if (typeof c === 'function') return c;
+  }
+
+  // Optional Node-style module on builds with nodejs_enabled (we do not require Node).
+  try {
+    if (typeof g.require === 'function') {
+      const mod = g.require('@brightsign/deviceinfo');
+      if (typeof mod === 'function') return mod;
+      if (mod && typeof mod.BSDeviceInfo === 'function') return mod.BSDeviceInfo;
+      if (mod && typeof mod.default === 'function') return mod.default;
+    }
+  } catch {
+    /* Node / module not available — expected on most HtmlWidget builds */
+  }
+
+  return null;
 }
 
 /**
  * Read hardware identity from BrightSign JS objects (requires
  * brightsign_js_objects_enabled / AllowJavaScriptUrls on the HtmlWidget).
+ * Returns null when this firmware does not expose device APIs — caller falls back.
  */
 export function readBrightSignDeviceInfo(
   overrides: MockDeviceOptions = {},
 ): DeviceInfo | null {
   if (typeof window === 'undefined') return null;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const Ctor = (window as any).BSDeviceInfo ?? (globalThis as any).BSDeviceInfo;
-  if (typeof Ctor !== 'function') {
-    console.warn('[Perform6] BSDeviceInfo not available — enable brightsign_js_objects');
+  const Ctor = resolveDeviceInfoCtor();
+  if (!Ctor) {
+    console.warn('[Perform6] BSDeviceInfo not available on this firmware — using profile fallback');
     return null;
   }
 
@@ -65,12 +96,17 @@ export function readBrightSignDeviceInfo(
     runtimeConfig.simFirmwareVersion ||
     'unknown';
   const uniqueId = callString(di, 'getDeviceUniqueId', 'GetDeviceUniqueId');
+
+  // Serial must stay stable for pairing; prefer hardware unique id / serial.
+  const serialNumber = overrides.serialNumber || uniqueId || model;
+  if (!serialNumber) {
+    console.warn('[Perform6] No serial from BSDeviceInfo');
+    return null;
+  }
+
   const macAddress = uniqueId
     ? formatMacAddress(uniqueId)
     : overrides.macAddress || '00:00:00:00:00:00';
-
-  // Prefer real BrightSign serial (UTF…) over baked profile-serial mocks.
-  const serialNumber = overrides.serialNumber || uniqueId || model;
 
   const hardwareProfile = overrides.hardwareProfile ?? runtimeConfig.hardwareProfile;
   const deploymentType =
@@ -86,7 +122,7 @@ export function readBrightSignDeviceInfo(
     deviceName: overrides.deviceName ?? `Perform6 ${model}`,
     firmwareVersion,
     macAddress,
-    ipAddress: overrides.ipAddress || readIpFromBrowser() || '',
+    ipAddress: overrides.ipAddress || '',
     hardwareProfile,
     deploymentType,
     clusterMember,

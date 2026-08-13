@@ -77,6 +77,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   const clearDeviceStore = useDeviceStore((s) => s.clear);
 
   const pushDebugLog = useRuntimeStore((s) => s.pushDebugLog);
+  const pushBootLine = useRuntimeStore((s) => s.pushBootLine);
   const setConnectionStatus = useRuntimeStore((s) => s.setConnectionStatus);
   const setSyncState = useRuntimeStore((s) => s.setSyncState);
   const setPlaybackManifest = useRuntimeStore((s) => s.setPlaybackManifest);
@@ -246,7 +247,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       pairingStarted.current = true;
       setRegistrationStatus('pairing');
       setConnectionStatus('connecting');
-      setSyncState({ runtimePhase: 'unpaired' });
+      setSyncState({ runtimePhase: 'unpaired', error: null });
+      pushBootLine(`POST /devices/pair (${info.hardwareProfile})`);
       pushDebugLog({
         category: 'pairing',
         message: `POST /devices/pair as ${info.hardwareProfile}`,
@@ -272,7 +274,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
             : res.registrationStatus === 'paired'
               ? 'waiting_register'
               : 'waiting_claim';
-        setSyncState({ runtimePhase: phase });
+        setSyncState({ runtimePhase: phase, error: null });
 
         if (res.apiToken && res.deviceId) {
           useDeviceStore.getState().setCredentials({
@@ -281,6 +283,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           });
         }
 
+        pushBootLine(`Pairing code ${res.pairingCode}`);
         pushDebugLog({
           category: 'pairing',
           message: `Pairing code: ${res.pairingCode} (${res.rawStatus})`,
@@ -290,7 +293,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       } catch (e) {
         if (e instanceof PairingConflictError) {
           setRegistrationStatus('registered');
-          setSyncState({ runtimePhase: 'waiting_credentials' });
+          setSyncState({ runtimePhase: 'waiting_credentials', error: null });
+          pushBootLine('Already registered (409) — credentials');
           pushDebugLog({
             category: 'pairing',
             message: 'Device already registered (409) — fetching credentials',
@@ -312,7 +316,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
             pairingCode: mockCode,
             registrationStatus: 'waiting_for_registration',
           });
-          setSyncState({ runtimePhase: 'waiting_claim' });
+          setSyncState({ runtimePhase: 'waiting_claim', error: null });
           pushDebugLog({ category: 'pairing', message: `Simulated pairing: ${mockCode}` });
           setConnectionStatus('online');
           return;
@@ -330,6 +334,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
                 : 'Pairing failed';
         setSyncState({ runtimePhase: 'error', error: errMsg });
         setConnectionStatus('offline');
+        pushBootLine(errMsg);
+        console.error('[Perform6] Pairing API failed', errMsg, e);
         pushDebugLog({
           category: 'pairing',
           message: errMsg,
@@ -337,6 +343,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       }
     },
     [
+      pushBootLine,
       pushDebugLog,
       recordHdPairing,
       setConnectionStatus,
@@ -539,6 +546,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
 
     void (async () => {
       try {
+        pushBootLine(`Collecting device info (${runtimeConfig.hardwareProfile})`);
         pushDebugLog({
           category: 'device',
           message: `BrightSign boot — collecting device info (${runtimeConfig.hardwareProfile})`,
@@ -562,6 +570,16 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           serialNumber: info.serialNumber,
           hardwareProfile: info.hardwareProfile,
         });
+        pushBootLine(`Device ready ${info.model} / ${info.serialNumber}`);
+        pushBootLine('Starting pairing request…');
+        pushDebugLog({
+          category: 'device',
+          message: `Device ready ${info.model} / ${info.serialNumber}`,
+        });
+        pushDebugLog({
+          category: 'pairing',
+          message: 'Starting pairing request…',
+        });
       } catch (e) {
         const errMsg =
           e instanceof Error ? e.message : 'Failed to start device runtime on BrightSign';
@@ -569,10 +587,12 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         setRegistrationStatus('error');
         setSyncState({ runtimePhase: 'error', error: errMsg });
         setConnectionStatus('offline');
+        pushBootLine(errMsg);
         pushDebugLog({ category: 'device', message: errMsg });
       }
     })();
   }, [
+    pushBootLine,
     pushDebugLog,
     refreshDeviceInfo,
     setConnectionStatus,

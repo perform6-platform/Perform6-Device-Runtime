@@ -129,8 +129,9 @@ export function mapLifecycleRegistrationStatus(
   data: Pick<PairingLifecycleStatusData, 'status' | 'registrationStatus'>,
 ): DeviceRegistrationStatus {
   const reg = data.registrationStatus?.toUpperCase();
+  // API returns CLAIMED for admin-claimed; also accept ADMIN_CLAIMED.
   if (reg === 'REGISTERED') return 'registered';
-  if (reg === 'ADMIN_CLAIMED') return 'paired';
+  if (reg === 'ADMIN_CLAIMED' || reg === 'CLAIMED') return 'paired';
   return mapPairingApiStatus(data.status);
 }
 

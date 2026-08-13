@@ -11,6 +11,9 @@ declare global {
   interface Window {
     brightsign?: unknown;
     BSDeviceInfo?: new () => BrightSignDeviceInfoLike;
+    __perform6AppMounted?: boolean;
+    __perform6ScriptFailed?: () => void;
+    __perform6MountFailed?: (detail?: string) => void;
   }
 }
 
