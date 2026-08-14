@@ -195,6 +195,29 @@ function main() {
   fs.copyFileSync(distIndex, path.join(outFolder, 'index.html'));
   fs.cpSync(distAssets, path.join(outFolder, 'assets'), { recursive: true });
 
+  // Autorun reads this to apply the correct SetScreenModes layout.
+  fs.writeFileSync(path.join(outFolder, 'perform6-profile.txt'), `${profileKey}\n`);
+
+  const wiring =
+    profileKey === 'XT2145'
+      ? [
+          'HDMI wiring (XT2145):',
+          '  HDMI-1 → Bluefin touch panel (pairing + Home)',
+          '  HDMI-2 → LED program display',
+        ]
+      : profileKey === 'XC4055'
+        ? [
+            'HDMI wiring (XC4055 — one player, three LEDs):',
+            '  HDMI-1 → LED Screen 1 (SCREEN_1 / deployment)',
+            '  HDMI-2 → LED Screen 2 (SCREEN_2 / deployment)',
+            '  HDMI-3 → LED Screen 3 (SCREEN_3 / deployment)',
+            '  HDMI-4 unused (disabled in autorun)',
+          ]
+        : [
+            'HDMI wiring (HD226):',
+            '  Single HDMI → one LED (one player per LED in the cluster)',
+          ];
+
   fs.writeFileSync(
     path.join(outFolder, 'perform6-release.json'),
     JSON.stringify(
@@ -203,7 +226,19 @@ function main() {
         version,
         clusterMember: member || null,
         builtAt: new Date().toISOString(),
-        files: ['autorun.brs', 'index.html', 'assets/', 'README-SD.txt'],
+        multiHdmi:
+          profileKey === 'XT2145'
+            ? { outputs: 2, canvas: '3840x1080', mode: '1920x1080x60p' }
+            : profileKey === 'XC4055'
+              ? { outputs: 3, canvas: '5760x1080', mode: '1920x1080x60p' }
+              : { outputs: 1, canvas: 'native', mode: 'default' },
+        files: [
+          'autorun.brs',
+          'index.html',
+          'assets/',
+          'perform6-profile.txt',
+          'README-SD.txt',
+        ],
         entryScript: 'assets/app.js',
       },
       null,
@@ -218,7 +253,7 @@ function main() {
       `Version: ${version}`,
       '',
       'Supported firmwares: BrightSign OS 8.2+ and 9.x (Series 5: XT/XC/HD).',
-      'This build uses firmware-tolerant HtmlWidget fallbacks (see docs/BRIGHTSIGN-SUPPORT.md).',
+      'Multi-HDMI uses SetScreenModes once at boot (player may reboot once).',
       '',
       'IMPORTANT: Use this zip ONLY on matching hardware.',
       `  XT2145  -> perform6-xt2145-*.zip`,
@@ -226,14 +261,18 @@ function main() {
       `  HD226   -> perform6-hd226-*.zip`,
       'Do NOT mix files from different zips.',
       '',
+      ...wiring,
+      '',
       'SD card root (copy CONTENTS of this folder, not the folder itself):',
       '  autorun.brs',
+      '  perform6-profile.txt',
       '  index.html',
       '  assets/app.js',
       '  assets/style.css',
       '  assets/*.png',
       '',
       'After copy, reboot the player.',
+      'First boot may reboot again after enabling multi-HDMI — that is expected.',
       'DWS (browser): http://<player-ip>/',
       '',
     ].join('\n'),

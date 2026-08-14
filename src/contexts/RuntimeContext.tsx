@@ -148,14 +148,12 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       {
         ...auth,
         clusterMember: info.clusterMember,
-        // XC4055 3-pane simulator must not filter to a single HDMI port —
-        // otherwise targets{} empties and panes stay blank while media still downloads.
-        // Simulator: never filter XT/XC bindings — XT has TOUCH_MAIN (not HDMI),
-        // XC needs all three panes. HD still scopes by clusterMember.
+        // XC4055 single player drives all three HDMI LEDs — never filter sync
+        // to one SCREEN_*/HDMI port or targets{} empties and LEDs stay blank.
+        // XT2145 touch bindings use TOUCH_MAIN (not HDMI) — same unfiltered sync.
+        // HD226 still scopes by clusterMember on the auth object.
         displayTarget:
-          runtimeConfig.isSimulator &&
-          (info.hardwareProfile === 'XC4055' ||
-            info.hardwareProfile === 'XT2145')
+          info.hardwareProfile === 'XC4055' || info.hardwareProfile === 'XT2145'
             ? undefined
             : info.displayTarget,
       },
@@ -397,10 +395,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         hardwareProfile,
         deploymentType:
           profileOverrides.deploymentType ?? profileDefaultDeployment(hardwareProfile),
-        displayTarget:
-          hardwareProfile === 'XC4055'
-            ? (profileOverrides.displayTarget ?? runtimeConfig.displayTarget)
-            : undefined,
+        displayTarget: undefined,
         clusterMember:
           hardwareProfile === 'HD226'
             ? (profileOverrides.clusterMember ?? runtimeConfig.clusterMember)
@@ -599,8 +594,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         const info = await refreshDeviceInfo({
           hardwareProfile: runtimeConfig.hardwareProfile,
           deploymentType: profileDefaultDeployment(runtimeConfig.hardwareProfile),
-          displayTarget:
-            runtimeConfig.hardwareProfile === 'XC4055' ? runtimeConfig.displayTarget : undefined,
+          displayTarget: undefined,
           clusterMember:
             runtimeConfig.hardwareProfile === 'HD226' ? runtimeConfig.clusterMember : undefined,
         });

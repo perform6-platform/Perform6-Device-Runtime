@@ -1,6 +1,6 @@
 {
   "name": "perform6-touchscreen",
-  "version": "0.1.0",
+  "version": "1.0.22",
   "private": true,
   "description": "Perform6 BrightSign touchscreen app — React, offline-first",
   "type": "module",

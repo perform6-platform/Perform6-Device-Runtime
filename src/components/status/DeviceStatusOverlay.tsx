@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useDeviceContext } from '../../contexts/DeviceContext';
 import { usePairing, useRuntime, useSync } from '../../hooks/useRuntime';
+import { PrimaryOutputOnly } from '../../layout/PrimaryOutputOnly';
+import { runtimeConfig } from '../../config/runtime';
 import { useDeviceStore } from '../../stores/deviceStore';
 import {
   probeApiReachability,
@@ -107,57 +109,61 @@ export function DeviceStatusOverlay() {
   const tone =
     kind === 'offline' ? 'border-amber-500/50' : kind === 'error' ? 'border-red-500/50' : 'border-p6-cyan/40';
 
+  const profile = deviceInfo?.hardwareProfile ?? runtimeConfig.hardwareProfile;
+
   return (
-    <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/95 p-8 text-p6-text"
-      role="alert"
-      aria-live="assertive"
-    >
-      <div className={`w-full max-w-3xl rounded-2xl border ${tone} bg-p6-bg px-10 py-12 text-center shadow-2xl`}>
-        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-p6-cyan">
-          Perform6 device status
-        </p>
-        <h1 className="mt-4 text-3xl font-semibold leading-tight sm:text-4xl">{title}</h1>
-        <p className="mx-auto mt-5 max-w-xl text-base text-p6-text-muted">{body}</p>
-
-        <dl className="mx-auto mt-8 grid max-w-lg gap-2 text-left text-sm text-slate-400">
-          {deviceInfo && (
-            <>
-              <div className="flex justify-between gap-4 border-b border-white/10 py-2">
-                <dt>Model</dt>
-                <dd className="text-slate-200">{deviceInfo.model}</dd>
-              </div>
-              <div className="flex justify-between gap-4 border-b border-white/10 py-2">
-                <dt>Serial</dt>
-                <dd className="font-mono text-slate-200">{deviceInfo.serialNumber}</dd>
-              </div>
-              <div className="flex justify-between gap-4 border-b border-white/10 py-2">
-                <dt>MAC</dt>
-                <dd className="font-mono text-slate-200">{deviceInfo.macAddress}</dd>
-              </div>
-            </>
-          )}
-          <div className="flex justify-between gap-4 border-b border-white/10 py-2">
-            <dt>Network</dt>
-            <dd className="text-slate-200">{health}</dd>
-          </div>
-          <div className="flex justify-between gap-4 py-2">
-            <dt>Phase</dt>
-            <dd className="text-slate-200">{syncState.runtimePhase}</dd>
-          </div>
-        </dl>
-
-        {(kind === 'offline' || kind === 'error') && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void handleRetry()}
-            className="mt-10 rounded-xl bg-p6-cyan px-10 py-3 text-sm font-semibold text-black disabled:opacity-50"
+    <div className="fixed inset-0 z-[9999]" role="alert" aria-live="assertive">
+      <PrimaryOutputOnly profile={profile}>
+        <div className="flex h-full items-center justify-center bg-black/95 p-8 text-p6-text">
+          <div
+            className={`w-full max-w-3xl rounded-2xl border ${tone} bg-p6-bg px-10 py-12 text-center shadow-2xl`}
           >
-            {busy ? 'Retrying…' : 'Retry connection'}
-          </button>
-        )}
-      </div>
+            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-p6-cyan">
+              Perform6 device status
+            </p>
+            <h1 className="mt-4 text-3xl font-semibold leading-tight sm:text-4xl">{title}</h1>
+            <p className="mx-auto mt-5 max-w-xl text-base text-p6-text-muted">{body}</p>
+
+            <dl className="mx-auto mt-8 grid max-w-lg gap-2 text-left text-sm text-slate-400">
+              {deviceInfo && (
+                <>
+                  <div className="flex justify-between gap-4 border-b border-white/10 py-2">
+                    <dt>Model</dt>
+                    <dd className="text-slate-200">{deviceInfo.model}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b border-white/10 py-2">
+                    <dt>Serial</dt>
+                    <dd className="font-mono text-slate-200">{deviceInfo.serialNumber}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b border-white/10 py-2">
+                    <dt>MAC</dt>
+                    <dd className="font-mono text-slate-200">{deviceInfo.macAddress}</dd>
+                  </div>
+                </>
+              )}
+              <div className="flex justify-between gap-4 border-b border-white/10 py-2">
+                <dt>Network</dt>
+                <dd className="text-slate-200">{health}</dd>
+              </div>
+              <div className="flex justify-between gap-4 py-2">
+                <dt>Phase</dt>
+                <dd className="text-slate-200">{syncState.runtimePhase}</dd>
+              </div>
+            </dl>
+
+            {(kind === 'offline' || kind === 'error') && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void handleRetry()}
+                className="mt-10 rounded-xl bg-p6-cyan px-10 py-3 text-sm font-semibold text-black disabled:opacity-50"
+              >
+                {busy ? 'Retrying…' : 'Retry connection'}
+              </button>
+            )}
+          </div>
+        </div>
+      </PrimaryOutputOnly>
     </div>
   );
 }

@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useDeviceContext } from '../contexts/DeviceContext';
 import { useHeartbeat, usePairing, useRuntime, useSync } from '../hooks/useRuntime';
 import { PairingCodeDisplay, CredentialInjectionForm } from '../components/pairing';
 import { runtimeConfig } from '../config/runtime';
 import { getPostRegistrationRoute } from '../services/runtime';
+import { PrimaryOutputOnly } from '../layout/PrimaryOutputOnly';
 import {
   clusterMemberShortLabel,
   resolveNextHdClusterMember,
@@ -37,15 +38,18 @@ function statusLabel(status: string): string {
   }
 }
 
-/** BrightSign LCD: full-screen pairing code (no debug tables). */
+/** BrightSign LCD: pairing on HDMI-1 only when multi-output canvas is active. */
 function DevicePairingLcd() {
   const { deviceInfo, loading, error } = useDeviceContext();
   const { pairingCode, registrationStatus, retryPairing, isReady, needsCredentials } =
     usePairing();
   const { syncState } = useSync();
+  const profile = deviceInfo?.hardwareProfile ?? runtimeConfig.hardwareProfile;
+
+  let body: ReactNode;
 
   if (isReady) {
-    return (
+    body = (
       <main className="flex h-full flex-col items-center justify-center gap-8 bg-black p-10 text-center text-white">
         <p className="text-sm font-bold uppercase tracking-[0.4em] text-cyan-400">Perform6</p>
         <h1 className="text-4xl font-semibold sm:text-5xl">Device ready</h1>
@@ -60,10 +64,8 @@ function DevicePairingLcd() {
         )}
       </main>
     );
-  }
-
-  if (pairingCode) {
-    return (
+  } else if (pairingCode) {
+    body = (
       <main className="flex h-full flex-col items-center justify-center gap-10 bg-black px-10 py-12 text-white">
         <PairingCodeDisplay
           code={pairingCode}
@@ -80,10 +82,8 @@ function DevicePairingLcd() {
         )}
       </main>
     );
-  }
-
-  if (registrationStatus === 'error' || syncState.error || error) {
-    return (
+  } else if (registrationStatus === 'error' || syncState.error || error) {
+    body = (
       <main className="flex h-full flex-col items-center justify-center gap-8 bg-black px-10 py-12 text-center text-white">
         <p className="text-sm font-bold uppercase tracking-[0.4em] text-cyan-400">Perform6</p>
         <h1 className="text-4xl font-semibold text-red-300">Pairing failed</h1>
@@ -104,25 +104,27 @@ function DevicePairingLcd() {
         </button>
       </main>
     );
+  } else {
+    body = (
+      <main className="flex h-full flex-col items-center justify-center gap-6 bg-black px-10 py-12 text-center text-white">
+        <p className="text-sm font-bold uppercase tracking-[0.4em] text-cyan-400">Perform6</p>
+        <h1 className="text-4xl font-semibold sm:text-5xl">
+          {loading || !deviceInfo
+            ? 'Collecting device information…'
+            : registrationStatus === 'pairing'
+              ? 'Requesting pairing code…'
+              : 'Starting pairing…'}
+        </h1>
+        <p className="max-w-xl text-lg text-white/65">
+          {deviceInfo
+            ? `${deviceInfo.model} · ${deviceInfo.serialNumber}`
+            : 'Reading BrightSign hardware identity and contacting Perform6.'}
+        </p>
+      </main>
+    );
   }
 
-  return (
-    <main className="flex h-full flex-col items-center justify-center gap-6 bg-black px-10 py-12 text-center text-white">
-      <p className="text-sm font-bold uppercase tracking-[0.4em] text-cyan-400">Perform6</p>
-      <h1 className="text-4xl font-semibold sm:text-5xl">
-        {loading || !deviceInfo
-          ? 'Collecting device information…'
-          : registrationStatus === 'pairing'
-            ? 'Requesting pairing code…'
-            : 'Starting pairing…'}
-      </h1>
-      <p className="max-w-xl text-lg text-white/65">
-        {deviceInfo
-          ? `${deviceInfo.model} · ${deviceInfo.serialNumber}`
-          : 'Reading BrightSign hardware identity and contacting Perform6.'}
-      </p>
-    </main>
-  );
+  return <PrimaryOutputOnly profile={profile}>{body}</PrimaryOutputOnly>;
 }
 
 export default function Pairing() {

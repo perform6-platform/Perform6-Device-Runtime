@@ -22,7 +22,7 @@ export class ErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('[Perform6] ErrorBoundary', error, info.componentStack);
     try {
-      window.__perform6Mounted = true;
+      window.__perform6AppMounted = true;
     } catch {
       /* ignore */
     }

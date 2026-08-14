@@ -105,7 +105,7 @@ export function createMockDeviceInfo(overrides: MockDeviceOptions = {}): DeviceI
     clusterMember,
     displayTarget:
       hardwareProfile === 'XC4055'
-        ? (overrides.displayTarget ?? runtimeConfig.displayTarget)
+        ? overrides.displayTarget
         : undefined,
     raw: {
       source: 'simulator',

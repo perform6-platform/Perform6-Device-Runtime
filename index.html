@@ -27,8 +27,11 @@
         z-index: 2147483647;
         background: #000000;
       }
-      #boot-status[hidden] {
+      #boot-status[hidden],
+      #boot-status.p6-boot-hidden {
         display: none !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
       }
       #boot-status .brand {
         font-size: 18px;

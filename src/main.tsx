@@ -1,4 +1,4 @@
-import { StrictMode, type ReactNode } from 'react';
+import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, HashRouter } from 'react-router-dom';
 import App from './App';
@@ -16,13 +16,30 @@ function afterFirstPaint(cb: () => void) {
   window.setTimeout(cb, 0);
 }
 
+/**
+ * BrightSign Chromium sometimes ignores the HTML `hidden` attribute alone.
+ * Force-hide with inline display + remove so React pairing UI is visible.
+ * Safe: shell lives outside #root; mount never depends on it.
+ */
 function hideBootShell() {
+  window.__perform6AppMounted = true;
   const shell = document.getElementById('boot-status');
-  if (shell) {
+  if (!shell) return;
+  try {
     shell.hidden = true;
     shell.setAttribute('aria-hidden', 'true');
+    shell.style.setProperty('display', 'none', 'important');
+    shell.style.setProperty('visibility', 'hidden', 'important');
+    shell.style.setProperty('pointer-events', 'none', 'important');
+    shell.remove();
+  } catch (e) {
+    console.warn('[Perform6] hideBootShell fallback', e);
+    try {
+      shell.style.display = 'none';
+    } catch {
+      /* ignore */
+    }
   }
-  window.__perform6AppMounted = true;
 }
 
 function showMountFailure(err: unknown) {
