@@ -38,7 +38,7 @@ function statusLabel(status: string): string {
   }
 }
 
-/** BrightSign LCD: pairing on HDMI-1 only when multi-output canvas is active. */
+/** BrightSign LCD: XT pairing runs only inside the independent HDMI-1 widget. */
 function DevicePairingLcd() {
   const { deviceInfo, loading, error } = useDeviceContext();
   const { pairingCode, registrationStatus, retryPairing, isReady, needsCredentials } =

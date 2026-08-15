@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { OutputBadge, OutputDiagnostics } from '../components/status/OutputDiagnostics';
 import type { HardwareProfile } from '../shared/types';
 
 /**
@@ -29,7 +30,8 @@ export function outputColumnClass(slots: OutputSlotCount): string {
 
 /**
  * Wrap primary UI (pairing / status) so it appears only on HDMI-1.
- * Secondary HDMI columns stay black until runtime content mounts.
+ * XT/XC use independent HtmlWidgets per output, so this wrapper is a no-op
+ * on those profiles in production.
  */
 export function PrimaryOutputOnly({
   profile,
@@ -39,16 +41,21 @@ export function PrimaryOutputOnly({
   children: ReactNode;
 }) {
   const slots = outputSlotCountForProfile(profile);
-  if (slots === 1) {
+  if (slots === 1 || profile === 'XT2145' || profile === 'XC4055') {
     return <>{children}</>;
   }
 
   const extras = slots - 1;
   return (
     <div className="flex h-full w-full flex-row overflow-hidden bg-black">
-      <div className={outputColumnClass(slots)}>{children}</div>
+      <div className={`relative ${outputColumnClass(slots)}`}>
+        <OutputBadge profile={profile} slotIndex={0} />
+        {children}
+      </div>
       {Array.from({ length: extras }, (_, i) => (
-        <div key={i} className={`${outputColumnClass(slots)} bg-black`} aria-hidden />
+        <div key={i} className={`${outputColumnClass(slots)} bg-black`}>
+          <OutputDiagnostics profile={profile} slotIndex={i + 1} />
+        </div>
       ))}
     </div>
   );

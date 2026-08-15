@@ -228,9 +228,19 @@ function main() {
         builtAt: new Date().toISOString(),
         multiHdmi:
           profileKey === 'XT2145'
-            ? { outputs: 2, canvas: '3840x1080', mode: '1920x1080x60p' }
+            ? {
+                outputs: 2,
+                canvas: '2 independent 1920x1080 HtmlWidgets',
+                outputMap: 'HDMI-1 x=0; HDMI-2 x=1920',
+                mode: '1920x1080x60p:fullres',
+              }
             : profileKey === 'XC4055'
-              ? { outputs: 3, canvas: '5760x1080', mode: '1920x1080x60p' }
+              ? {
+                  outputs: 3,
+                  canvas: '3 independent 1920x1080 HtmlWidgets',
+                  outputMap: 'HDMI-1 x=0; HDMI-2 x=1920; HDMI-3 x=3840',
+                  mode: '1920x1080x60p:fullres',
+                }
               : { outputs: 1, canvas: 'native', mode: 'default' },
         files: [
           'autorun.brs',
@@ -253,7 +263,23 @@ function main() {
       `Version: ${version}`,
       '',
       'Supported firmwares: BrightSign OS 8.2+ and 9.x (Series 5: XT/XC/HD).',
-      'Multi-HDMI uses SetScreenModes once at boot (player may reboot once).',
+      profileKey === 'HD226'
+        ? 'HD226 uses native single-output mode (no SetScreenModes).'
+        : 'Multi-HDMI is locked to 1920x1080x60p:fullres via SetScreenModes (no auto / no 120Hz fallback).',
+      profileKey === 'XT2145'
+        ? 'Two independent 1920x1080 HtmlWidgets: HDMI-1 touch runtime and HDMI-2 LED playback.'
+        : profileKey === 'XC4055'
+          ? 'Three independent 1920x1080 HtmlWidgets: HDMI-1 primary runtime and HDMI-2/3 LED playback.'
+          : 'Canvas follows the player native resolution.',
+      '',
+      profileKey === 'XT2145'
+        ? 'Bluefin owns pairing/sync/touch; HDMI-2 receives selected video through the local player relay.'
+        : profileKey === 'XC4055'
+          ? 'HDMI-1 owns pairing/sync and SCREEN_1; HDMI-2/3 receive SCREEN_2/3 through the local player relay.'
+          : 'Each output shows a corner badge: HDMI label, live canvas size, version.',
+      profileKey === 'XT2145' || profileKey === 'XC4055'
+        ? 'No diagnostic panel or badge is drawn over multi-HDMI outputs.'
+        : 'If a panel shows the BrightSign splash instead of a badge, report which HDMI is affected.',
       '',
       'IMPORTANT: Use this zip ONLY on matching hardware.',
       `  XT2145  -> perform6-xt2145-*.zip`,
@@ -272,7 +298,9 @@ function main() {
       '  assets/*.png',
       '',
       'After copy, reboot the player.',
-      'First boot may reboot again after enabling multi-HDMI — that is expected.',
+      profileKey === 'HD226'
+        ? 'No multi-HDMI reboot is expected on HD226.'
+        : 'First boot may reboot again after enabling fullres multi-HDMI — that is expected.',
       'DWS (browser): http://<player-ip>/',
       '',
     ].join('\n'),

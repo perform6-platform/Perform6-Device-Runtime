@@ -16,6 +16,13 @@ function envInt(key: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+function envBool(key: string, fallback: boolean): boolean {
+  const raw = env(key).toLowerCase();
+  if (raw === 'true' || raw === '1') return true;
+  if (raw === 'false' || raw === '0') return false;
+  return fallback;
+}
+
 function parseEnum<T extends string>(value: string, allowed: readonly T[], fallback: T): T {
   return allowed.includes(value as T) ? (value as T) : fallback;
 }
@@ -36,6 +43,23 @@ export const CLUSTER_MEMBERS = [
   'DEVICE_J',
 ] as const;
 export const DISPLAY_TARGETS = ['SCREEN_1', 'SCREEN_2', 'SCREEN_3'] as const;
+export const XT_OUTPUT_ROLES = ['touch', 'led'] as const;
+export type XtOutputRole = (typeof XT_OUTPUT_ROLES)[number];
+export const XC_OUTPUT_ROLES = ['primary', 'led2', 'led3'] as const;
+export type XcOutputRole = (typeof XC_OUTPUT_ROLES)[number];
+
+function readQueryOutput(): string {
+  if (typeof window === 'undefined') return '';
+  return (new URLSearchParams(window.location.search).get('bs_output') ?? '').toLowerCase();
+}
+
+function readXtOutputRole(): XtOutputRole {
+  return parseEnum(readQueryOutput(), XT_OUTPUT_ROLES, 'touch');
+}
+
+function readXcOutputRole(): XcOutputRole {
+  return parseEnum(readQueryOutput(), XC_OUTPUT_ROLES, 'primary');
+}
 
 export interface RuntimeConfig {
   apiBaseUrl: string;
@@ -53,6 +77,12 @@ export interface RuntimeConfig {
   syncIntervalMs: number;
   pairingPollMs: number;
   runtimeVersion: string;
+  /** Corner HDMI/canvas badge on each output; disable once mapping is verified. */
+  showOutputDiagnostics: boolean;
+  /** XT2145 browser surface: HDMI-1 owns runtime, HDMI-2 is playback-only. */
+  xtOutputRole: XtOutputRole;
+  /** XC4055 browser surface: HDMI-1 owns runtime, HDMI-2/3 are playback-only. */
+  xcOutputRole: XcOutputRole;
   isSimulator: boolean;
 }
 
@@ -80,10 +110,26 @@ export const runtimeConfig: RuntimeConfig = {
   syncIntervalMs: envInt('VITE_SYNC_INTERVAL_MS', 300_000),
   pairingPollMs: envInt('VITE_PAIRING_POLL_MS', 30_000),
   runtimeVersion: env('VITE_RUNTIME_VERSION', '0.1.0'),
+  showOutputDiagnostics: envBool('VITE_SHOW_OUTPUT_DIAGNOSTICS', true),
+  xtOutputRole: readXtOutputRole(),
+  xcOutputRole: readXcOutputRole(),
   get isSimulator() {
     return this.runtimeMode === 'SIMULATOR';
   },
 };
+
+/** Maps an XC secondary/primary widget to its logical deployment screen. */
+export function xcRoleToDisplayTarget(role: XcOutputRole = runtimeConfig.xcOutputRole): DisplayTarget {
+  switch (role) {
+    case 'led2':
+      return 'SCREEN_2';
+    case 'led3':
+      return 'SCREEN_3';
+    case 'primary':
+    default:
+      return 'SCREEN_1';
+  }
+}
 
 export function profileDefaultDeployment(profile: HardwareProfile): DeploymentType {
   return profile === 'XT2145' ? 'TOUCH_SCREEN' : 'DISPLAY';

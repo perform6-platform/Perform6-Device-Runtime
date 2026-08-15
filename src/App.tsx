@@ -9,7 +9,6 @@ import Home from './pages/Home';
 import Pairing from './pages/Pairing';
 import RuntimeDashboard from './pages/RuntimeDashboard';
 import XC4055Display from './pages/display/XC4055Display';
-import XT2145Display from './pages/display/XT2145Display';
 import HD226Display from './pages/display/HD226Display';
 import SimulatorLauncher from './simulator/SimulatorLauncher';
 import XT2145Simulator from './simulator/XT2145Simulator';
@@ -99,12 +98,8 @@ export default function App() {
               <Home />
             ) : (
               <RequirePaired redirectTo="/pairing">
-                {/* XT2145: HDMI-1 touch + HDMI-2 LED on multi-output canvas */}
-                {runtimeConfig.hardwareProfile === 'XT2145' ? (
-                  <XT2145Display />
-                ) : (
-                  <Home />
-                )}
+                {/* XT HDMI-1 owns this 1920x1080 widget; HDMI-2 is a separate widget. */}
+                <Home />
               </RequirePaired>
             )
           }

@@ -8,9 +8,22 @@ export interface Platform {
 }
 
 declare global {
+  interface BrightSignMessagePortEvent {
+    data: Record<string, unknown>;
+  }
+
+  interface BrightSignMessagePort {
+    PostBSMessage(message: Record<string, string | number | boolean>): boolean;
+    addEventListener(
+      type: 'bsmessage',
+      listener: (event: BrightSignMessagePortEvent) => void,
+    ): void;
+  }
+
   interface Window {
     brightsign?: unknown;
     BSDeviceInfo?: new () => BrightSignDeviceInfoLike;
+    BSMessagePort?: new () => BrightSignMessagePort;
     __perform6AppMounted?: boolean;
     __perform6ScriptFailed?: () => void;
     __perform6MountFailed?: (detail?: string) => void;

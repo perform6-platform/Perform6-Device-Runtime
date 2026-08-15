@@ -23,6 +23,8 @@ interface RuntimeStoreState {
     screenKey: string;
     mediaVersionId: string | null;
     title: string | null;
+    /** Network URL used if the LED widget cannot read the touch widget's cached blob. */
+    fallbackSrc: string | null;
   } | null;
   displayPaused: boolean;
   displayMuted: boolean;
@@ -46,6 +48,7 @@ interface RuntimeStoreState {
       screenKey?: string;
       mediaVersionId?: string | null;
       title?: string | null;
+      fallbackSrc?: string | null;
     } | null,
   ) => void;
   resetDisplayControls: () => void;
@@ -130,6 +133,7 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
             screenKey: meta?.screenKey ?? 'SCREEN_1',
             mediaVersionId: meta?.mediaVersionId ?? null,
             title: meta?.title ?? null,
+            fallbackSrc: meta?.fallbackSrc ?? null,
           }
         : null,
     }),

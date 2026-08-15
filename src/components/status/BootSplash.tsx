@@ -9,7 +9,7 @@ import { isDeviceReady } from '../../stores/deviceStore';
  * Full-screen BrightSign boot panel with live status lines.
  * Hides once pairing UI is ready. On pairing/API errors, yields to
  * DeviceStatusOverlay so the backend message is visible on the LCD.
- * Multi-HDMI: content only on HDMI-1; other outputs stay black.
+ * Multi-HDMI: XT boot log is confined to the independent HDMI-1 widget.
  */
 export function BootSplash() {
   const bootLines = useRuntimeStore((s) => s.bootLines);

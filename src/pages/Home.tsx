@@ -99,6 +99,7 @@ export default function Home() {
       screenKey: 'SCREEN_1',
       mediaVersionId: idleMedia.mediaVersionId,
       title: idleMedia.title,
+      fallbackSrc: idleMedia.url,
     });
   }, [
     playbackState.manifest,
@@ -124,6 +125,7 @@ export default function Home() {
       screenKey: 'SCREEN_1',
       mediaVersionId: idleMedia.mediaVersionId,
       title: idleMedia.title,
+      fallbackSrc: idleMedia.url,
     });
   }, [
     sessionOpen,
@@ -176,6 +178,7 @@ export default function Home() {
       screenKey: 'SCREEN_1',
       mediaVersionId: media.mediaVersionId,
       title: media.title ?? SESSION_LABEL[source],
+      fallbackSrc: media.url,
     });
     setActiveSession({
       source,

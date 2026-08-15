@@ -4,12 +4,12 @@ import { useOfflineVideoSrc } from '../../hooks/useOfflineVideoSrc';
 import { XC4055_SCREEN_FALLBACK_LABELS } from '../../shared/displayTarget';
 import type { DisplayTarget } from '../../shared/types';
 import { useRuntime, useSync } from '../../hooks/useRuntime';
+import { runtimeConfig, xcRoleToDisplayTarget } from '../../config/runtime';
 
 const OUTPUT_TARGETS: DisplayTarget[] = ['SCREEN_1', 'SCREEN_2', 'SCREEN_3'];
 
 /**
- * One physical LED output — fills its HDMI slice of the 5760×1080 canvas.
- * Content comes from deployment logical screens (SCREEN_1/2/3), not UI panes.
+ * One physical LED output — full 1920×1080 content for one logical screen.
  */
 function XcOutputSurface({
   target,
@@ -28,7 +28,7 @@ function XcOutputSurface({
     screen?.label?.trim() || XC4055_SCREEN_FALLBACK_LABELS[target] || target;
 
   return (
-    <section className="relative h-full min-w-0 flex-1 overflow-hidden bg-black">
+    <section className="relative h-full w-full overflow-hidden bg-black">
       {videoSrc ? (
         <DisplayVideoPlayer
           src={videoSrc}
@@ -53,24 +53,37 @@ function XcOutputSurface({
 }
 
 /**
- * Production XC4055 — single player drives three independent HDMI LEDs.
- * Canvas is 3×1080 side-by-side; SetScreenModes maps each third to HDMI-1/2/3
- * so every LED shows full-screen content for its logical screen.
+ * Production XC4055 — BrightSign uses three independent 1920×1080 HtmlWidgets.
+ * HDMI-1 (this page) only renders SCREEN_1. HDMI-2/3 are separate widgets.
+ * Simulator keeps the 3-column preview for convenience.
  */
 export default function XC4055Display() {
   const { store } = useRuntime();
   const { syncState } = useSync();
   const manifest = store.playbackState.manifest;
 
-  return (
-    <main className="flex h-full w-full flex-row overflow-hidden bg-black">
-      {OUTPUT_TARGETS.map((target) => (
+  if (!runtimeConfig.isSimulator) {
+    return (
+      <main className="h-full w-full overflow-hidden bg-black">
         <XcOutputSurface
-          key={target}
-          target={target}
+          target={xcRoleToDisplayTarget('primary')}
           manifest={manifest}
           runtimePhase={syncState.runtimePhase}
         />
+      </main>
+    );
+  }
+
+  return (
+    <main className="flex h-full w-full flex-row overflow-hidden bg-black">
+      {OUTPUT_TARGETS.map((target) => (
+        <div key={target} className="relative h-full min-w-0 flex-1 overflow-hidden">
+          <XcOutputSurface
+            target={target}
+            manifest={manifest}
+            runtimePhase={syncState.runtimePhase}
+          />
+        </div>
       ))}
     </main>
   );

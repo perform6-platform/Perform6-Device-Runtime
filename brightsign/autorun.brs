@@ -1,5 +1,5 @@
 ' Perform6 BrightSign autorun — multi-HDMI aware bootstrap
-' Profiles: XT2145 (HDMI-1 touch + HDMI-2 LED), XC4055 (HDMI-1/2/3 LEDs), HD226 (single)
+' Profiles: XT2145 (2 independent HtmlWidgets), XC4055 (3 independent HtmlWidgets), HD226 (single)
 ' Reads perform6-profile.txt from SD root when present; else uses roDeviceInfo model.
 ' SetScreenModes only when config differs (avoids reboot loop). Do NOT call SetMode.
 ' Do NOT set trusted_iframes_enabled. Do NOT call roTouchScreen.Enable.
@@ -151,7 +151,7 @@ Function UrlSafeToken(raw as String) as String
   return out
 End Function
 
-Function BuildAppUrl(basePath as String, identity as Object, profile as String) as String
+Function BuildAppUrl(basePath as String, identity as Object, profile as String, outputRole as String) as String
   q = ""
   if Len(identity.serial) > 0 then
     q = q + "bs_serial=" + UrlSafeToken(identity.serial)
@@ -171,6 +171,10 @@ Function BuildAppUrl(basePath as String, identity as Object, profile as String) 
   if Len(profile) > 0 then
     if Len(q) > 0 then q = q + "&"
     q = q + "bs_profile=" + UrlSafeToken(profile)
+  end if
+  if Len(outputRole) > 0 then
+    if Len(q) > 0 then q = q + "&"
+    q = q + "bs_output=" + UrlSafeToken(outputRole)
   end if
   if Len(q) = 0 then
     return basePath
@@ -245,6 +249,52 @@ Function FindScreenIndex(sm as Object, hdmiName as String) as Integer
   return -1
 End Function
 
+Sub LogDisplayIdentity(vm as Object, hdmiName as String)
+  if type(vm) <> "roVideoMode" then
+    return
+  end if
+
+  edid = vm.GetEdidIdentity(hdmiName)
+  if type(edid) <> "roAssociativeArray" then
+    SafePrint("=== Perform6: " + hdmiName + " EDID unavailable ===")
+    return
+  end if
+
+  manufacturer = "unknown"
+  monitorName = "unknown"
+  if type(edid.manufacturer) = "roString" then manufacturer = edid.manufacturer
+  if type(edid.monitor_name) = "roString" then monitorName = edid.monitor_name
+  SafePrint("=== Perform6: " + hdmiName + " EDID " + manufacturer + " / " + monitorName + " ===")
+End Sub
+
+Function VideoModeMatches(actualMode as Dynamic, expectedMode as String) as Boolean
+  if type(actualMode) <> "roString" then
+    return false
+  end if
+
+  actual = LCase(actualMode)
+  expected = LCase(expectedMode)
+  if Instr(1, actual, expected) > 0 then
+    return true
+  end if
+
+  ' BrightSign may normalize modifier order when returning GetScreenModes().
+  if Instr(1, expected, ":preferred") > 0 and Instr(1, actual, ":preferred") = 0 then
+    return false
+  end if
+  if Instr(1, expected, ":fullres") > 0 and Instr(1, actual, ":fullres") = 0 then
+    return false
+  end if
+
+  baseEnd = Instr(1, expected, ":")
+  if baseEnd > 0 then
+    expectedBase = Left(expected, baseEnd - 1)
+  else
+    expectedBase = expected
+  end if
+  return Instr(1, actual, expectedBase) = 1
+End Function
+
 Function ScreenAlreadyMatches(entry as Object, videoMode as String, displayX as Integer, enabled as Boolean) as Boolean
   if type(entry) <> "roAssociativeArray" then
     return false
@@ -255,15 +305,20 @@ Function ScreenAlreadyMatches(entry as Object, videoMode as String, displayX as 
   if enabled = false then
     return true
   end if
-  if type(entry.video_mode) = "roString" then
-    if Instr(1, LCase(entry.video_mode), LCase(videoMode)) = 0 then
-      return false
-    end if
+  if not VideoModeMatches(entry.video_mode, videoMode) then
+    return false
   end if
-  if type(entry.display_x) = "roInt" or type(entry.display_x) = "Integer" or type(entry.display_x) = "Float" then
-    if Int(entry.display_x) <> displayX then
-      return false
-    end if
+  if type(entry.display_x) <> "roInt" and type(entry.display_x) <> "Integer" and type(entry.display_x) <> "Float" then
+    return false
+  end if
+  if Int(entry.display_x) <> displayX then
+    return false
+  end if
+  if type(entry.display_y) <> "roInt" and type(entry.display_y) <> "Integer" and type(entry.display_y) <> "Float" then
+    return false
+  end if
+  if Int(entry.display_y) <> 0 then
+    return false
   end if
   return true
 End Function
@@ -298,10 +353,15 @@ Function ApplyMultiScreenModes(vm as Object, profile as String) as Boolean
     return false
   end if
 
-  mode1080 = "1920x1080x60p"
+  ' Hard-locked mode. No :preferred and no auto — those let a display fall back
+  ' to its own timing (LED negotiated 4K then 1080p120), which breaks the fixed
+  ' side-by-side canvas. :fullres keeps HTML/graphics 1:1 per output.
+  mode1080 = "1920x1080x60p:fullres"
   needChange = false
 
   if profile = "XT2145" then
+    LogDisplayIdentity(vm, "HDMI-1")
+    LogDisplayIdentity(vm, "HDMI-2")
     idx1 = FindScreenIndex(sm, "HDMI-1")
     idx2 = FindScreenIndex(sm, "HDMI-2")
     if idx1 < 0 then idx1 = 0
@@ -335,12 +395,15 @@ Function ApplyMultiScreenModes(vm as Object, profile as String) as Boolean
       i = i + 1
     end while
 
-    SafePrint("=== Perform6: SetScreenModes XT2145 HDMI-1+HDMI-2 (may reboot) ===")
+    SafePrint("=== Perform6: SetScreenModes XT2145 HDMI-1+HDMI-2 fullres (may reboot) ===")
     vm.SetScreenModes(sm)
     return true
   end if
 
   if profile = "XC4055" then
+    LogDisplayIdentity(vm, "HDMI-1")
+    LogDisplayIdentity(vm, "HDMI-2")
+    LogDisplayIdentity(vm, "HDMI-3")
     idx1 = FindScreenIndex(sm, "HDMI-1")
     idx2 = FindScreenIndex(sm, "HDMI-2")
     idx3 = FindScreenIndex(sm, "HDMI-3")
@@ -378,7 +441,7 @@ Function ApplyMultiScreenModes(vm as Object, profile as String) as Boolean
       i = i + 1
     end while
 
-    SafePrint("=== Perform6: SetScreenModes XC4055 HDMI-1/2/3 (may reboot) ===")
+    SafePrint("=== Perform6: SetScreenModes XC4055 HDMI-1/2/3 fullres (may reboot) ===")
     vm.SetScreenModes(sm)
     return true
   end if
@@ -417,52 +480,178 @@ Sub Main()
 
   width = 1920
   height = 1080
-  if type(vm) = "roVideoMode" then
+
+  ' XT/XC use independent 1920x1080 HtmlWidgets per HDMI. HD226 uses native size.
+  if profile <> "XT2145" and profile <> "XC4055" and type(vm) = "roVideoMode" then
     w = vm.GetResX()
     h = vm.GetResY()
     if w > 0 then width = w
     if h > 0 then height = h
   end if
 
-  ' Safety: ensure canvas spans expected outputs even if GetResX is stale.
-  if profile = "XT2145" and width < 3000 then
-    width = 3840
-  end if
-  if profile = "XC4055" and width < 5000 then
-    width = 5760
-  end if
+  html = invalid
+  htmlTouch = invalid
+  htmlLed = invalid
+  htmlPrimary = invalid
+  htmlLed2 = invalid
+  htmlLed3 = invalid
+  url = ""
+  touchUrl = ""
+  ledUrl = ""
+  primaryUrl = ""
+  led2Url = ""
+  led3Url = ""
+  touchFallbackTried = false
+  ledFallbackTried = false
+  primaryFallbackTried = false
+  led2FallbackTried = false
+  led3FallbackTried = false
 
-  SafePrint("=== Perform6: canvas " + StrI(width) + "x" + StrI(height) + " ===")
+  if profile = "XT2145" then
+    SafePrint("=== Perform6: XT independent widgets 2x1920x1080 ===")
+    touchRect = CreateObject("roRectangle", 0, 0, 1920, 1080)
+    ledRect = CreateObject("roRectangle", 1920, 0, 1920, 1080)
+    if type(touchRect) <> "roRectangle" or type(ledRect) <> "roRectangle" then
+      SafePrint("=== Perform6: FATAL no XT output rectangles ===")
+      while true
+        Sleep(10000)
+      end while
+    end if
 
-  rect = CreateObject("roRectangle", 0, 0, width, height)
-  if type(rect) <> "roRectangle" then
-    SafePrint("=== Perform6: FATAL no roRectangle ===")
-    while true
-      Sleep(10000)
-    end while
-  end if
+    touchUrl = BuildAppUrl("file:///index.html", identity, profile, "touch")
+    ledUrl = BuildAppUrl("file:///index.html", identity, profile, "led")
+    SafePrint("=== Perform6: HDMI-1 touch widget " + touchUrl + " ===")
+    htmlTouch = TryCreateHtmlWidget(touchRect, msgPort, touchUrl)
+    if type(htmlTouch) <> "roHtmlWidget" then
+      touchFallbackTried = true
+      touchUrl = BuildAppUrl("file:///SD:/index.html", identity, profile, "touch")
+      SafePrint("=== Perform6: retry HDMI-1 touch widget " + touchUrl + " ===")
+      htmlTouch = TryCreateHtmlWidget(touchRect, msgPort, touchUrl)
+    end if
+    if type(htmlTouch) <> "roHtmlWidget" then
+      SafePrint("=== Perform6: FATAL HDMI-1 touch HtmlWidget create failed ===")
+      while true
+        Sleep(10000)
+      end while
+    end if
 
-  url = BuildAppUrl("file:///index.html", identity, profile)
-  SafePrint("=== Perform6: HtmlWidget url " + url + " ===")
-  html = TryCreateHtmlWidget(rect, msgPort, url)
+    SafePrint("=== Perform6: HDMI-2 LED widget " + ledUrl + " ===")
+    htmlLed = TryCreateHtmlWidget(ledRect, msgPort, ledUrl)
+    if type(htmlLed) <> "roHtmlWidget" then
+      ledFallbackTried = true
+      ledUrl = BuildAppUrl("file:///SD:/index.html", identity, profile, "led")
+      SafePrint("=== Perform6: retry HDMI-2 LED widget " + ledUrl + " ===")
+      htmlLed = TryCreateHtmlWidget(ledRect, msgPort, ledUrl)
+    end if
 
-  if type(html) <> "roHtmlWidget" then
-    url = BuildAppUrl("file:///SD:/index.html", identity, profile)
-    SafePrint("=== Perform6: retry HtmlWidget with " + url + " ===")
+    EnableJsObjectsSafe(htmlTouch)
+    SafePrint("=== Perform6: Show HDMI-1 touch HtmlWidget ===")
+    htmlTouch.Show()
+
+    if type(htmlLed) = "roHtmlWidget" then
+      EnableJsObjectsSafe(htmlLed)
+      SafePrint("=== Perform6: Show HDMI-2 LED HtmlWidget ===")
+      htmlLed.Show()
+    else
+      SafePrint("=== Perform6: ERROR HDMI-2 LED HtmlWidget create failed ===")
+    end if
+  else if profile = "XC4055" then
+    SafePrint("=== Perform6: XC independent widgets 3x1920x1080 ===")
+    primaryRect = CreateObject("roRectangle", 0, 0, 1920, 1080)
+    led2Rect = CreateObject("roRectangle", 1920, 0, 1920, 1080)
+    led3Rect = CreateObject("roRectangle", 3840, 0, 1920, 1080)
+    if type(primaryRect) <> "roRectangle" or type(led2Rect) <> "roRectangle" or type(led3Rect) <> "roRectangle" then
+      SafePrint("=== Perform6: FATAL no XC output rectangles ===")
+      while true
+        Sleep(10000)
+      end while
+    end if
+
+    primaryUrl = BuildAppUrl("file:///index.html", identity, profile, "primary")
+    led2Url = BuildAppUrl("file:///index.html", identity, profile, "led2")
+    led3Url = BuildAppUrl("file:///index.html", identity, profile, "led3")
+
+    SafePrint("=== Perform6: HDMI-1 primary widget " + primaryUrl + " ===")
+    htmlPrimary = TryCreateHtmlWidget(primaryRect, msgPort, primaryUrl)
+    if type(htmlPrimary) <> "roHtmlWidget" then
+      primaryFallbackTried = true
+      primaryUrl = BuildAppUrl("file:///SD:/index.html", identity, profile, "primary")
+      SafePrint("=== Perform6: retry HDMI-1 primary widget " + primaryUrl + " ===")
+      htmlPrimary = TryCreateHtmlWidget(primaryRect, msgPort, primaryUrl)
+    end if
+    if type(htmlPrimary) <> "roHtmlWidget" then
+      SafePrint("=== Perform6: FATAL HDMI-1 primary HtmlWidget create failed ===")
+      while true
+        Sleep(10000)
+      end while
+    end if
+
+    SafePrint("=== Perform6: HDMI-2 LED widget " + led2Url + " ===")
+    htmlLed2 = TryCreateHtmlWidget(led2Rect, msgPort, led2Url)
+    if type(htmlLed2) <> "roHtmlWidget" then
+      led2FallbackTried = true
+      led2Url = BuildAppUrl("file:///SD:/index.html", identity, profile, "led2")
+      SafePrint("=== Perform6: retry HDMI-2 LED widget " + led2Url + " ===")
+      htmlLed2 = TryCreateHtmlWidget(led2Rect, msgPort, led2Url)
+    end if
+
+    SafePrint("=== Perform6: HDMI-3 LED widget " + led3Url + " ===")
+    htmlLed3 = TryCreateHtmlWidget(led3Rect, msgPort, led3Url)
+    if type(htmlLed3) <> "roHtmlWidget" then
+      led3FallbackTried = true
+      led3Url = BuildAppUrl("file:///SD:/index.html", identity, profile, "led3")
+      SafePrint("=== Perform6: retry HDMI-3 LED widget " + led3Url + " ===")
+      htmlLed3 = TryCreateHtmlWidget(led3Rect, msgPort, led3Url)
+    end if
+
+    EnableJsObjectsSafe(htmlPrimary)
+    SafePrint("=== Perform6: Show HDMI-1 primary HtmlWidget ===")
+    htmlPrimary.Show()
+
+    if type(htmlLed2) = "roHtmlWidget" then
+      EnableJsObjectsSafe(htmlLed2)
+      SafePrint("=== Perform6: Show HDMI-2 LED HtmlWidget ===")
+      htmlLed2.Show()
+    else
+      SafePrint("=== Perform6: ERROR HDMI-2 LED HtmlWidget create failed ===")
+    end if
+
+    if type(htmlLed3) = "roHtmlWidget" then
+      EnableJsObjectsSafe(htmlLed3)
+      SafePrint("=== Perform6: Show HDMI-3 LED HtmlWidget ===")
+      htmlLed3.Show()
+    else
+      SafePrint("=== Perform6: ERROR HDMI-3 LED HtmlWidget create failed ===")
+    end if
+  else
+    SafePrint("=== Perform6: canvas " + StrI(width) + "x" + StrI(height) + " ===")
+    rect = CreateObject("roRectangle", 0, 0, width, height)
+    if type(rect) <> "roRectangle" then
+      SafePrint("=== Perform6: FATAL no roRectangle ===")
+      while true
+        Sleep(10000)
+      end while
+    end if
+
+    url = BuildAppUrl("file:///index.html", identity, profile, "")
+    SafePrint("=== Perform6: HtmlWidget url " + url + " ===")
     html = TryCreateHtmlWidget(rect, msgPort, url)
+    if type(html) <> "roHtmlWidget" then
+      url = BuildAppUrl("file:///SD:/index.html", identity, profile, "")
+      SafePrint("=== Perform6: retry HtmlWidget with " + url + " ===")
+      html = TryCreateHtmlWidget(rect, msgPort, url)
+    end if
+    if type(html) <> "roHtmlWidget" then
+      SafePrint("=== Perform6: FATAL HtmlWidget create failed on this firmware ===")
+      while true
+        Sleep(10000)
+      end while
+    end if
+
+    EnableJsObjectsSafe(html)
+    SafePrint("=== Perform6: Show HtmlWidget ===")
+    html.Show()
   end if
-
-  if type(html) <> "roHtmlWidget" then
-    SafePrint("=== Perform6: FATAL HtmlWidget create failed on this firmware ===")
-    while true
-      Sleep(10000)
-    end while
-  end if
-
-  EnableJsObjectsSafe(html)
-
-  SafePrint("=== Perform6: Show HtmlWidget ===")
-  html.Show()
 
   EnableDiagnosticWebServer()
 
@@ -475,14 +664,70 @@ Sub Main()
         if type(data.reason) = "roString" then
           reason = data.reason
         end if
-        if reason = "load-error" then
+        if reason = "message" then
+          payload = data.message
+          if type(payload) = "roAssociativeArray" then
+            sender = ""
+            target = ""
+            if type(payload.role) = "roString" then sender = payload.role
+            if type(payload.target) = "roString" then target = payload.target
+            if profile = "XT2145" then
+              if sender = "touch" and type(htmlLed) = "roHtmlWidget" then
+                htmlLed.PostJSMessage(payload)
+              else if sender = "led" and type(htmlTouch) = "roHtmlWidget" then
+                htmlTouch.PostJSMessage(payload)
+              end if
+            else if profile = "XC4055" then
+              if sender = "primary" then
+                if target = "led2" and type(htmlLed2) = "roHtmlWidget" then
+                  htmlLed2.PostJSMessage(payload)
+                else if target = "led3" and type(htmlLed3) = "roHtmlWidget" then
+                  htmlLed3.PostJSMessage(payload)
+                end if
+              else if (sender = "led2" or sender = "led3") and type(htmlPrimary) = "roHtmlWidget" then
+                htmlPrimary.PostJSMessage(payload)
+              end if
+            end if
+          end if
+        else if reason = "load-error" then
           msg = ""
           if type(data.message) = "roString" then
             msg = data.message
           end if
           SafePrint("=== Perform6: HTML load-error: " + msg + " ===")
-          if Left(url, 17) = "file:///index.html" then
-            url = BuildAppUrl("file:///SD:/index.html", identity, profile)
+          failedUrl = ""
+          if type(data.url) = "roString" then failedUrl = data.url
+          if profile = "XT2145" then
+            if Instr(1, failedUrl, "bs_output=led") > 0 and ledFallbackTried = false and type(htmlLed) = "roHtmlWidget" then
+              ledFallbackTried = true
+              ledUrl = BuildAppUrl("file:///SD:/index.html", identity, profile, "led")
+              SafePrint("=== Perform6: HDMI-2 SetUrl fallback " + ledUrl + " ===")
+              htmlLed.SetUrl(ledUrl)
+            else if Instr(1, failedUrl, "bs_output=touch") > 0 and touchFallbackTried = false then
+              touchFallbackTried = true
+              touchUrl = BuildAppUrl("file:///SD:/index.html", identity, profile, "touch")
+              SafePrint("=== Perform6: HDMI-1 SetUrl fallback " + touchUrl + " ===")
+              htmlTouch.SetUrl(touchUrl)
+            end if
+          else if profile = "XC4055" then
+            if Instr(1, failedUrl, "bs_output=led2") > 0 and led2FallbackTried = false and type(htmlLed2) = "roHtmlWidget" then
+              led2FallbackTried = true
+              led2Url = BuildAppUrl("file:///SD:/index.html", identity, profile, "led2")
+              SafePrint("=== Perform6: HDMI-2 SetUrl fallback " + led2Url + " ===")
+              htmlLed2.SetUrl(led2Url)
+            else if Instr(1, failedUrl, "bs_output=led3") > 0 and led3FallbackTried = false and type(htmlLed3) = "roHtmlWidget" then
+              led3FallbackTried = true
+              led3Url = BuildAppUrl("file:///SD:/index.html", identity, profile, "led3")
+              SafePrint("=== Perform6: HDMI-3 SetUrl fallback " + led3Url + " ===")
+              htmlLed3.SetUrl(led3Url)
+            else if Instr(1, failedUrl, "bs_output=primary") > 0 and primaryFallbackTried = false then
+              primaryFallbackTried = true
+              primaryUrl = BuildAppUrl("file:///SD:/index.html", identity, profile, "primary")
+              SafePrint("=== Perform6: HDMI-1 SetUrl fallback " + primaryUrl + " ===")
+              htmlPrimary.SetUrl(primaryUrl)
+            end if
+          else if Left(url, 17) = "file:///index.html" then
+            url = BuildAppUrl("file:///SD:/index.html", identity, profile, "")
             SafePrint("=== Perform6: SetUrl fallback " + url + " ===")
             html.SetUrl(url)
           end if

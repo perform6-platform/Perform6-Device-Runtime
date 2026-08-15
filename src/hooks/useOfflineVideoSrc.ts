@@ -60,11 +60,12 @@ export function useTouchVideos(manifest: PlaybackManifest | null | undefined) {
 export function getTouchSlotMedia(
   manifest: PlaybackManifest | null | undefined,
   slotId: TouchPlaybackSlot,
-): { mediaVersionId: string | null; title: string | null } {
+): { mediaVersionId: string | null; title: string | null; url: string | null } {
   const screen = manifest ? findTouchScreen(manifest, slotId) : undefined;
   const video = getCurrentVideo(screen);
   return {
     mediaVersionId: video?.id ?? null,
     title: video?.title ?? null,
+    url: video?.url ?? null,
   };
 }
