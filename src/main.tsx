@@ -6,9 +6,6 @@ import './index.css';
 import { getPlatform, isBrightSignPlayer } from './platform';
 import { DeviceProvider, RuntimeProvider } from './contexts';
 import { ErrorBoundary } from './components/status';
-import { XT2145LedSurface } from './components/display/XT2145LedSurface';
-import { IndependentLedSurface } from './components/display/IndependentLedSurface';
-import { runtimeConfig } from './config/runtime';
 import { initXtOutputBridge } from './platform/xtOutputBridge';
 import { initXcOutputBridge } from './platform/xcOutputBridge';
 
@@ -71,30 +68,14 @@ try {
 
   // HashRouter required for file:// / BrightSign (no History API server).
   const Router = onBrightSign ? HashRouter : BrowserRouter;
-  const xtLedOnly =
-    onBrightSign &&
-    !runtimeConfig.isSimulator &&
-    runtimeConfig.hardwareProfile === 'XT2145' &&
-    runtimeConfig.xtOutputRole === 'led';
-  const xcLedOnly =
-    onBrightSign &&
-    !runtimeConfig.isSimulator &&
-    runtimeConfig.hardwareProfile === 'XC4055' &&
-    runtimeConfig.xcOutputRole !== 'primary';
 
+  // XT/XC MULTI: secondary HDMI outputs use native roVideoPlayer in autorun.brs
+  // (BrightAuthor-style — one Chromium on HDMI-1 only).
   initXtOutputBridge();
   initXcOutputBridge();
 
   // StrictMode double-invokes effects — keep off on BrightSign for older Chromium stability.
-  const tree = xtLedOnly ? (
-    <ErrorBoundary>
-      <XT2145LedSurface />
-    </ErrorBoundary>
-  ) : xcLedOnly ? (
-    <ErrorBoundary>
-      <IndependentLedSurface />
-    </ErrorBoundary>
-  ) : (
+  const tree = (
     <Router>
       <ErrorBoundary>
         <DeviceProvider>

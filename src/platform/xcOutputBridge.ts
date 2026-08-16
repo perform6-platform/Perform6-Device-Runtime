@@ -1,6 +1,5 @@
 import { runtimeConfig } from '../config/runtime';
 import { findScreenForTarget, getCurrentVideo } from '../services/playback';
-import { resolveLocalPlaybackUrl } from '../services/media';
 import type { DisplayTarget } from '../shared/types';
 import { useRuntimeStore } from '../stores/runtimeStore';
 
@@ -8,8 +7,6 @@ const PLAYBACK_MESSAGE = 'xc-playback';
 const LED_READY_MESSAGE = 'xc-led-ready';
 
 let initialized = false;
-let ledUpdateSequence = 0;
-let lastRelayedRestartNonce = 0;
 let publishSequence = 0;
 
 function createMessagePort(): BrightSignMessagePort | null {
@@ -26,27 +23,11 @@ function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-function asBoolean(value: unknown, fallback: boolean): boolean {
-  return typeof value === 'boolean' ? value : fallback;
-}
-
-function asNumber(value: unknown, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
-}
-
-async function resolvePlayableSrc(
-  mediaVersionId: string,
-  fallbackSrc: string,
-): Promise<string | null> {
-  if (mediaVersionId) {
-    try {
-      const local = await resolveLocalPlaybackUrl(mediaVersionId);
-      if (local && !local.startsWith('blob:')) return local;
-    } catch (error) {
-      console.warn('[Perform6] XC local media lookup failed', error);
-    }
-  }
-  return fallbackSrc || null;
+/** Native roVideoPlayer cannot play blob: IndexedDB URLs. */
+function nativePlayableSrc(src: string | null | undefined): string {
+  const value = asString(src);
+  if (!value || value.startsWith('blob:')) return '';
+  return value;
 }
 
 async function postScreenPlayback(
@@ -58,8 +39,8 @@ async function postScreenPlayback(
   const screen = manifest ? findScreenForTarget(manifest, screenKey) : undefined;
   const video = getCurrentVideo(screen);
   const mediaVersionId = video?.id ?? '';
-  const fallbackSrc = video?.url ?? '';
-  const src = (await resolvePlayableSrc(mediaVersionId, fallbackSrc)) ?? '';
+  const fallbackSrc = nativePlayableSrc(video?.url);
+  const src = fallbackSrc;
 
   port.PostBSMessage({
     type: PLAYBACK_MESSAGE,
@@ -83,46 +64,9 @@ async function publishSecondaryScreens(port: BrightSignMessagePort): Promise<voi
   await postScreenPlayback(port, 'led3', 'SCREEN_3');
 }
 
-async function applyLedPlayback(message: Record<string, unknown>): Promise<void> {
-  const sequence = ++ledUpdateSequence;
-  const mediaVersionId = asString(message.mediaVersionId);
-  const relayedSrc = asString(message.src);
-  const fallbackSrc = asString(message.fallbackSrc);
-
-  let src: string | null = null;
-  if (mediaVersionId) {
-    try {
-      src = await resolveLocalPlaybackUrl(mediaVersionId);
-      if (src?.startsWith('blob:')) src = null;
-    } catch (error) {
-      console.warn('[Perform6] XC LED local media lookup failed', error);
-    }
-  }
-  if (!src) {
-    src = fallbackSrc || (!relayedSrc.startsWith('blob:') ? relayedSrc : '') || null;
-  }
-  if (sequence !== ledUpdateSequence) return;
-
-  const store = useRuntimeStore.getState();
-  store.setDisplayVideoLoop(asBoolean(message.loop, true));
-  store.setDisplayPaused(asBoolean(message.paused, false));
-  store.setDisplayVideoSrc(src, {
-    screenKey: asString(message.screenKey) || 'SCREEN_1',
-    mediaVersionId: mediaVersionId || null,
-    title: asString(message.mediaTitle) || null,
-    fallbackSrc: fallbackSrc || null,
-  });
-
-  const restartNonce = asNumber(message.restartNonce, lastRelayedRestartNonce);
-  if (restartNonce !== lastRelayedRestartNonce) {
-    lastRelayedRestartNonce = restartNonce;
-    useRuntimeStore.getState().restartDisplayVideo();
-  }
-}
-
 /**
- * XC4055: HDMI-1 owns pairing/sync and publishes SCREEN_2 / SCREEN_3
- * to independent LED widgets. Secondary widgets never pair.
+ * XC4055: HDMI-1 React publishes SCREEN_2 / SCREEN_3; autorun drives
+ * HDMI-2/3 via native roVideoPlayer. Secondary Chromium widgets are gone.
  */
 export function initXcOutputBridge(): void {
   if (
@@ -134,35 +78,29 @@ export function initXcOutputBridge(): void {
   }
   initialized = true;
 
+  // LED-only roles never run in MULTI anymore (native players). Ignore if present.
+  if (runtimeConfig.xcOutputRole !== 'primary') {
+    return;
+  }
+
   const port = createMessagePort();
   if (!port) {
     console.error('[Perform6] BSMessagePort missing — XC HDMI relay cannot start');
     return;
   }
 
-  if (runtimeConfig.xcOutputRole === 'primary') {
-    port.addEventListener('bsmessage', (event) => {
-      if (asString(event.data.type) === LED_READY_MESSAGE) {
-        void publishSecondaryScreens(port);
-      }
-    });
-
-    useRuntimeStore.subscribe((state, previous) => {
-      if (state.playbackState.manifest !== previous.playbackState.manifest) {
-        void publishSecondaryScreens(port);
-      }
-    });
-    return;
-  }
-
   port.addEventListener('bsmessage', (event) => {
-    if (asString(event.data.type) !== PLAYBACK_MESSAGE) return;
-    const target = asString(event.data.target);
-    if (target && target !== runtimeConfig.xcOutputRole) return;
-    void applyLedPlayback(event.data);
+    if (asString(event.data.type) === LED_READY_MESSAGE) {
+      void publishSecondaryScreens(port);
+    }
   });
-  port.PostBSMessage({
-    type: LED_READY_MESSAGE,
-    role: runtimeConfig.xcOutputRole,
+
+  useRuntimeStore.subscribe((state, previous) => {
+    if (state.playbackState.manifest !== previous.playbackState.manifest) {
+      void publishSecondaryScreens(port);
+    }
   });
+
+  // Publish once if native LED ready beat the listener, or on first paint.
+  void publishSecondaryScreens(port);
 }
