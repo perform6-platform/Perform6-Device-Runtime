@@ -11,6 +11,17 @@ Sub SafePrint(msg as String)
   print msg
 End Sub
 
+' LED playback trail also lands on the card: BrightScript prints do not always
+' show up in the DWS log view, and this is the only output we can read remotely.
+Sub LedLog(msg as String)
+  SafePrint(msg)
+  path = "SD:/perform6-led.log"
+  existing = ReadAsciiFile(path)
+  if type(existing) <> "roString" and type(existing) <> "String" then existing = ""
+  if Len(existing) > 60000 then existing = ""
+  WriteAsciiFile(path, existing + msg + Chr(10))
+End Sub
+
 Function TryCreateHtmlWidget(rect as Object, msgPort as Object, url as String) as Object
   html = invalid
 
@@ -76,7 +87,55 @@ Sub EnableJsObjectsSafe(html as Object)
   end if
 End Sub
 
-Function TryCreateVideoPlayer(rect as Object, msgPort as Object, userTag as Integer) as Object
+Function CreateAudioOutputSafe(outputName as String) as Object
+  ao = CreateObject("roAudioOutput", outputName)
+  if type(ao) = "roAudioOutput" then return ao
+
+  ' Some Series 5 firmware builds accept the documented colon alias.
+  if outputName = "hdmi-1" then ao = CreateObject("roAudioOutput", "hdmi:1")
+  if outputName = "hdmi-2" then ao = CreateObject("roAudioOutput", "hdmi:2")
+  if outputName = "hdmi-3" then ao = CreateObject("roAudioOutput", "hdmi:3")
+  if outputName = "hdmi-4" then ao = CreateObject("roAudioOutput", "hdmi:4")
+  if type(ao) = "roAudioOutput" then return ao
+
+  LedLog("=== Perform6: audio output unavailable " + outputName + " ===")
+  return invalid
+End Function
+
+Sub RoutePlayerAudio(player as Object, outputName as String)
+  ao = CreateAudioOutputSafe(outputName)
+  if type(ao) <> "roAudioOutput" then return
+
+  pcmOk = player.SetPcmAudioOutputs(ao)
+  compressedOk = player.SetCompressedAudioOutputs(ao)
+  pcmText = "false"
+  compressedText = "false"
+  if pcmOk = true then pcmText = "true"
+  if compressedOk = true then compressedText = "true"
+  LedLog("=== Perform6: audio route " + outputName + " PCM=" + pcmText + " compressed=" + compressedText + " ===")
+End Sub
+
+Sub ConfigureAudioResources(profile as String)
+  if profile <> "XT2145" and profile <> "XC4055" then return
+
+  ac = CreateObject("roAudioConfiguration")
+  if type(ac) <> "roAudioConfiguration" then
+    LedLog("=== Perform6: roAudioConfiguration unavailable ===")
+    return
+  end if
+
+  cfg = CreateObject("roAssociativeArray")
+  cfg.mode = "prerouted"
+  cfg.autolevel = "off"
+  cfg.pcmonly = "true"
+  cfg.srcrate = 48000
+  ok = ac.ConfigureAudio(cfg)
+  result = "false"
+  if ok = true then result = "true"
+  LedLog("=== Perform6: prerouted PCM audio " + result + " ===")
+End Sub
+
+Function TryCreateVideoPlayer(rect as Object, msgPort as Object, userTag as Integer, audioOutput as String) as Object
   if type(rect) <> "roRectangle" then
     return invalid
   end if
@@ -91,6 +150,7 @@ Function TryCreateVideoPlayer(rect as Object, msgPort as Object, userTag as Inte
   vp.SetPort(msgPort)
   vp.SetUserData(userTag)
   vp.SetLoopMode(true)
+  RoutePlayerAudio(vp, audioOutput)
   return vp
 End Function
 
@@ -116,6 +176,8 @@ Function PayloadString(payload as Object, key as String) as String
   return ""
 End Function
 
+' BSMessagePort may deliver JS booleans/numbers as strings, so every control
+' value has to be accepted in both forms or Pause/Restart/Volume silently no-op.
 Function PayloadBool(payload as Object, key as String, fallback as Boolean) as Boolean
   if type(payload) <> "roAssociativeArray" then
     return fallback
@@ -125,9 +187,20 @@ Function PayloadBool(payload as Object, key as String, fallback as Boolean) as B
     value = payload.loop
   else if key = "paused" then
     value = payload.paused
+  else if key = "muted" then
+    value = payload.muted
   end if
+
   if type(value) = "Boolean" or type(value) = "roBoolean" then
     return value
+  end if
+  if type(value) = "roInt" or type(value) = "Integer" or type(value) = "Float" then
+    return (Int(value) <> 0)
+  end if
+  if type(value) = "roString" or type(value) = "String" then
+    text = LCase(value)
+    if text = "true" or text = "1" or text = "yes" then return true
+    if text = "false" or text = "0" or text = "no" then return false
   end if
   return fallback
 End Function
@@ -139,12 +212,45 @@ Function PayloadInt(payload as Object, key as String, fallback as Integer) as In
   value = invalid
   if key = "restartNonce" then
     value = payload.restartNonce
+  else if key = "volumePercent" then
+    value = payload.volumePercent
   end if
+
   if type(value) = "roInt" or type(value) = "Integer" or type(value) = "Float" then
     return Int(value)
   end if
+  if type(value) = "roString" or type(value) = "String" then
+    if Len(value) > 0 then return Int(Val(value))
+  end if
   return fallback
 End Function
+
+Sub ApplyLedVolume(st as Object, payload as Object)
+  if type(st) <> "roAssociativeArray" then return
+  if type(st.vp) <> "roVideoPlayer" then return
+
+  muted = PayloadBool(payload, "muted", false)
+  percent = PayloadInt(payload, "volumePercent", 100)
+  if muted then percent = 0
+  if percent < 0 then percent = 0
+  if percent > 100 then percent = 100
+
+  if st.volumePercent = percent then return
+  st.volumePercent = percent
+  st.vp.SetVolume(percent)
+  LedLog("=== Perform6: LED " + st.key + " volume " + IntToStr(percent) + " ===")
+End Sub
+
+Sub ApplyLedPauseState(st as Object)
+  if type(st) <> "roAssociativeArray" then return
+  if type(st.vp) <> "roVideoPlayer" then return
+
+  if st.paused then
+    st.vp.Pause()
+  else
+    st.vp.Resume()
+  end if
+End Sub
 
 Function IsPlayableNativeSrc(src as String) as Boolean
   if Len(src) = 0 then
@@ -156,10 +262,276 @@ Function IsPlayableNativeSrc(src as String) as Boolean
   return true
 End Function
 
-Sub ApplyNativePlayback(vp as Object, payload as Object, lastNonce as Object, nonceKey as String)
-  if type(vp) <> "roVideoPlayer" then
+' BrightScript reads "https://x" as drive "https" — network URLs must never be
+' passed to PlayFile() as a plain string ("Bad drive"). They go through roRtspStream.
+Function IsNetworkSrc(src as String) as Boolean
+  low = LCase(src)
+  if Left(low, 7) = "http://" then return true
+  if Left(low, 8) = "https://" then return true
+  if Left(low, 7) = "rtsp://" then return true
+  if Left(low, 6) = "rtp://" then return true
+  if Left(low, 6) = "udp://" then return true
+  return false
+End Function
+
+Function IntToStr(value as Integer) as String
+  s = StrI(value)
+  while Len(s) > 0 and Left(s, 1) = " "
+    s = Mid(s, 2)
+  end while
+  return s
+End Function
+
+Function SimpleHash(text as String) as String
+  h = 5381
+  for i = 1 to Len(text)
+    h = (h * 33 + Asc(Mid(text, i, 1))) mod 10000000
+  end for
+  return IntToStr(h) + "-" + IntToStr(Len(text))
+End Function
+
+Function UrlExtension(url as String) as String
+  base = url
+  q = Instr(1, base, "?")
+  if q > 0 then base = Left(base, q - 1)
+  dot = 0
+  for i = Len(base) to 1 step -1
+    ch = Mid(base, i, 1)
+    if ch = "." then
+      dot = i
+      exit for
+    else if ch = "/" then
+      exit for
+    end if
+  end for
+  if dot > 0 then
+    ext = LCase(Mid(base, dot))
+    if Len(ext) >= 3 and Len(ext) <= 5 then return ext
+  end if
+  return ".mp4"
+End Function
+
+Function CacheDir() as String
+  return "SD:/perform6-cache"
+End Function
+
+Function FileExistsIn(dir as String, name as String) as Boolean
+  files = MatchFiles(dir, name)
+  if type(files) = "roList" or type(files) = "roArray" then
+    return files.Count() > 0
+  end if
+  return false
+End Function
+
+Function CacheNameFor(url as String) as String
+  return SimpleHash(url) + UrlExtension(url)
+End Function
+
+Function CachedPathFor(url as String) as String
+  name = CacheNameFor(url)
+  if FileExistsIn(CacheDir(), name) then
+    return CacheDir() + "/" + name
+  end if
+  return ""
+End Function
+
+Function CreateLedState(vp as Object, key as String) as Object
+  st = CreateObject("roAssociativeArray")
+  st.vp = vp
+  st.key = key
+  st.nonce = 0
+  st.loopMode = true
+  st.paused = false
+  st.wantUrl = ""
+  st.playingUrl = ""
+  st.localName = ""
+  st.idleShown = false
+  st.volumePercent = -1
+  st.ignoreEnded = false
+  st.ignoreEndedSpan = invalid
+  st.stream = invalid
+  st.xfer = invalid
+  st.xferUrl = ""
+  st.xferTmp = ""
+  st.xferDest = ""
+  st.xferName = ""
+  return st
+End Function
+
+Function PlayLocalFile(vp as Object, path as String) as Boolean
+  ok = false
+  ok = vp.PlayFile(path)
+  if ok <> true then
+    aa = CreateObject("roAssociativeArray")
+    aa.Filename = path
+    ok = vp.PlayFile(aa)
+  end if
+  return (ok = true)
+End Function
+
+Function PlayNetworkStream(st as Object, url as String) as Boolean
+  stream = CreateObject("roRtspStream", url)
+  if type(stream) <> "roRtspStream" then
+    LedLog("=== Perform6: roRtspStream unavailable ===")
+    return false
+  end if
+  ' Keep the stream object alive for as long as it plays.
+  st.stream = stream
+  aa = CreateObject("roAssociativeArray")
+  aa.rtsp = stream
+  ok = st.vp.PlayFile(aa)
+  return (ok = true)
+End Function
+
+' Keep the SD cache small: drop anything the outputs are not using right now.
+Sub PruneCache(states as Object)
+  files = MatchFiles(CacheDir(), "*")
+  if type(files) <> "roList" and type(files) <> "roArray" then return
+  if files.Count() <= 6 then return
+
+  for each name in files
+    keep = false
+    for each st in states
+      if type(st) = "roAssociativeArray" then
+        if name = st.localName or name = st.xferName then keep = true
+      end if
+    end for
+    if not keep then DeleteFile(CacheDir() + "/" + name)
+  end for
+End Sub
+
+Sub StartCacheDownload(st as Object, url as String, msgPort as Object, states as Object)
+  if type(st.xfer) = "roUrlTransfer" and st.xferUrl = url then return
+
+  CreateDirectory(CacheDir())
+  name = CacheNameFor(url)
+  dest = CacheDir() + "/" + name
+  tmp = dest + ".part"
+
+  xfer = CreateObject("roUrlTransfer")
+  if type(xfer) <> "roUrlTransfer" then return
+  xfer.SetUrl(url)
+  xfer.SetPort(msgPort)
+
+  DeleteFile(tmp)
+  if xfer.AsyncGetToFile(tmp) then
+    st.xfer = xfer
+    st.xferUrl = url
+    st.xferTmp = tmp
+    st.xferDest = dest
+    st.xferName = name
+    LedLog("=== Perform6: LED " + st.key + " caching " + url + " ===")
+    PruneCache(states)
+  end if
+End Sub
+
+Function FindStateForUrlEvent(states as Object, ev as Object) as Object
+  ident = ev.GetSourceIdentity()
+  for each st in states
+    if type(st) = "roAssociativeArray" then
+      if type(st.xfer) = "roUrlTransfer" then
+        if st.xfer.GetIdentity() = ident then return st
+      end if
+    end if
+  end for
+  return invalid
+End Function
+
+Sub HandleCacheEvent(st as Object, ev as Object)
+  ' 1 = transfer complete.
+  if ev.GetInt() <> 1 then return
+
+  code = ev.GetResponseCode()
+  url = st.xferUrl
+  tmp = st.xferTmp
+  dest = st.xferDest
+  name = st.xferName
+  st.xfer = invalid
+  st.xferUrl = ""
+
+  if code < 200 or code > 299 then
+    LedLog("=== Perform6: LED " + st.key + " cache failed HTTP " + IntToStr(code) + " ===")
+    DeleteFile(tmp)
+    st.xferName = ""
     return
   end if
+
+  DeleteFile(dest)
+  moved = MoveFile(tmp, dest)
+  if moved <> true then
+    LedLog("=== Perform6: LED " + st.key + " cache move failed ===")
+    DeleteFile(tmp)
+    st.xferName = ""
+    return
+  end if
+  LedLog("=== Perform6: LED " + st.key + " cached " + dest + " ===")
+
+  ' Only take over when nothing is on screen — never interrupt a running stream.
+  if st.wantUrl = url and Len(st.playingUrl) = 0 then
+    if st.idleShown = true then
+      st.vp.StopClear()
+      st.vp.SetViewMode("FillScreenAndCentered")
+      st.idleShown = false
+    end if
+    if PlayLocalFile(st.vp, dest) then
+      st.playingUrl = url
+      st.localName = name
+      st.vp.SetLoopMode(st.loopMode)
+      if st.paused then
+        st.vp.Pause()
+      else
+        st.vp.Resume()
+      end if
+    end if
+  end if
+End Sub
+
+Sub PlayNativeSrc(st as Object, src as String, msgPort as Object, states as Object)
+  ok = false
+  st.localName = ""
+  ' A fresh decoder session starts at default volume — force the next re-apply.
+  st.volumePercent = -1
+
+  ' Leaving the idle logo: release the still image and restore video scaling.
+  if st.idleShown = true then
+    st.vp.StopClear()
+    st.vp.SetViewMode("FillScreenAndCentered")
+    st.idleShown = false
+  end if
+
+  if IsNetworkSrc(src) then
+    cached = CachedPathFor(src)
+    if Len(cached) > 0 then
+      LedLog("=== Perform6: LED " + st.key + " play cached " + cached + " ===")
+      ok = PlayLocalFile(st.vp, cached)
+      if ok then st.localName = CacheNameFor(src)
+    end if
+    if not ok then
+      ok = PlayNetworkStream(st, src)
+      if ok then LedLog("=== Perform6: LED " + st.key + " streaming " + src + " ===")
+      StartCacheDownload(st, src, msgPort, states)
+    end if
+  else
+    ok = PlayLocalFile(st.vp, src)
+  end if
+
+  if ok then
+    st.playingUrl = src
+    st.vp.SetLoopMode(st.loopMode)
+    if st.paused then
+      st.vp.Pause()
+    else
+      st.vp.Resume()
+    end if
+  else
+    st.playingUrl = ""
+    LedLog("=== Perform6: LED " + st.key + " play FAILED " + src + " ===")
+  end if
+End Sub
+
+Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, states as Object)
+  if type(st) <> "roAssociativeArray" then return
+  if type(st.vp) <> "roVideoPlayer" then return
 
   src = PayloadString(payload, "src")
   fallbackSrc = PayloadString(payload, "fallbackSrc")
@@ -167,61 +539,80 @@ Sub ApplyNativePlayback(vp as Object, payload as Object, lastNonce as Object, no
     src = fallbackSrc
   end if
   if not IsPlayableNativeSrc(src) then
-    SafePrint("=== Perform6: native LED skip — no http/file src ===")
-    vp.StopClear()
+    ' Nothing playable yet — hold the current frame instead of going black.
+    LedLog("=== Perform6: LED " + st.key + " no playable src ===")
     return
   end if
 
-  loopMode = PayloadBool(payload, "loop", true)
-  paused = PayloadBool(payload, "paused", false)
+  st.loopMode = PayloadBool(payload, "loop", true)
+  st.paused = PayloadBool(payload, "paused", false)
   restartNonce = PayloadInt(payload, "restartNonce", 0)
-  forceRestart = false
-  if type(lastNonce) = "roAssociativeArray" then
-    previous = 0
-    if nonceKey = "led" then
-      if type(lastNonce.led) = "roInt" or type(lastNonce.led) = "Integer" then previous = lastNonce.led
-      if restartNonce <> previous then
-        forceRestart = true
-        lastNonce.led = restartNonce
-      end if
-    else if nonceKey = "led2" then
-      if type(lastNonce.led2) = "roInt" or type(lastNonce.led2) = "Integer" then previous = lastNonce.led2
-      if restartNonce <> previous then
-        forceRestart = true
-        lastNonce.led2 = restartNonce
-      end if
-    else if nonceKey = "led3" then
-      if type(lastNonce.led3) = "roInt" or type(lastNonce.led3) = "Integer" then previous = lastNonce.led3
-      if restartNonce <> previous then
-        forceRestart = true
-        lastNonce.led3 = restartNonce
-      end if
-    end if
-  end if
+  forceRestart = restartNonce <> st.nonce
+  st.nonce = restartNonce
+  st.wantUrl = src
 
-  vp.SetLoopMode(loopMode)
-
-  if forceRestart then
-    vp.StopClear()
-  end if
-
-  ok = vp.PlayFile(src)
-  if ok = false then
-    aa = CreateObject("roAssociativeArray")
-    aa.Filename = src
-    ok = vp.PlayFile(aa)
-  end if
-
-  if ok = false then
-    SafePrint("=== Perform6: native PlayFile failed ===")
+  ' Same clip, no restart requested: transport-only update, no reload.
+  if src = st.playingUrl and not forceRestart then
+    st.vp.SetLoopMode(st.loopMode)
+    ApplyLedVolume(st, payload)
+    ApplyLedPauseState(st)
     return
   end if
 
-  SafePrint("=== Perform6: native PlayFile ok ===")
-  if paused then
-    vp.Pause()
+  if forceRestart and src = st.playingUrl then
+    ' Restart must rewind: reloading the same file is the only reliable seek.
+    ' StopClear fires MediaEnded — suppress it briefly so Full Program stays open.
+    LedLog("=== Perform6: LED " + st.key + " restart ===")
+    st.ignoreEnded = true
+    st.ignoreEndedSpan = CreateObject("roTimespan")
+    if type(st.ignoreEndedSpan) = "roTimespan" then st.ignoreEndedSpan.Mark()
+    st.vp.StopClear()
+    st.playingUrl = ""
+  end if
+
+  PlayNativeSrc(st, src, msgPort, states)
+  ApplyLedVolume(st, payload)
+  ApplyLedPauseState(st)
+End Sub
+
+' Packaged led-idle.png (or optional led-idle.mp4 override) loops on the LED
+' until the first backend / touch video arrives — avoids "No signal".
+Sub PlayIdleClip(st as Object)
+  if type(st) <> "roAssociativeArray" then return
+  if type(st.vp) <> "roVideoPlayer" then return
+
+  if FileExistsIn("SD:/", "led-idle.mp4") then
+    st.vp.SetLoopMode(true)
+    if PlayLocalFile(st.vp, "SD:/led-idle.mp4") then
+      st.idleShown = true
+      LedLog("=== Perform6: LED " + st.key + " idle SD:/led-idle.mp4 ===")
+      st.vp.Resume()
+      return
+    end if
+    LedLog("=== Perform6: LED " + st.key + " idle FAILED SD:/led-idle.mp4 ===")
+  end if
+
+  if not FileExistsIn("SD:/", "led-idle.png") then
+    LedLog("=== Perform6: LED " + st.key + " no idle file on card ===")
+    return
+  end if
+
+  ' Full-screen 1920x1080 asset — use Centered so the decoder does not upscale
+  ' a small logo strip (that looked jagged / stretched on the LED).
+  st.vp.SetViewMode("Centered")
+  ok = st.vp.PlayStaticImage("SD:/led-idle.png")
+  if ok <> true then
+    aa = CreateObject("roAssociativeArray")
+    aa.Filename = "SD:/led-idle.png"
+    ok = st.vp.PlayStaticImage(aa)
+  end if
+
+  if ok = true then
+    st.idleShown = true
+    LedLog("=== Perform6: LED " + st.key + " idle SD:/led-idle.png ===")
   else
-    vp.Resume()
+    st.vp.SetViewMode("FillScreenAndCentered")
+    LedLog("=== Perform6: LED " + st.key + " idle FAILED SD:/led-idle.png ===")
   end if
 End Sub
 
@@ -629,10 +1020,11 @@ End Function
 
 Sub Main()
   SafePrint("=== Perform6: autorun start ===")
+  DeleteFile("SD:/perform6-led.log")
 
   identity = CollectDeviceIdentity()
   profile = ResolveHardwareProfile(identity)
-  SafePrint("=== Perform6: hardware profile " + profile + " ===")
+  LedLog("=== Perform6: hardware profile " + profile + " ===")
 
   displayMode = ReadDisplayMode()
   ' XT/XC always BrightAuthor-style multi-output (React + native LED video).
@@ -661,6 +1053,9 @@ Sub Main()
     end if
   end if
 
+  ' Must be configured before any HTML/video player allocates an audio decoder.
+  ConfigureAudioResources(profile)
+
   width = 1920
   height = 1080
 
@@ -684,10 +1079,10 @@ Sub Main()
   primaryUrl = ""
   touchFallbackTried = false
   primaryFallbackTried = false
-  lastVideoNonce = CreateObject("roAssociativeArray")
-  lastVideoNonce.led = 0
-  lastVideoNonce.led2 = 0
-  lastVideoNonce.led3 = 0
+  ledStates = CreateObject("roArray", 3, true)
+  ledState = invalid
+  led2State = invalid
+  led3State = invalid
 
   if profile = "XT2145" and multiOutput then
     SafePrint("=== Perform6: XT React HDMI-1 + native video HDMI-2 ===")
@@ -717,16 +1112,21 @@ Sub Main()
     end if
 
     EnableJsObjectsSafe(htmlTouch)
+    ' XT HDMI-1 is a touch UI only. All programme audio belongs to HDMI-2.
+    RoutePlayerAudio(htmlTouch, "none")
     SafePrint("=== Perform6: Show HDMI-1 touch HtmlWidget ===")
     htmlTouch.Show()
 
     ' Let the first plane settle before enabling the second video port.
     Sleep(1500)
-    SafePrint("=== Perform6: HDMI-2 native roVideoPlayer ===")
-    videoLed = TryCreateVideoPlayer(ledRect, msgPort, 2)
+    LedLog("=== Perform6: HDMI-2 native roVideoPlayer ===")
+    videoLed = TryCreateVideoPlayer(ledRect, msgPort, 2, "hdmi-2")
     if type(videoLed) <> "roVideoPlayer" then
-      SafePrint("=== Perform6: ERROR HDMI-2 roVideoPlayer create failed ===")
+      LedLog("=== Perform6: ERROR HDMI-2 roVideoPlayer create failed ===")
     else
+      ledState = CreateLedState(videoLed, "led")
+      ledStates.Push(ledState)
+      PlayIdleClip(ledState)
       PostLedReady(htmlTouch, "xt-led-ready", "led")
     end if
   else if profile = "XC4055" and multiOutput then
@@ -758,24 +1158,32 @@ Sub Main()
     end if
 
     EnableJsObjectsSafe(htmlPrimary)
+    ' XC HDMI-1 is also a programme display, so its HTML video owns HDMI-1 audio.
+    RoutePlayerAudio(htmlPrimary, "hdmi-1")
     SafePrint("=== Perform6: Show HDMI-1 primary HtmlWidget ===")
     htmlPrimary.Show()
 
     Sleep(1500)
-    SafePrint("=== Perform6: HDMI-2 native roVideoPlayer ===")
-    videoLed2 = TryCreateVideoPlayer(led2Rect, msgPort, 2)
+    LedLog("=== Perform6: HDMI-2 native roVideoPlayer ===")
+    videoLed2 = TryCreateVideoPlayer(led2Rect, msgPort, 2, "hdmi-2")
     if type(videoLed2) <> "roVideoPlayer" then
-      SafePrint("=== Perform6: ERROR HDMI-2 roVideoPlayer create failed ===")
+      LedLog("=== Perform6: ERROR HDMI-2 roVideoPlayer create failed ===")
     else
+      led2State = CreateLedState(videoLed2, "led2")
+      ledStates.Push(led2State)
+      PlayIdleClip(led2State)
       PostLedReady(htmlPrimary, "xc-led-ready", "led2")
     end if
 
     Sleep(1500)
-    SafePrint("=== Perform6: HDMI-3 native roVideoPlayer ===")
-    videoLed3 = TryCreateVideoPlayer(led3Rect, msgPort, 3)
+    LedLog("=== Perform6: HDMI-3 native roVideoPlayer ===")
+    videoLed3 = TryCreateVideoPlayer(led3Rect, msgPort, 3, "hdmi-3")
     if type(videoLed3) <> "roVideoPlayer" then
-      SafePrint("=== Perform6: ERROR HDMI-3 roVideoPlayer create failed ===")
+      LedLog("=== Perform6: ERROR HDMI-3 roVideoPlayer create failed ===")
     else
+      led3State = CreateLedState(videoLed3, "led3")
+      ledStates.Push(led3State)
+      PlayIdleClip(led3State)
       PostLedReady(htmlPrimary, "xc-led-ready", "led3")
     end if
   else
@@ -805,6 +1213,8 @@ Sub Main()
     end if
 
     EnableJsObjectsSafe(html)
+    ' HD226 has one physical LED output; route its HTML media to that HDMI.
+    RoutePlayerAudio(html, "hdmi")
     SafePrint("=== Perform6: Show HtmlWidget ===")
     html.Show()
   end if
@@ -816,11 +1226,32 @@ Sub Main()
     if type(ev) = "roVideoEvent" then
       ' 8 = MediaEnded — notify touch UI for non-looping XT playback.
       if ev.GetInt() = 8 and profile = "XT2145" and type(htmlTouch) = "roHtmlWidget" then
-        ended = CreateObject("roAssociativeArray")
-        ended.type = "xt-led-ended"
-        ended.role = "led"
-        htmlTouch.PostJSMessage(ended)
-        SafePrint("=== Perform6: native LED media ended ===")
+        skipEnded = false
+        if type(ledState) = "roAssociativeArray" and ledState.ignoreEnded = true then
+          withinWindow = true
+          if type(ledState.ignoreEndedSpan) = "roTimespan" then
+            if ledState.ignoreEndedSpan.TotalMilliseconds() > 2500 then withinWindow = false
+          end if
+          if withinWindow then
+            skipEnded = true
+            LedLog("=== Perform6: ignore MediaEnded (restart) ===")
+          else
+            ledState.ignoreEnded = false
+            ledState.ignoreEndedSpan = invalid
+          end if
+        end if
+        if not skipEnded then
+          ended = CreateObject("roAssociativeArray")
+          ended.type = "xt-led-ended"
+          ended.role = "led"
+          htmlTouch.PostJSMessage(ended)
+          LedLog("=== Perform6: native LED media ended ===")
+        end if
+      end if
+    else if type(ev) = "roUrlEvent" then
+      cacheState = FindStateForUrlEvent(ledStates, ev)
+      if type(cacheState) = "roAssociativeArray" then
+        HandleCacheEvent(cacheState, ev)
       end if
     else if type(ev) = "roHtmlWidgetEvent" then
       data = ev.GetData()
@@ -835,16 +1266,21 @@ Sub Main()
             msgType = PayloadString(payload, "type")
             sender = PayloadString(payload, "role")
             target = PayloadString(payload, "target")
+            if msgType = "xt-playback" or msgType = "xc-playback" then
+              pausedText = "play"
+              if PayloadBool(payload, "paused", false) then pausedText = "paused"
+              LedLog("=== Perform6: msg " + msgType + " from " + sender + " target " + target + " " + pausedText + " vol " + IntToStr(PayloadInt(payload, "volumePercent", 100)) + " nonce " + IntToStr(PayloadInt(payload, "restartNonce", 0)) + " src " + PayloadString(payload, "src") + " ===")
+            end if
             if profile = "XT2145" then
               if sender = "touch" and msgType = "xt-playback" then
-                ApplyNativePlayback(videoLed, payload, lastVideoNonce, "led")
+                ApplyNativePlayback(ledState, payload, msgPort, ledStates)
               end if
             else if profile = "XC4055" then
               if sender = "primary" and msgType = "xc-playback" then
                 if target = "led2" then
-                  ApplyNativePlayback(videoLed2, payload, lastVideoNonce, "led2")
+                  ApplyNativePlayback(led2State, payload, msgPort, ledStates)
                 else if target = "led3" then
-                  ApplyNativePlayback(videoLed3, payload, lastVideoNonce, "led3")
+                  ApplyNativePlayback(led3State, payload, msgPort, ledStates)
                 end if
               end if
             end if

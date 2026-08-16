@@ -6,6 +6,8 @@ const LED_READY_MESSAGE = 'xt-led-ready';
 const LED_ENDED_MESSAGE = 'xt-led-ended';
 
 let initialized = false;
+/** Suppress xt-led-ended briefly after Restart (StopClear can fake MediaEnded). */
+let ignoreLedEndedUntil = 0;
 
 function createMessagePort(): BrightSignMessagePort | null {
   try {
@@ -44,9 +46,18 @@ function postTouchPlayback(port: BrightSignMessagePort): void {
     mediaVersionId: meta?.mediaVersionId ?? '',
     mediaTitle: meta?.title ?? '',
     screenKey: meta?.screenKey ?? 'SCREEN_1',
-    loop: state.displayVideoLoop,
-    paused: state.displayPaused,
-    restartNonce: state.displayRestartNonce,
+    // BSMessagePort is flat and loosely typed — send transport flags as strings
+    // so BrightScript never receives an ambiguous boolean.
+    loop: state.displayVideoLoop ? 'true' : 'false',
+    paused: state.displayPaused ? 'true' : 'false',
+    muted: state.displayMuted ? 'true' : 'false',
+    // Native SetVolume is 0–100; mute forces silence on the LED.
+    volumePercent: String(
+      state.displayMuted
+        ? 0
+        : Math.max(0, Math.min(100, Math.round(state.displayVolume * 100))),
+    ),
+    restartNonce: String(state.displayRestartNonce),
   });
 }
 
@@ -80,16 +91,26 @@ export function initXtOutputBridge(): void {
     if (type === LED_READY_MESSAGE) {
       postTouchPlayback(port);
     } else if (type === LED_ENDED_MESSAGE) {
+      if (Date.now() < ignoreLedEndedUntil) {
+        console.info('[Perform6] Ignoring LED ended after restart');
+        return;
+      }
       useRuntimeStore.getState().displayVideoEndedHandler?.();
     }
   });
 
   useRuntimeStore.subscribe((state, previous) => {
+    if (state.displayRestartNonce !== previous.displayRestartNonce) {
+      // Cover StopClear → MediaEnded race on the native player.
+      ignoreLedEndedUntil = Date.now() + 1500;
+    }
     if (
       state.displayVideoSrc !== previous.displayVideoSrc ||
       state.displayPlaybackMeta !== previous.displayPlaybackMeta ||
       state.displayVideoLoop !== previous.displayVideoLoop ||
       state.displayPaused !== previous.displayPaused ||
+      state.displayMuted !== previous.displayMuted ||
+      state.displayVolume !== previous.displayVolume ||
       state.displayRestartNonce !== previous.displayRestartNonce
     ) {
       postTouchPlayback(port);

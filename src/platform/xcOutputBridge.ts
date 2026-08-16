@@ -51,9 +51,11 @@ async function postScreenPlayback(
     mediaVersionId,
     mediaTitle: video?.title ?? '',
     screenKey,
-    loop: true,
-    paused: false,
-    restartNonce: 0,
+    loop: 'true',
+    paused: 'false',
+    muted: 'false',
+    volumePercent: '100',
+    restartNonce: '0',
   });
 }
 

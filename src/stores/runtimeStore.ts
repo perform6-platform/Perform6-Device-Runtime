@@ -8,6 +8,11 @@ import type {
   SyncState,
 } from '../shared/types';
 import { createId } from '../shared/createId';
+import {
+  DEFAULT_VOLUME,
+  readStoredDisplayVolume,
+  writeStoredDisplayVolume,
+} from '../lib/displayVolumePrefs';
 
 interface RuntimeStoreState {
   deviceInfo: DeviceInfo | null;
@@ -54,6 +59,7 @@ interface RuntimeStoreState {
   resetDisplayControls: () => void;
   toggleDisplayPaused: () => void;
   toggleDisplayMuted: () => void;
+  setDisplayMuted: (muted: boolean) => void;
   setDisplayVolume: (volume: number) => void;
   setDisplayVideoLoop: (loop: boolean) => void;
   setDisplayPaused: (paused: boolean) => void;
@@ -100,8 +106,8 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
   displayVideoSrc: null,
   displayPlaybackMeta: null,
   displayPaused: false,
-  displayMuted: true,
-  displayVolume: 1,
+  displayMuted: false,
+  displayVolume: readStoredDisplayVolume(),
   displayRestartNonce: 0,
   displayVideoLoop: true,
   displayVideoEndedHandler: null,
@@ -137,14 +143,17 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
           }
         : null,
     }),
-  resetDisplayControls: () =>
+  resetDisplayControls: () => {
+    const volume = readStoredDisplayVolume();
     set({
       displayPaused: false,
-      displayMuted: true,
-      displayVolume: 1,
+      displayMuted: volume === 0,
+      displayVolume: volume > 0 ? volume : DEFAULT_VOLUME,
       displayRestartNonce: 0,
       displayVideoLoop: true,
-    }),
+      displayVideoEndedHandler: null,
+    });
+  },
   toggleDisplayPaused: () => {
     const displayPaused = !get().displayPaused;
     set({ displayPaused });
@@ -153,19 +162,24 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
   toggleDisplayMuted: () => {
     const state = get();
     if (state.displayMuted) {
+      const restored =
+        state.displayVolume > 0 ? state.displayVolume : readStoredDisplayVolume() || DEFAULT_VOLUME;
       set({
         displayMuted: false,
-        displayVolume: state.displayVolume > 0 ? state.displayVolume : 1,
+        displayVolume: restored,
       });
       return;
     }
     set({ displayMuted: true });
   },
-  setDisplayVolume: (displayVolume) =>
+  setDisplayMuted: (displayMuted) => set({ displayMuted }),
+  setDisplayVolume: (displayVolume) => {
+    writeStoredDisplayVolume(displayVolume);
     set({
       displayVolume,
       displayMuted: displayVolume === 0,
-    }),
+    });
+  },
   setDisplayVideoLoop: (displayVideoLoop) => set({ displayVideoLoop }),
   setDisplayPaused: (displayPaused) => {
     set({ displayPaused });

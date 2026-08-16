@@ -16,6 +16,7 @@ import {
   VideoPlayingModal,
 } from '../components/ui';
 import { FULL_PROGRAM_ITEMS } from '../lib/fullProgram';
+import { readStoredDisplayVolume } from '../lib/displayVolumePrefs';
 import { useHomeIdle } from '../hooks/useHomeIdle';
 import { PHASE1_ITEMS } from '../lib/phase1';
 import { PHASE2_ITEMS } from '../lib/phase2';
@@ -70,6 +71,8 @@ export default function Home() {
   const resetDisplayControls = useRuntimeStore((s) => s.resetDisplayControls);
   const setDisplayVideoLoop = useRuntimeStore((s) => s.setDisplayVideoLoop);
   const setDisplayPaused = useRuntimeStore((s) => s.setDisplayPaused);
+  const setDisplayMuted = useRuntimeStore((s) => s.setDisplayMuted);
+  const setDisplayVolume = useRuntimeStore((s) => s.setDisplayVolume);
   const setDisplayVideoEndedHandler = useRuntimeStore((s) => s.setDisplayVideoEndedHandler);
   const touchVideos = useTouchVideos(playbackState.manifest);
   const [startHereOpen, setStartHereOpen] = useState(false);
@@ -170,6 +173,12 @@ export default function Home() {
     if (!videoSrc) return;
     idle.close();
     resetDisplayControls();
+    // Full Program: ensure audible at last volume (default 50%), never force 100%.
+    if (source === 'full-program') {
+      const volume = readStoredDisplayVolume();
+      setDisplayVolume(volume > 0 ? volume : 0.5);
+      setDisplayMuted(false);
+    }
     const slot = source as TouchPlaybackSlot;
     const media = getTouchSlotMedia(playbackState.manifest, slot);
     // Looping programs: loop until 45-min timer. Full Program: single play.

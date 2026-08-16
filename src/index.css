@@ -1257,10 +1257,12 @@ body,
 .p6-video-playing-modal__volume {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  min-height: 3rem;
-  padding: 0 0.875rem;
-  border-radius: 10px;
+  justify-content: flex-start;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 3.15rem;
+  padding: 0 1rem;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: linear-gradient(
     160deg,
@@ -1279,8 +1281,8 @@ body,
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 2.25rem;
-  height: 2.25rem;
+  width: 2.5rem;
+  height: 2.5rem;
   padding: 0;
   border: none;
   border-radius: 50%;
@@ -1294,14 +1296,38 @@ body,
 }
 
 .p6-video-playing-modal__volume-slider-wrap {
-  flex: 1;
-  min-width: 0;
-  height: 2rem;
+  /* Match RESUME column width (1fr of 2-col row with 0.75rem gap), minus icon + gap. */
+  flex: 0 0 auto;
+  width: calc((100% - 0.75rem) / 2 - 2.5rem - 0.75rem);
+  max-width: calc((100% - 0.75rem) / 2 - 2.5rem - 0.75rem);
+  min-width: 8rem;
+  height: 2.25rem;
 }
 
 .p6-video-playing-modal__volume-slider {
-  width: 100%;
+  /* Override compact .p6-vc-bar__volume (4.5rem); keep current track thickness. */
+  width: 100% !important;
   min-width: 0;
+  height: 1.25rem;
+}
+
+.p6-video-playing-modal__volume-slider::-webkit-slider-runnable-track {
+  height: 4px;
+}
+
+.p6-video-playing-modal__volume-slider::-webkit-slider-thumb {
+  width: 0.875rem;
+  height: 0.875rem;
+  margin-top: -0.3125rem;
+}
+
+.p6-video-playing-modal__volume-slider::-moz-range-track {
+  height: 4px;
+}
+
+.p6-video-playing-modal__volume-slider::-moz-range-thumb {
+  width: 0.875rem;
+  height: 0.875rem;
 }
 
 /* ─── Category picker modal ─── */

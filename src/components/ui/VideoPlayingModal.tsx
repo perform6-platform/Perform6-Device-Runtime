@@ -4,6 +4,7 @@ import { formatSessionTime } from '../../lib/format';
 import { useRuntimeStore } from '../../stores/runtimeStore';
 import type { SessionModalItem } from './SessionModal';
 import type { P6Accent } from './types';
+import { DisplayVolumeControl } from './DisplayVolumeControl';
 
 type VideoPlayingModalProps = {
   open: boolean;
@@ -293,6 +294,7 @@ export function VideoPlayingModal({
                 <span>RESTART</span>
               </button>
             </div>
+            <DisplayVolumeControl />
             <button
               type="button"
               className="p6-session-modal__btn p6-session-modal__btn--back p6-video-playing-modal__ctrl-outline p6-video-playing-modal__ctrl-exit"

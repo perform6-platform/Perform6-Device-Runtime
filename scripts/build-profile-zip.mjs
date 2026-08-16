@@ -199,6 +199,15 @@ function main() {
   fs.copyFileSync(distIndex, path.join(outFolder, 'index.html'));
   fs.cpSync(distAssets, path.join(outFolder, 'assets'), { recursive: true });
 
+  // XT/XC: Perform6 logo on LED until the first deployment video arrives.
+  const ledIdlePng = path.join(root, 'brightsign', 'led-idle.png');
+  if (
+    (profileKey === 'XT2145' || profileKey === 'XC4055') &&
+    fs.existsSync(ledIdlePng)
+  ) {
+    fs.copyFileSync(ledIdlePng, path.join(outFolder, 'led-idle.png'));
+  }
+
   // Autorun reads this to apply the correct SetScreenModes layout.
   fs.writeFileSync(path.join(outFolder, 'perform6-profile.txt'), `${profileKey}\n`);
 
@@ -244,6 +253,10 @@ function main() {
                 canvas: 'HDMI-1 HtmlWidget + HDMI-2 native roVideoPlayer',
                 outputMap: 'HDMI-1 x=0; HDMI-2 x=1920',
                 mode: displayMode === 'MULTI_NOFULLRES' ? '1920x1080x60p' : '1920x1080x60p:fullres',
+                ledPlayback: 'roRtspStream for http(s) + SD:/perform6-cache offline copy',
+                ledIdleClip: 'led-idle.png (packaged) or led-idle.mp4 override',
+                audioRoute: 'HDMI-1 touch silent; native video audio to HDMI-2',
+                ledLog: 'SD:/perform6-led.log',
               }
             : profileKey === 'XC4055'
               ? {
@@ -251,6 +264,10 @@ function main() {
                   canvas: 'HDMI-1 HtmlWidget + HDMI-2/3 native roVideoPlayer',
                   outputMap: 'HDMI-1 x=0; HDMI-2 x=1920; HDMI-3 x=3840',
                   mode: displayMode === 'MULTI_NOFULLRES' ? '1920x1080x60p' : '1920x1080x60p:fullres',
+                  ledPlayback: 'roRtspStream for http(s) + SD:/perform6-cache offline copy',
+                  ledIdleClip: 'led-idle.png (packaged) or led-idle.mp4 override',
+                  audioRoute: 'SCREEN_1 to HDMI-1; SCREEN_2 to HDMI-2; SCREEN_3 to HDMI-3',
+                  ledLog: 'SD:/perform6-led.log',
                 }
               : { outputs: 1, canvas: 'native', mode: 'default' },
         files: [
@@ -259,6 +276,7 @@ function main() {
           'assets/',
           'perform6-profile.txt',
           'perform6-display.txt',
+          ...(profileKey === 'XT2145' || profileKey === 'XC4055' ? ['led-idle.png'] : []),
           'README-SD.txt',
         ],
         entryScript: 'assets/app.js',
@@ -291,10 +309,28 @@ function main() {
         : profileKey === 'XC4055'
           ? 'HDMI-1 owns pairing/sync and SCREEN_1; HDMI-2/3 play http(s) fileUrls from the synced manifest.'
           : 'Each output shows a corner badge: HDMI label, live canvas size, version.',
+      profileKey === 'XT2145'
+        ? 'Audio: Bluefin HDMI-1 is silent; programme audio is routed only to LED HDMI-2.'
+        : profileKey === 'XC4055'
+          ? 'Audio: each programme player is routed to its matching HDMI-1/2/3 display.'
+          : 'Audio: HTML media is explicitly routed to the single HDMI LED.',
       profileKey === 'XT2145' || profileKey === 'XC4055'
         ? 'Secondary outputs are video-only — no React UI, no pairing screen on the LED.'
         : 'If a panel shows the BrightSign splash instead of a badge, report which HDMI is affected.',
       '',
+      ...(profileKey === 'XT2145' || profileKey === 'XC4055'
+        ? [
+            'LED video playback:',
+            '  Network URLs stream via roRtspStream (a plain PlayFile("https://…") is rejected',
+            '  by BrightScript as "Bad drive"), and each clip is cached to SD:/perform6-cache/',
+            '  so the LED keeps playing when the network drops.',
+            '  Default idle: led-idle.png (Perform6 logo) is packaged on the SD root and loops',
+            '  on the LED(s) from boot until the first deployment video arrives.',
+            '  Optional override: place led-idle.mp4 on the SD root to replace the logo.',
+            '  Troubleshooting: SD:/perform6-led.log lists every LED playback decision.',
+            '',
+          ]
+        : []),
       'IMPORTANT: Use this zip ONLY on matching hardware.',
       `  XT2145  -> perform6-xt2145-*.zip`,
       `  XC4055  -> perform6-xc4055-*.zip`,
@@ -311,6 +347,9 @@ function main() {
       '  assets/app.js',
       '  assets/style.css',
       '  assets/*.png',
+      ...(profileKey === 'XT2145' || profileKey === 'XC4055'
+        ? ['  led-idle.png (Perform6 logo — shows on LED until deployment video)']
+        : []),
       '',
       'After copy, reboot the player.',
       'First boot reboots once while the output layout is applied — that is expected.',
