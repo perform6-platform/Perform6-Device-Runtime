@@ -1209,6 +1209,12 @@ body,
 
 .p6-video-playing-modal--program {
   width: min(41rem, calc(100vw - 3rem));
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.p6-video-playing-modal--program::-webkit-scrollbar {
+  display: none;
 }
 
 .p6-video-playing-modal__now {
@@ -1376,11 +1382,10 @@ body,
 }
 
 .p6-video-playing-modal__volume-slider-wrap {
-  /* Match RESUME column width (1fr of 2-col row with 0.75rem gap), minus icon + gap. */
-  flex: 0 0 auto;
-  width: calc((100% - 0.75rem) / 2 - 2.5rem - 0.75rem);
-  max-width: calc((100% - 0.75rem) / 2 - 2.5rem - 0.75rem);
-  min-width: 8rem;
+  flex: 1 1 auto;
+  width: auto;
+  max-width: none;
+  min-width: 0;
   height: 2.25rem;
 }
 
@@ -2257,6 +2262,12 @@ body,
     width: min(41rem, calc(100vw - 1.5rem));
     max-height: calc(100dvh - 1.5rem);
     overflow-y: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .p6-video-playing-modal--program::-webkit-scrollbar {
+    display: none;
   }
 
   .p6-video-playing-modal__controls-row {
