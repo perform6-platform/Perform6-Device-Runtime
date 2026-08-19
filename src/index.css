@@ -75,12 +75,20 @@ body,
   height: 100%;
   margin: 0;
   overflow: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   touch-action: manipulation;
   user-select: none;
   background: #000000;
   color: var(--color-p6-text);
   font-family: var(--font-p6);
   -webkit-font-smoothing: antialiased;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+#root::-webkit-scrollbar {
+  display: none;
 }
 
 /* ─── Typography utilities ─── */
@@ -697,7 +705,13 @@ body,
   justify-content: center;
   padding: 3rem 1.5rem;
   overflow: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   background: transparent;
+}
+
+.p6-modal-overlay::-webkit-scrollbar {
+  display: none;
 }
 
 .p6-modal-overlay--contained {
