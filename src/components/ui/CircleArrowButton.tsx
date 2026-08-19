@@ -6,7 +6,7 @@ type CircleArrowButtonProps = {
 
 function ChevronIcon() {
   return (
-    <svg width="12" height="20" viewBox="0 0 12 20" fill="none" aria-hidden>
+    <svg viewBox="0 0 12 20" fill="none" aria-hidden>
       <path
         d="M2.5 2.5L9.5 10 2.5 17.5"
         stroke="currentColor"

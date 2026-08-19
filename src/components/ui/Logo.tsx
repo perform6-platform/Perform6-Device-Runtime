@@ -11,7 +11,7 @@ export function Logo({ className }: LogoProps) {
       src={perform6Logo}
       alt="Perform6"
       className={cn(
-        'p6-logo block h-auto w-[8.5rem] max-w-full object-contain object-left md:w-[12rem]',
+        'p6-logo',
         className,
       )}
       draggable={false}

@@ -15,7 +15,7 @@ export const FULL_PROGRAM_ITEMS = [
   },
   {
     title: 'Recover Faster',
-    description: 'Enhance recovery between training sessions.',
+    description: 'Enhance recovery between training sessions',
   },
   {
     title: 'Improve Overall Performance',

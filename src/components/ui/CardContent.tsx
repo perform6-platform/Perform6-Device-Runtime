@@ -4,7 +4,7 @@ import { CircleArrowButton } from './CircleArrowButton';
 
 function ClockIcon() {
   return (
-    <svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden>
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden>
       <circle cx="8" cy="8" r="6.25" stroke="currentColor" strokeWidth="1.4" />
       <path
         d="M8 4.75V8l2.25 1.5"
@@ -87,8 +87,10 @@ export function StartHereContent({
 }: StartHereContentProps) {
   return (
     <div className="p6-start-here-card">
-      <h2 className="p6-title p6-start-here-card__title">{title}</h2>
-      <CircleArrowButton />
+      <div className="p6-card-heading">
+        <h2 className="p6-title p6-start-here-card__title">{title}</h2>
+        <CircleArrowButton />
+      </div>
       <KeywordRow keywords={bullets} className="p6-start-here-card__bullets" />
       <p className="p6-start-here-card__description">{description}</p>
       <DurationBadge duration={duration} />
@@ -114,8 +116,10 @@ export function PhaseCardContent({
 }: PhaseCardContentProps) {
   return (
     <div className="p6-phase-card">
-      <h3 className="p6-title p6-phase-card__title">{title}</h3>
-      <CircleArrowButton />
+      <div className="p6-card-heading">
+        <h3 className="p6-title p6-phase-card__title">{title}</h3>
+        <CircleArrowButton />
+      </div>
       <KeywordRow keywords={keywords} className="p6-phase-card__keywords" />
       {steps ? <p className="p6-phase-card__steps">{steps}</p> : null}
       <p className="p6-phase-card__description">{description}</p>
@@ -139,8 +143,10 @@ export function FullProgramContent({
 }: FullProgramContentProps) {
   return (
     <div className="p6-full-program-content">
-      <h3 className="p6-title p6-full-program-content__title">{title}</h3>
-      <CircleArrowButton />
+      <div className="p6-card-heading">
+        <h3 className="p6-title p6-full-program-content__title">{title}</h3>
+        <CircleArrowButton />
+      </div>
       <p className="p6-full-program-content__subtitle">{subtitle}</p>
       <p className="p6-full-program-content__description">
         <span>Experience the complete</span>

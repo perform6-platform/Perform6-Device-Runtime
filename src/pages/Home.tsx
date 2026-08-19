@@ -229,7 +229,7 @@ export default function Home() {
   };
 
   return (
-    <main className={`p6-home relative h-full w-full overflow-hidden${overviewOpen || sessionOpen ? ' p6-home--dimmed' : ''}`}>
+    <main className={`p6-home relative h-full w-full overflow-y-auto${overviewOpen || sessionOpen ? ' p6-home--dimmed' : ''}`}>
       <HomeHeroVideo
         src={touchVideos.idle}
         paused={sessionOpen}

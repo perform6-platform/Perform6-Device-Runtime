@@ -50,7 +50,7 @@ function brightsignHtmlPlugin() {
 }
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), brightsignHtmlPlugin()],
+  plugins: [tailwindcss(), react(), brightsignHtmlPlugin()],
   base: './',
   build: {
     outDir: 'dist',
