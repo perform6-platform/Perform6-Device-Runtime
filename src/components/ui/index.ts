@@ -15,4 +15,4 @@ export { DisplayVolumeControl } from './DisplayVolumeControl';
 export { CategoryPickerModal } from './CategoryPickerModal';
 export type { CategoryPickerItem, CategoryPickerVideo } from './CategoryPickerModal';
 export { VideoControlBar } from './VideoControlBar';
-export type { P6Accent } from './types';
+export type { P6Accent, P6Experience } from './types';

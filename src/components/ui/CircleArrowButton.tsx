@@ -1,24 +1,16 @@
 import { cn } from '../../lib/cn';
-import { accentBtnClassMap, type P6Accent } from './types';
 
 type CircleArrowButtonProps = {
-  variant: P6Accent;
   className?: string;
 };
 
-function ArrowIcon() {
+function ChevronIcon() {
   return (
-    <svg
-      width="10"
-      height="10"
-      viewBox="0 0 10 10"
-      fill="none"
-      aria-hidden
-    >
+    <svg width="12" height="20" viewBox="0 0 12 20" fill="none" aria-hidden>
       <path
-        d="M2 5h5M5.5 2.5L8 5l-2.5 2.5"
+        d="M2.5 2.5L9.5 10 2.5 17.5"
         stroke="currentColor"
-        strokeWidth="1.2"
+        strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -26,13 +18,11 @@ function ArrowIcon() {
   );
 }
 
-export function CircleArrowButton({ variant, className }: CircleArrowButtonProps) {
+/** Outlined Perform6 primary-blue chevron — same size/position on every Home card. */
+export function CircleArrowButton({ className }: CircleArrowButtonProps) {
   return (
-    <span
-      className={cn('p6-circle-btn', accentBtnClassMap[variant], className)}
-      aria-hidden
-    >
-      <ArrowIcon />
+    <span className={cn('p6-circle-btn', className)} aria-hidden>
+      <ChevronIcon />
     </span>
   );
 }

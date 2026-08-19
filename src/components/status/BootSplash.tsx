@@ -4,6 +4,7 @@ import { PrimaryOutputOnly } from '../../layout/PrimaryOutputOnly';
 import { useDeviceStore } from '../../stores/deviceStore';
 import { useRuntimeStore } from '../../stores/runtimeStore';
 import { isDeviceReady } from '../../stores/deviceStore';
+import perform6Logo from '../../assets/Perform_6_trademark.png';
 
 /**
  * Full-screen BrightSign boot panel with live status lines.
@@ -57,9 +58,14 @@ export function BootSplash() {
   return (
     <div className="fixed inset-0 z-[10000]" role="status" aria-live="polite">
       <PrimaryOutputOnly profile={profile}>
-        <div className="flex h-full flex-col bg-black px-10 py-12 text-white">
-          <p className="text-sm font-bold uppercase tracking-[0.35em] text-cyan-400">Perform6</p>
-          <h1 className="mt-4 text-4xl font-semibold sm:text-5xl">{headline}</h1>
+        <div className="flex h-full flex-col items-center bg-black px-10 py-12 text-white">
+          <img
+            src={perform6Logo}
+            alt="Perform6"
+            className="mb-8 h-auto w-[min(28rem,72vw)] object-contain"
+            draggable={false}
+          />
+          <h1 className="text-4xl font-semibold sm:text-5xl">{headline}</h1>
           <p className="mt-3 max-w-3xl text-lg text-white/70">
             Connecting to Perform6. Pairing code will fill the primary screen when ready.
           </p>

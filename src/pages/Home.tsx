@@ -12,12 +12,11 @@ import {
   SectionDivider,
   SessionModal,
   StartHereContent,
-  TouchHint,
   VideoPlayingModal,
 } from '../components/ui';
 import { FULL_PROGRAM_ITEMS } from '../lib/fullProgram';
-import { readStoredDisplayVolume } from '../lib/displayVolumePrefs';
-import { useHomeIdle } from '../hooks/useHomeIdle';
+import { DEFAULT_VOLUME } from '../lib/displayVolumePrefs';
+import { useInactivityTimeout } from '../hooks/useInactivityTimeout';
 import { PHASE1_ITEMS } from '../lib/phase1';
 import { PHASE2_ITEMS } from '../lib/phase2';
 import {
@@ -25,12 +24,12 @@ import {
   TOUCH_LOOP_SESSION_MS,
   type TouchProgramSource,
 } from '../lib/touchSessionPolicy';
-import type { P6Accent } from '../components/ui';
+import type { P6Experience } from '../components/ui';
 
 const START_HERE_ITEMS = [
   {
     title: 'Learn the Perform6 System',
-    description: 'Understand how the 6 Steps work together to improve performance',
+    description: 'Understand how the 6 Steps work together to build performance.',
   },
   {
     title: 'Identify movement limitations',
@@ -42,11 +41,11 @@ const START_HERE_ITEMS = [
   },
 ];
 
-const HOME_IDLE_DELAY_MS = 30000;
+const OVERVIEW_IDLE_MS = 60_000;
 
 type ActiveSession = {
   source: TouchProgramSource;
-  accent: P6Accent;
+  experience: P6Experience;
   videoSrc: string;
   /** Stable token so the 45-min timer only resets on a real new session start. */
   startedAt: number;
@@ -59,11 +58,11 @@ const SESSION_LABEL: Record<ActiveSession['source'], string> = {
   'full-program': 'Full Program',
 };
 
-const SESSION_ACCENT: Record<ActiveSession['source'], P6Accent> = {
-  'start-here': 'cyan',
-  phase1: 'cyan',
-  phase2: 'purple',
-  'full-program': 'gold',
+const SESSION_EXPERIENCE: Record<ActiveSession['source'], P6Experience> = {
+  'start-here': 'start-here',
+  phase1: 'phase',
+  phase2: 'phase',
+  'full-program': 'full-program',
 };
 
 export default function Home() {
@@ -83,14 +82,20 @@ export default function Home() {
 
   const sessionOpen = activeSession !== null;
   const modalOpen = startHereOpen || phase1Open || phase2Open || fullProgramOpen;
+  const overviewOpen = modalOpen && !sessionOpen;
 
-  const idle = useHomeIdle({
-    delayMs: HOME_IDLE_DELAY_MS,
-    blocked: modalOpen || sessionOpen,
+  const closeOverview = useCallback(() => {
+    setStartHereOpen(false);
+    setPhase1Open(false);
+    setPhase2Open(false);
+    setFullProgramOpen(false);
+  }, []);
+
+  useInactivityTimeout({
+    enabled: overviewOpen,
+    delayMs: OVERVIEW_IDLE_MS,
+    onTimeout: closeOverview,
   });
-
-  /** No touch for 30s → hide menu buttons; default video fills touch + display. */
-  const attractMode = idle.isOpen && !sessionOpen;
 
   const returnToMainMenu = useCallback(() => {
     setActiveSession(null);
@@ -171,12 +176,10 @@ export default function Home() {
 
   const beginSession = (source: ActiveSession['source'], videoSrc: string | null) => {
     if (!videoSrc) return;
-    idle.close();
     resetDisplayControls();
-    // Full Program: ensure audible at last volume (default 50%), never force 100%.
+    // Full Program: start each session at 50% so playback is never unexpectedly loud.
     if (source === 'full-program') {
-      const volume = readStoredDisplayVolume();
-      setDisplayVolume(volume > 0 ? volume : 0.5);
+      setDisplayVolume(DEFAULT_VOLUME);
       setDisplayMuted(false);
     }
     const slot = source as TouchPlaybackSlot;
@@ -191,14 +194,13 @@ export default function Home() {
     });
     setActiveSession({
       source,
-      accent: SESSION_ACCENT[source],
+      experience: SESSION_EXPERIENCE[source],
       videoSrc,
       startedAt: Date.now(),
     });
   };
 
   const handleStartHereOpen = () => {
-    idle.close();
     setPhase1Open(false);
     setPhase2Open(false);
     setFullProgramOpen(false);
@@ -206,7 +208,6 @@ export default function Home() {
   };
 
   const handlePhase1Open = () => {
-    idle.close();
     setStartHereOpen(false);
     setPhase2Open(false);
     setFullProgramOpen(false);
@@ -214,7 +215,6 @@ export default function Home() {
   };
 
   const handlePhase2Open = () => {
-    idle.close();
     setStartHereOpen(false);
     setPhase1Open(false);
     setFullProgramOpen(false);
@@ -222,7 +222,6 @@ export default function Home() {
   };
 
   const handleFullProgramOpen = () => {
-    idle.close();
     setStartHereOpen(false);
     setPhase1Open(false);
     setPhase2Open(false);
@@ -230,31 +229,30 @@ export default function Home() {
   };
 
   return (
-    <main
-      className={`p6-home relative h-full w-full overflow-hidden${attractMode ? ' p6-home--attract' : ''}`}
-      onPointerDown={idle.onActivity}
-    >
-      <HomeHeroVideo src={touchVideos.idle} paused={sessionOpen} attract={attractMode} />
+    <main className={`p6-home relative h-full w-full overflow-hidden${overviewOpen || sessionOpen ? ' p6-home--dimmed' : ''}`}>
+      <HomeHeroVideo
+        src={touchVideos.idle}
+        paused={sessionOpen}
+        overlay={overviewOpen || sessionOpen ? 'overview' : 'home'}
+      />
 
-      <div className="p6-home__grid" aria-hidden={attractMode}>
+      <div className="p6-home__grid">
         <Logo className="p6-home__logo" />
 
         <GlowCard
-          variant="blue"
+          experience="start-here"
           className="p6-home__start-here"
           onClick={handleStartHereOpen}
         >
           <StartHereContent
             title="Start Here"
-            bullets="The 6-Step System • Safety Check • Pre-Workout"
+            bullets="The 6-Step System · Safety Check · Pre-Workout"
             description="Learn the system. Check movement. Prepare for training."
-            duration="5-10 Minutes"
+            duration="5–10 Minutes"
           />
         </GlowCard>
 
-        <SectionDivider className="p6-home__divider">
-           CHOOSE YOUR EXPERIENCE
-        </SectionDivider>
+        <SectionDivider className="p6-home__divider">CHOOSE YOUR EXPERIENCE</SectionDivider>
 
         <div className="p6-home__col-header p6-home__col-left">
           <span className="p6-heading">Self-Guided</span>
@@ -266,40 +264,38 @@ export default function Home() {
           <span className="p6-small p6-muted">Complete the full guided session</span>
         </div>
 
-        <GlowCard variant="blue" className="p6-home__phase1" onClick={handlePhase1Open}>
+        <GlowCard experience="phase" className="p6-home__phase1" onClick={handlePhase1Open}>
           <PhaseCardContent
             title="Phase 1"
-            keywords="Mobility • Stability • Power"
+            keywords="Mobility · Stability · Power"
+            steps="Steps 1–3"
             description="Move Better. Build the Foundation."
-            duration="15-20 Minutes"
+            duration="15–20 Minutes"
           />
         </GlowCard>
 
-        <div className="p6-home__phase-arrow" aria-hidden>
-          <svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor">
-            <path d="M9 12L0.5 1.5h17L9 12z" />
-          </svg>
-        </div>
-
-        <GlowCard variant="blue" className="p6-home__phase2" onClick={handlePhase2Open}>
+        <GlowCard experience="phase" className="p6-home__phase2" onClick={handlePhase2Open}>
           <PhaseCardContent
             title="Phase 2"
-            keywords="Strength • Energy • Recovery"
+            keywords="Strength · Energy · Recovery"
+            steps="Steps 4–6"
             description="Get Stronger. Elevate Performance."
-            duration="20-30 Minutes"
+            duration="20–30 Minutes"
           />
         </GlowCard>
 
-        <GlowCard variant="blue" className="p6-home__full-program" onClick={handleFullProgramOpen}>
+        <GlowCard
+          experience="full-program"
+          className="p6-home__full-program"
+          onClick={handleFullProgramOpen}
+        >
           <FullProgramContent
             title="Full Program"
-            subtitle="All 6 Performance Steps"
+            subtitle="All 6 Steps"
             description="Experience the complete Perform6 training system."
             duration="60 Minutes"
           />
         </GlowCard>
-
-        <TouchHint className="p6-home__touch-hint" />
       </div>
 
       <SessionModal
@@ -311,11 +307,11 @@ export default function Home() {
           beginSession('start-here', touchVideos.startHere);
         }}
         title="Start Here"
-        sessionDuration="5-10 Minutes"
+        sessionDuration="5–10 Minutes"
         sectionLabel="This Session Will Help You"
         items={START_HERE_ITEMS}
         showDuration={false}
-        accent="blue"
+        experience="start-here"
       />
 
       <SessionModal
@@ -331,7 +327,7 @@ export default function Home() {
         sectionLabel="Program Outcomes"
         items={FULL_PROGRAM_ITEMS}
         showDuration={false}
-        accent="blue"
+        experience="full-program"
       />
 
       <SessionModal
@@ -343,11 +339,11 @@ export default function Home() {
           beginSession('phase1', touchVideos.phase1);
         }}
         title="Phase 1"
-        sessionDuration="15-20 Minutes"
+        sessionDuration="15–20 Minutes"
         sectionLabel="This Phase Will Help You"
         items={PHASE1_ITEMS}
         showDuration={false}
-        accent="blue"
+        experience="phase"
       />
 
       <SessionModal
@@ -359,17 +355,18 @@ export default function Home() {
           beginSession('phase2', touchVideos.phase2);
         }}
         title="Phase 2"
-        sessionDuration="20-30 Minutes"
+        sessionDuration="20–30 Minutes"
         sectionLabel="This Phase Will Help You"
         items={PHASE2_ITEMS}
         showDuration={false}
-        accent="blue"
+        experience="phase"
       />
 
       <VideoPlayingModal
         open={sessionOpen}
         onClose={returnToMainMenu}
         accent="blue"
+        experience={activeSession?.experience ?? 'phase'}
         variant={activeSession?.source === 'full-program' ? 'full-program' : 'simple'}
         sessionLabel={activeSession ? SESSION_LABEL[activeSession.source] : undefined}
         title={activeSession ? SESSION_LABEL[activeSession.source] : undefined}
@@ -377,10 +374,10 @@ export default function Home() {
           activeSession?.source === 'full-program'
             ? '60 Minutes'
             : activeSession?.source === 'phase1'
-              ? '15-20 Minutes'
+              ? '15–20 Minutes'
               : activeSession?.source === 'phase2'
-                ? '20-30 Minutes'
-                : '5-10 Minutes'
+                ? '20–30 Minutes'
+                : '5–10 Minutes'
         }
         sectionLabel={
           activeSession?.source === 'full-program'
