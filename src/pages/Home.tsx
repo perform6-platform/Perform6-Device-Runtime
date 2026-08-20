@@ -9,7 +9,6 @@ import {
   GlowCard,
   Logo,
   PhaseCardContent,
-  SectionDivider,
   SessionModal,
   StartHereContent,
   VideoPlayingModal,
@@ -252,7 +251,21 @@ export default function Home() {
           />
         </GlowCard>
 
-        <SectionDivider className="p6-home__divider">CHOOSE YOUR EXPERIENCE</SectionDivider>
+        <div className="p6-home__divider">
+          <div className="p6-home__divider-track p6-home__divider-track--left">
+            <span className="p6-heading p6-home__divider-ghost" aria-hidden>
+              Self-Guided
+            </span>
+            <span className="p6-section-divider__line" aria-hidden />
+          </div>
+          <span className="p6-section-divider__label">CHOOSE YOUR EXPERIENCE</span>
+          <div className="p6-home__divider-track p6-home__divider-track--right">
+            <span className="p6-section-divider__line" aria-hidden />
+            <span className="p6-heading p6-home__divider-ghost" aria-hidden>
+              Self-Guided
+            </span>
+          </div>
+        </div>
 
         <div className="p6-home__col-header p6-home__col-left">
           <span className="p6-heading">Self-Guided</span>
