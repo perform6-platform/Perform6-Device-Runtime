@@ -1,25 +1,34 @@
 import type { ReactNode } from 'react';
 import { cn } from '../../lib/cn';
-import p6LogoIcon from '../../assets/P6_logo_icon.png';
+import { CircleArrowButton } from './CircleArrowButton';
 
-function CardChevron({ className }: { className?: string }) {
+function ClockIcon() {
   return (
-    <svg
-      width="14"
-      height="24"
-      viewBox="0 0 14 24"
-      fill="none"
-      aria-hidden
-      className={cn('text-white/90', className)}
-    >
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden>
+      <circle cx="8" cy="8" r="6.25" stroke="currentColor" strokeWidth="1.4" />
       <path
-        d="M2 2l10 10-10 10"
+        d="M8 4.75V8l2.25 1.5"
         stroke="currentColor"
-        strokeWidth="2"
+        strokeWidth="1.4"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
     </svg>
+  );
+}
+
+export function DurationBadge({
+  duration,
+  className,
+}: {
+  duration: string;
+  className?: string;
+}) {
+  return (
+    <span className={cn('p6-duration', className)}>
+      <ClockIcon />
+      <span>{duration}</span>
+    </span>
   );
 }
 
@@ -31,29 +40,12 @@ type CardThumbnailProps = {
 
 export function CardThumbnail({ src, alt, className }: CardThumbnailProps) {
   return (
-    <div
-      className={cn(
-        'relative shrink-0 overflow-hidden rounded-lg',
-        className,
-      )}
-    >
-      <img
-        src={src}
-        alt={alt}
-        className="h-full w-full object-cover"
-        draggable={false}
-      />
+    <div className={cn('relative shrink-0 overflow-hidden rounded-lg', className)}>
+      <img src={src} alt={alt} className="h-full w-full object-cover" draggable={false} />
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent to-black/40" />
     </div>
   );
 }
-
-type StartHereContentProps = {
-  title: string;
-  bullets: string;
-  description: string;
-  duration: string;
-};
 
 function KeywordRow({
   keywords,
@@ -68,13 +60,24 @@ function KeywordRow({
     <div className={cn('p6-keyword-row', className)}>
       {parts.map((part, index) => (
         <span key={`${part}-${index}`} className="p6-keyword-row__item">
-          {index > 0 && <span className="p6-keyword-row__sep" aria-hidden />}
+          {index > 0 && (
+            <span className="p6-keyword-row__sep" aria-hidden>
+              ·
+            </span>
+          )}
           {part}
         </span>
       ))}
     </div>
   );
 }
+
+type StartHereContentProps = {
+  title: string;
+  bullets: string;
+  description: string;
+  duration: string;
+};
 
 export function StartHereContent({
   title,
@@ -84,19 +87,13 @@ export function StartHereContent({
 }: StartHereContentProps) {
   return (
     <div className="p6-start-here-card">
-      <div className="p6-start-here-card__text">
-        <h2 className="p6-hero p6-start-here-card__title">{title}</h2>
-        <KeywordRow keywords={bullets} className="p6-start-here-card__bullets" />
-        <p className="p6-small p6-muted p6-start-here-card__description">{description}</p>
+      <div className="p6-card-heading">
+        <h2 className="p6-title p6-start-here-card__title">{title}</h2>
+        <CircleArrowButton />
       </div>
-
-      <div className="p6-start-here-card__footer">
-        <span className="p6-small text-white/85">{duration}</span>
-      </div>
-
-      <div className="p6-start-here-card__chevron" aria-hidden>
-        <CardChevron />
-      </div>
+      <KeywordRow keywords={bullets} className="p6-start-here-card__bullets" />
+      <p className="p6-start-here-card__description">{description}</p>
+      <DurationBadge duration={duration} />
     </div>
   );
 }
@@ -104,6 +101,7 @@ export function StartHereContent({
 type PhaseCardContentProps = {
   title: string;
   keywords: string;
+  steps?: string;
   description: string;
   duration: string;
   thumbnail?: ReactNode;
@@ -112,24 +110,20 @@ type PhaseCardContentProps = {
 export function PhaseCardContent({
   title,
   keywords,
+  steps,
   description,
   duration,
 }: PhaseCardContentProps) {
   return (
     <div className="p6-phase-card">
-      <div className="p6-phase-card__text">
-        <h3 className="p6-heading p6-phase-card__title">{title}</h3>
-        <KeywordRow keywords={keywords} className="p6-phase-card__keywords" />
-        <p className="p6-small p6-muted p6-phase-card__description">{description}</p>
+      <div className="p6-card-heading">
+        <h3 className="p6-title p6-phase-card__title">{title}</h3>
+        <CircleArrowButton />
       </div>
-
-      <div className="p6-phase-card__footer">
-        <span className="p6-small text-white/85">{duration}</span>
-      </div>
-
-      <div className="p6-phase-card__chevron" aria-hidden>
-        <CardChevron className="h-5 w-3" />
-      </div>
+      <KeywordRow keywords={keywords} className="p6-phase-card__keywords" />
+      {steps ? <p className="p6-phase-card__steps">{steps}</p> : null}
+      <p className="p6-phase-card__description">{description}</p>
+      <DurationBadge duration={duration} />
     </div>
   );
 }
@@ -148,25 +142,17 @@ export function FullProgramContent({
   duration,
 }: FullProgramContentProps) {
   return (
-    <>
-      <div className="p6-full-program-content">
+    <div className="p6-full-program-content">
+      <div className="p6-card-heading">
         <h3 className="p6-title p6-full-program-content__title">{title}</h3>
-        <p className="p6-full-program-content__subtitle">{subtitle}</p>
-        <img
-          src={p6LogoIcon}
-          alt=""
-          className="p6-full-program-content__icon"
-          draggable={false}
-        />
-        <p className="p6-full-program-content__description">
-          <span>Experience the complete</span>
-          <span>Perform6 training system.</span>
-        </p>
-        <span className="p6-full-program-content__chevron" aria-hidden>
-          <CardChevron />
-        </span>
+        <CircleArrowButton />
       </div>
-      <span className="p6-home__full-program-duration">{duration}</span>
-    </>
+      <p className="p6-full-program-content__subtitle">{subtitle}</p>
+      <p className="p6-full-program-content__description">
+        <span>Experience the complete</span>
+        <span>Perform6 training system.</span>
+      </p>
+      <DurationBadge duration={duration} />
+    </div>
   );
 }

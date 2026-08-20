@@ -1,7 +1,7 @@
 import { useEffect, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../../lib/cn';
-import type { P6Accent } from './types';
+import { experienceModalClassMap, type P6Accent, type P6Experience } from './types';
 
 export type SessionModalItem = {
   title: string;
@@ -16,7 +16,7 @@ type SessionModalProps = {
   title: string;
   eyebrow?: string;
   items: Array<string | SessionModalItem>;
-  /** Shown under the title with a clock icon, e.g. "5-10 Minutes". */
+  /** Shown under the title with a clock icon, e.g. "5–10 Minutes". */
   sessionDuration?: string;
   /** Centered divider label, e.g. "THIS SESSION WILL HELP YOU". */
   sectionLabel?: string;
@@ -25,6 +25,7 @@ type SessionModalProps = {
   backLabel?: string;
   primaryLabel?: string;
   accent?: P6Accent;
+  experience?: P6Experience;
   icon?: ReactNode;
   className?: string;
 };
@@ -99,6 +100,7 @@ export function SessionModal({
   backLabel = 'Back',
   primaryLabel = 'BEGIN SESSION',
   accent = 'blue',
+  experience = 'phase',
   className,
 }: SessionModalProps) {
   const normalizedItems = normalizeItems(items);
@@ -131,6 +133,7 @@ export function SessionModal({
           'p6-session-modal',
           'p6-session-modal--confirm',
           `p6-session-modal--${accent}`,
+          experienceModalClassMap[experience],
           className,
         )}
         onClick={(e) => e.stopPropagation()}

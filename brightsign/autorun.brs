@@ -597,9 +597,8 @@ Sub PlayIdleClip(st as Object)
     return
   end if
 
-  ' Full-screen 1920x1080 asset — use Centered so the decoder does not upscale
-  ' a small logo strip (that looked jagged / stretched on the LED).
-  st.vp.SetViewMode("Centered")
+  ' Full-screen 16:9 splash (3840x2160) — Fill keeps edges sharp on 1080p and 4K.
+  st.vp.SetViewMode("FillScreenAndCentered")
   ok = st.vp.PlayStaticImage("SD:/led-idle.png")
   if ok <> true then
     aa = CreateObject("roAssociativeArray")

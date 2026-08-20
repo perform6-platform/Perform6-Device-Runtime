@@ -33,6 +33,11 @@
         visibility: hidden !important;
         pointer-events: none !important;
       }
+      #boot-status .brand-logo {
+        width: min(28rem, 72vw);
+        height: auto;
+        object-fit: contain;
+      }
       #boot-status .brand {
         font-size: 18px;
         letter-spacing: 0.28em;
@@ -58,7 +63,7 @@
   </head>
   <body>
     <div id="boot-status" role="status" aria-live="polite">
-      <div class="brand">Perform6</div>
+      <img class="brand-logo" src="./images/perform6-logo.png" alt="Perform6" />
       <div class="msg" id="boot-msg">Loading app...</div>
       <div class="hint" id="boot-hint">Please wait while the player starts.</div>
     </div>

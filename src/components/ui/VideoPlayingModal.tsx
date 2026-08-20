@@ -3,13 +3,16 @@ import { cn } from '../../lib/cn';
 import { formatSessionTime } from '../../lib/format';
 import { useRuntimeStore } from '../../stores/runtimeStore';
 import type { SessionModalItem } from './SessionModal';
-import type { P6Accent } from './types';
+import { experienceModalClassMap, type P6Accent, type P6Experience } from './types';
 import { DisplayVolumeControl } from './DisplayVolumeControl';
+
+type ConfirmKind = 'restart' | 'exit' | null;
 
 type VideoPlayingModalProps = {
   open: boolean;
   onClose: () => void;
   accent?: P6Accent;
+  experience?: P6Experience;
   variant?: 'simple' | 'full-program';
   sessionLabel?: string;
   title?: string;
@@ -167,6 +170,7 @@ export function VideoPlayingModal({
   open,
   onClose,
   accent = 'blue',
+  experience = 'phase',
   variant = 'simple',
   sessionLabel,
   title,
@@ -180,6 +184,11 @@ export function VideoPlayingModal({
   const displayRestartNonce = useRuntimeStore((s) => s.displayRestartNonce);
   const toggleDisplayPaused = useRuntimeStore((s) => s.toggleDisplayPaused);
   const restartDisplayVideo = useRuntimeStore((s) => s.restartDisplayVideo);
+  const [confirm, setConfirm] = useState<ConfirmKind>(null);
+
+  useEffect(() => {
+    if (!open) setConfirm(null);
+  }, [open]);
 
   const elapsed = useElapsedSeconds(
     open,
@@ -196,6 +205,12 @@ export function VideoPlayingModal({
   const heading = title ?? sessionLabel ?? 'Session';
   const message = sessionLabel ? `Now playing ${sessionLabel}` : 'Now playing';
 
+  const handleConfirm = () => {
+    if (confirm === 'restart') restartDisplayVideo();
+    if (confirm === 'exit') onClose();
+    setConfirm(null);
+  };
+
   return (
     <div className="p6-modal-overlay">
       <div
@@ -207,6 +222,7 @@ export function VideoPlayingModal({
           'p6-session-modal--confirm',
           'p6-video-playing-modal',
           `p6-session-modal--${accent}`,
+          experienceModalClassMap[experience],
           isFullProgram && 'p6-video-playing-modal--program',
         )}
         onClick={(e) => e.stopPropagation()}
@@ -274,7 +290,30 @@ export function VideoPlayingModal({
           </div>
         )}
 
-        {isFullProgram ? (
+        {isFullProgram && confirm ? (
+          <div className="p6-confirm-panel" role="alertdialog" aria-modal="true">
+            <p className="p6-confirm-panel__title">
+              {confirm === 'restart' ? 'Restart Full Program?' : 'Exit Full Program?'}
+            </p>
+            <div className="p6-confirm-panel__actions">
+              <button
+                type="button"
+                className="p6-session-modal__btn p6-session-modal__btn--back p6-video-playing-modal__ctrl-outline"
+                onClick={() => setConfirm(null)}
+                autoFocus
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="p6-session-modal__btn p6-session-modal__btn--primary p6-video-playing-modal__ctrl-primary"
+                onClick={handleConfirm}
+              >
+                {confirm === 'restart' ? 'Restart' : 'Exit Session'}
+              </button>
+            </div>
+          </div>
+        ) : isFullProgram ? (
           <div className="p6-video-playing-modal__controls">
             <div className="p6-video-playing-modal__controls-row">
               <button
@@ -288,7 +327,7 @@ export function VideoPlayingModal({
               <button
                 type="button"
                 className="p6-session-modal__btn p6-session-modal__btn--back p6-video-playing-modal__ctrl-outline"
-                onClick={restartDisplayVideo}
+                onClick={() => setConfirm('restart')}
               >
                 <RestartIcon />
                 <span>RESTART</span>
@@ -298,7 +337,7 @@ export function VideoPlayingModal({
             <button
               type="button"
               className="p6-session-modal__btn p6-session-modal__btn--back p6-video-playing-modal__ctrl-outline p6-video-playing-modal__ctrl-exit"
-              onClick={onClose}
+              onClick={() => setConfirm('exit')}
             >
               <ExitArrowIcon />
               <span>EXIT SESSION</span>
