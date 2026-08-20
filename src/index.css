@@ -1346,6 +1346,9 @@ body::-webkit-scrollbar,
 }
 
 .p6-session-modal--confirm .p6-session-modal__btn--back {
+  /* Match ← EXIT SESSION icon/label spacing; keep the pair centered in the button. */
+  gap: 0.5rem;
+  justify-content: center;
   padding: 0.875rem 1rem;
   border-radius: 8px;
   background: transparent;
@@ -1638,6 +1641,26 @@ body::-webkit-scrollbar,
   grid-template-columns: 1fr 1fr;
   gap: 0.75rem;
   width: 100%;
+}
+
+/*
+  Full Program Restart + Exit confirms share one Cancel control.
+  Lock Exit Cancel look so focus/hover never brightens Restart Cancel.
+*/
+.p6-confirm-panel__actions .p6-session-modal__btn--back.p6-video-playing-modal__ctrl-outline,
+.p6-confirm-panel__actions .p6-session-modal__btn--back.p6-video-playing-modal__ctrl-outline:hover,
+.p6-confirm-panel__actions .p6-session-modal__btn--back.p6-video-playing-modal__ctrl-outline:focus,
+.p6-confirm-panel__actions .p6-session-modal__btn--back.p6-video-playing-modal__ctrl-outline:focus-visible,
+.p6-confirm-panel__actions .p6-session-modal__btn--back.p6-video-playing-modal__ctrl-outline:active {
+  background: transparent;
+  color: #ffffff;
+  border: none;
+  outline: none;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.28);
+  font-size: 1.0625rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
 }
 
 /* ─── Category picker modal ─── */
