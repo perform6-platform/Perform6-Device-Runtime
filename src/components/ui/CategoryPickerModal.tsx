@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { getBluefinOverlayRoot } from '../../shared/bluefinViewport';
 import { cn } from '../../lib/cn';
 import type { P6Accent } from './types';
 
@@ -173,6 +174,6 @@ export function CategoryPickerModal({
         {duration && <p className="p6-category-picker__duration">{duration}</p>}
       </div>
     </div>,
-    document.body,
+    getBluefinOverlayRoot(),
   );
 }

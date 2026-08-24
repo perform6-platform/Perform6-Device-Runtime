@@ -3,6 +3,8 @@ import { HomeHeroVideo } from '../components/home';
 import { useDisplayPlayback } from '../hooks/useRuntime';
 import { useTouchVideos, getTouchSlotMedia } from '../hooks/useOfflineVideoSrc';
 import { useRuntimeStore } from '../stores/runtimeStore';
+import { runtimeConfig } from '../config/runtime';
+import { BluefinMasterFrame } from '../layout/BluefinMasterFrame';
 import type { TouchPlaybackSlot } from '../services/playback';
 import {
   FullProgramContent,
@@ -227,8 +229,8 @@ export default function Home() {
     setFullProgramOpen(true);
   };
 
-  return (
-    <main className={`p6-home relative h-full w-full overflow-y-auto${overviewOpen || sessionOpen ? ' p6-home--dimmed' : ''}`}>
+  const home = (
+    <main className={`p6-home relative h-full w-full overflow-hidden${overviewOpen || sessionOpen ? ' p6-home--dimmed' : ''}`}>
       <HomeHeroVideo
         src={touchVideos.idle}
         paused={sessionOpen}
@@ -413,4 +415,10 @@ export default function Home() {
       />
     </main>
   );
+
+  if (runtimeConfig.isSimulator) {
+    return <BluefinMasterFrame>{home}</BluefinMasterFrame>;
+  }
+
+  return home;
 }

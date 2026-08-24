@@ -5,6 +5,7 @@ import { RequirePaired } from './components/routing/RequirePaired';
 import { DebugConsole } from './components/debug/DebugConsole';
 import { DeviceStatusOverlay, BootSplash } from './components/status';
 import { isDeviceReady } from './stores/deviceStore';
+import { BluefinMasterFrame } from './layout/BluefinMasterFrame';
 import Home from './pages/Home';
 import Pairing from './pages/Pairing';
 import RuntimeDashboard from './pages/RuntimeDashboard';
@@ -33,14 +34,29 @@ function Paired({ children }: { children: React.ReactNode }) {
   return <RequirePaired redirectTo="/pairing">{children}</RequirePaired>;
 }
 
+function DeviceCanvas({ children }: { children: React.ReactNode }) {
+  return <BluefinMasterFrame>{children}</BluefinMasterFrame>;
+}
+
 export default function App() {
-  return (
+  const content = (
     <>
       <BootSplash />
       <DeviceStatusOverlay />
       <Routes>
         <Route path="/" element={<RootRedirect />} />
-        <Route path="/pairing" element={<Pairing />} />
+        <Route
+          path="/pairing"
+          element={
+            runtimeConfig.isSimulator ? (
+              <DeviceCanvas>
+                <Pairing />
+              </DeviceCanvas>
+            ) : (
+              <Pairing />
+            )
+          }
+        />
         <Route path="/dashboard" element={<RuntimeDashboard />} />
 
         {/* Production BrightSign display surfaces (also reachable in sim for smoke tests) */}
@@ -109,8 +125,17 @@ export default function App() {
         {/* Unknown paths → profile home (helps file:// / hash recovery) */}
         <Route path="*" element={<RootRedirect />} />
       </Routes>
-
-      {runtimeConfig.isSimulator && <DebugConsole />}
     </>
   );
+
+  if (runtimeConfig.isSimulator) {
+    return (
+      <>
+        {content}
+        <DebugConsole />
+      </>
+    );
+  }
+
+  return <DeviceCanvas>{content}</DeviceCanvas>;
 }

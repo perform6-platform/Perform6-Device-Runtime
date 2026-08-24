@@ -100,14 +100,55 @@ body,
 #root {
   height: 100%;
   margin: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
   touch-action: manipulation;
   user-select: none;
   background: #000000;
   color: var(--color-p6-text, #ffffff);
   font-family: var(--font-p6, 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif);
   -webkit-font-smoothing: antialiased;
+}
+
+html.p6-bluefin-lock {
+  font-size: 16px;
+}
+
+/* Bluefin 15.6" master frame — 1920×1080 design canvas */
+.p6-master-stage {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #000000;
+}
+
+.p6-master-slot {
+  position: relative;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.p6-master-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  transform-origin: top left;
+}
+
+.p6-master-overlays {
+  position: absolute;
+  inset: 0;
+  z-index: 500;
+  pointer-events: none;
+}
+
+.p6-master-overlays > * {
+  pointer-events: auto;
 }
 
 html::-webkit-scrollbar,
@@ -282,7 +323,7 @@ body::-webkit-scrollbar,
   justify-content: space-between;
   gap: 1rem;
   width: 100%;
-  font-size: clamp(1.95rem, 1.35rem + 1.55vw, 2.25rem);
+  font-size: 2.25rem;
 }
 
 .p6-start-here-card__title,
@@ -392,14 +433,22 @@ body::-webkit-scrollbar,
   background: var(--color-p6-bg, #00050a);
   color: var(--color-p6-text, #ffffff);
   font-family: var(--font-p6, 'Inter', system-ui, sans-serif);
-  --p6-phase-card-height: 9.75rem;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  /* Content-sized cards; tall screens must not stretch rows with 1fr. */
+  --p6-phase-card-height: 11.5rem;
   --p6-card-pad-x: 1.75rem;
   --p6-card-pad-right: 1.75rem;
+  --p6-home-max-width: 1920px;
 }
 
 .p6-home__hero {
-  position: absolute;
+  position: fixed;
   inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   pointer-events: none;
 }
@@ -480,22 +529,37 @@ body::-webkit-scrollbar,
   position: relative;
   z-index: 1;
   display: grid;
+  width: 100%;
+  max-width: var(--p6-home-max-width);
+  min-height: 100%;
   height: 100%;
-  padding: 1.5rem clamp(3.5rem, 6vw, 5.5rem) 2rem;
+  margin-inline: auto;
+  padding: 1.5rem 5.5rem 2rem;
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: auto auto auto auto minmax(9.75rem, 1fr) minmax(9.75rem, 1fr);
+  /* Logo top; equal 1fr spacers center the card block in leftover height. */
+  grid-template-rows:
+    auto
+    1fr
+    auto
+    auto
+    auto
+    minmax(var(--p6-phase-card-height), auto)
+    minmax(var(--p6-phase-card-height), auto)
+    1fr;
   gap: 1.25rem;
   align-content: stretch;
-  --p6-phase-card-height: 9.75rem;
+  --p6-phase-card-height: 11.5rem;
   --p6-card-pad-x: 1.75rem;
   --p6-card-pad-right: 1.75rem;
   grid-template-areas:
     'logo    logo'
+    '.       .'
     'start   start'
     'divider divider'
     'col-l   col-r'
     'phase1  full'
-    'phase2  full';
+    'phase2  full'
+    '.       .';
 }
 
 .p6-logo {
@@ -512,11 +576,11 @@ body::-webkit-scrollbar,
   position: relative;
   top: 0;
   /* Sits at the screen edge instead of the card gutter, without shifting the grid. */
-  left: calc(1.25rem - clamp(3.5rem, 6vw, 5.5rem));
+  left: calc(1.25rem - 5.5rem);
   z-index: 2;
   justify-self: start;
   align-self: start;
-  width: 12.5rem;
+  width: 16rem;
   height: auto;
   margin-bottom: 0.75rem;
 }
@@ -722,7 +786,8 @@ body::-webkit-scrollbar,
 .p6-phase-card {
   position: relative;
   display: grid;
-  height: 100%;
+  height: auto;
+  min-height: 100%;
   box-sizing: border-box;
   grid-template-columns: minmax(0, 1fr) minmax(10.75rem, 24%);
   grid-template-rows: auto auto auto auto;
@@ -795,11 +860,13 @@ body::-webkit-scrollbar,
   position: relative;
   display: grid;
   width: 100%;
-  height: 100%;
+  height: auto;
+  min-height: 100%;
   box-sizing: border-box;
   grid-template-columns: minmax(0, 1fr) minmax(10.75rem, 24%);
+  /* Spacer row keeps duration pinned to the bottom-right like Phase cards. */
   grid-template-rows: auto auto auto 1fr auto;
-  align-items: start;
+  align-content: stretch;
   column-gap: 1.25rem;
   row-gap: 0;
   padding: 2.5rem var(--p6-card-pad-right) 1.5rem var(--p6-card-pad-x);
@@ -892,7 +959,7 @@ body::-webkit-scrollbar,
 
 .p6-session-modal {
   position: relative;
-  width: min(24rem, calc(100vw - 3rem));
+  width: min(24rem, calc(100% - 3rem));
   min-height: 22.5rem;
   margin: 1.5rem 0;
   padding: 4.25rem 2.25rem 2.5rem;
@@ -993,7 +1060,7 @@ body::-webkit-scrollbar,
 
 /* Confirm dialog — matches Start Here reference */
 .p6-session-modal--confirm {
-  width: min(41rem, calc(100vw - 3rem));
+  width: min(41rem, calc(100% - 3rem));
   min-height: auto;
   padding: 2.85rem 2.5rem 1.85rem;
   border-radius: 18px;
@@ -1396,7 +1463,7 @@ body::-webkit-scrollbar,
 }
 
 .p6-video-playing-modal--program {
-  width: min(41rem, calc(100vw - 3rem));
+  width: min(41rem, calc(100% - 3rem));
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -1508,7 +1575,7 @@ body::-webkit-scrollbar,
   flex-direction: column;
   gap: 0.35rem;
   margin: 2.5rem 0 2rem;
-  font-size: clamp(1.75rem, 1.25rem + 1.5vw, 2.5rem);
+  font-size: 2.5rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1521,7 +1588,7 @@ body::-webkit-scrollbar,
 }
 
 .p6-video-playing-modal__message-session {
-  font-size: clamp(1.5rem, 1.1rem + 1.2vw, 2.125rem);
+  font-size: 2.125rem;
 }
 
 .p6-video-playing-modal__btn {
@@ -1666,7 +1733,7 @@ body::-webkit-scrollbar,
 /* ─── Category picker modal ─── */
 
 .p6-category-picker {
-  width: min(52rem, calc(100vw - 2.5rem));
+  width: min(52rem, calc(100% - 2.5rem));
   min-height: auto;
   padding: 3.25rem 1.75rem 1.75rem;
   text-align: left;
@@ -1877,7 +1944,6 @@ body::-webkit-scrollbar,
   z-index: 110;
   width: 100%;
   height: 100%;
-  height: 100dvh;
   background: #000;
 }
 
@@ -1885,7 +1951,6 @@ body::-webkit-scrollbar,
   position: relative;
   width: 100%;
   height: 100%;
-  height: 100dvh;
   max-width: 100%;
   overflow: hidden;
 }
@@ -2211,9 +2276,23 @@ body::-webkit-scrollbar,
   background: #ffffff;
 }
 
-/* ─── Mobile & tablet responsive ─── */
+/* Fluid breakpoints stay for non-framed surfaces (simulator launcher, etc.).
+   Inside the Bluefin 1920×1080 master frame they must not reflow the canvas. */
+
+@media (min-width: 1921px) {
+  html:not(.p6-bluefin-lock) {
+  .p6-home__grid {
+    padding-inline: 5.5rem;
+  }
+
+  .p6-card-heading {
+    font-size: 2.25rem;
+  }
+  }
+}
 
 @media (max-width: 1024px) {
+  html:not(.p6-bluefin-lock) {
   .p6-home__grid {
     padding: 1.5rem 1.75rem 1.25rem;
     gap: 0.75rem 1rem;
@@ -2230,18 +2309,18 @@ body::-webkit-scrollbar,
   .p6-home__divider-track--right .p6-section-divider__line {
     margin-left: calc(10rem + 2rem - 0.5rem);
   }
+  }
 }
 
 @media (max-width: 768px) {
-  :root {
-    --text-p6-hero: 1.65rem;
-    --text-p6-title: 1.2rem;
-    --text-p6-heading: 1.05rem;
-    --text-p6-body: 0.8125rem;
-    --text-p6-small: 0.75rem;
-    --text-p6-caption: 0.625rem;
-    --text-p6-label: 0.5625rem;
-  }
+  html:not(.p6-bluefin-lock) {
+  --text-p6-hero: 1.65rem;
+  --text-p6-title: 1.2rem;
+  --text-p6-heading: 1.05rem;
+  --text-p6-body: 0.8125rem;
+  --text-p6-small: 0.75rem;
+  --text-p6-caption: 0.625rem;
+  --text-p6-label: 0.5625rem;
 
   html,
   body,
@@ -2258,8 +2337,10 @@ body::-webkit-scrollbar,
   }
 
   .p6-home__hero {
+    position: fixed;
     inset: 0;
-    height: auto;
+    width: 100%;
+    height: 100%;
   }
 
   .p6-home__hero-video {
@@ -2710,12 +2791,12 @@ body::-webkit-scrollbar,
     width: 2.35rem;
     height: 2.35rem;
   }
+  }
 }
 
 @media (max-width: 480px) {
-  :root {
-    --text-p6-hero: 1.45rem;
-  }
+  html:not(.p6-bluefin-lock) {
+  --text-p6-hero: 1.45rem;
 
   .p6-home__grid {
     padding: 0.875rem 0.875rem 1.25rem;
@@ -2826,5 +2907,6 @@ body::-webkit-scrollbar,
   .p6-session-modal--confirm .p6-session-modal__btn--back {
     font-size: 0.8125rem;
     padding: 0.7rem 0.65rem;
+  }
   }
 }
