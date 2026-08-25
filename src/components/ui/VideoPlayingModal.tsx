@@ -300,7 +300,6 @@ export function VideoPlayingModal({
                 type="button"
                 className="p6-session-modal__btn p6-session-modal__btn--back p6-video-playing-modal__ctrl-outline"
                 onClick={() => setConfirm(null)}
-                autoFocus
               >
                 Cancel
               </button>

@@ -1,4 +1,5 @@
 import { createPortal } from 'react-dom';
+import { getBluefinOverlayRoot } from '../../shared/bluefinViewport';
 import { useSessionPlayer } from '../../hooks/useSessionPlayer';
 import { SessionPlayerView } from './SessionPlayerView';
 import type { SessionPlayerConfig } from './types';
@@ -18,6 +19,6 @@ export function SessionPlayer(props: SessionPlayerConfig) {
       controlVariant={props.controlVariant}
       {...controller}
     />,
-    document.body,
+    getBluefinOverlayRoot(),
   );
 }
