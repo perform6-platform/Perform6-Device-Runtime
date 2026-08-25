@@ -244,6 +244,12 @@ function main() {
         clusterMember: member || null,
         builtAt: new Date().toISOString(),
         displayMode,
+        storageEncryption: {
+          enabled: true,
+          method: 'generate_key',
+          scope: 'SD card volume (player-bound unique key)',
+          note: 'Cached videos not readable on PC; card from Player A will not play on Player B.',
+        },
         displayModeFile: 'perform6-display.txt',
         displayModeOptions: ['MULTI', 'MULTI_NOFULLRES'],
         multiHdmi:
@@ -293,6 +299,10 @@ function main() {
       `Version: ${version}`,
       '',
       'Supported firmwares: BrightSign OS 8.2+ and 9.x (Series 5: XT/XC/HD).',
+      'Storage encryption: player-bound unique key (generate_key) on first boot —',
+      '  cached MP4s in perform6-cache are not readable on a PC or on another player.',
+      '  First boot after upgrade purges old plaintext cache once; content re-syncs encrypted.',
+      '  Requires BrightSign OS with roDeviceCustomization.EncryptStorage support.',
       '',
       `Display mode (perform6-display.txt): ${displayMode}`,
       '  MULTI           = BrightAuthor-style: HDMI-1 React + secondary native roVideoPlayer(s)',

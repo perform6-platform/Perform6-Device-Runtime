@@ -6,6 +6,7 @@
 ' XT/XC always use BrightAuthor-style MULTI (React on HDMI-1 + native video on LEDs).
 ' SetScreenModes only when config differs (avoids reboot loop). Do NOT call SetMode.
 ' Do NOT set trusted_iframes_enabled. Do NOT call roTouchScreen.Enable.
+' Storage: player-bound SD encryption (generate_key) — cached media not readable on PC / other players.
 
 Sub SafePrint(msg as String)
   print msg
@@ -20,6 +21,95 @@ Sub LedLog(msg as String)
   if type(existing) <> "roString" and type(existing) <> "String" then existing = ""
   if Len(existing) > 60000 then existing = ""
   WriteAsciiFile(path, existing + msg + Chr(10))
+End Sub
+
+' ---------------------------------------------------------------------------
+' SD storage encryption (BrightSign native — player-bound unique key)
+' Uses generate_key: key lives in player registry only; card unreadable on PC / other players.
+' format=false on first enable so autorun/index.html are NOT wiped mid-boot.
+' Plaintext perform6-cache is purged once so re-sync writes encrypted cache files.
+' ---------------------------------------------------------------------------
+
+Function StorageFsType() as String
+  si = CreateObject("roStorageInfo", "/storage/sd")
+  if type(si) <> "roStorageInfo" then
+    si = CreateObject("roStorageInfo", "SD:/")
+  end if
+  if type(si) <> "roStorageInfo" then return ""
+
+  fs = si.GetFileSystemType()
+  if type(fs) = "roString" or type(fs) = "String" then
+    return LCase(fs)
+  end if
+  return ""
+End Function
+
+Function IsStorageEncrypted() as Boolean
+  fs = StorageFsType()
+  if fs = "" then return false
+  if Instr(1, fs, "ecryptfs") > 0 then return true
+  if Instr(1, fs, "encrypt") > 0 then return true
+  return false
+End Function
+
+Sub PurgePlaintextVideoCacheOnce()
+  cacheRoot = "SD:/perform6-cache"
+  if FileExistsIn("SD:/", "perform6-cache-enc-purged.txt") then return
+
+  files = MatchFiles(cacheRoot, "*")
+  if type(files) = "roList" or type(files) = "roArray" then
+    for each name in files
+      DeleteFile(cacheRoot + "/" + name)
+    end for
+  end if
+
+  WriteAsciiFile("SD:/perform6-cache-enc-purged.txt", "1" + Chr(10))
+  LedLog("=== Perform6: purged plaintext perform6-cache (re-sync will write encrypted) ===")
+End Sub
+
+Sub EnsureStorageEncryption()
+  dc = CreateObject("roDeviceCustomization")
+  if type(dc) <> "roDeviceCustomization" then
+    SafePrint("=== Perform6: WARN roDeviceCustomization unavailable — storage encryption skipped ===")
+    return
+  end if
+
+  wasEncrypted = IsStorageEncrypted()
+
+  opts = CreateObject("roAssociativeArray")
+  opts.method = "generate_key"
+  opts.format = false
+
+  ok = dc.EncryptStorage("/storage/sd", opts)
+  if ok <> true then
+    ok = dc.EncryptStorage("SD:/", opts)
+  end if
+
+  if ok = true then
+    if wasEncrypted = false then
+      SafePrint("=== Perform6: SD storage encryption enabled (player-bound unique key) ===")
+      LedLog("=== Perform6: SD storage encryption enabled (player-bound unique key) ===")
+      PurgePlaintextVideoCacheOnce()
+      WriteAsciiFile("SD:/perform6-storage-security.txt", "method=generate_key" + Chr(10))
+    else
+      SafePrint("=== Perform6: SD storage encryption active ===")
+    end if
+  else
+    SafePrint("=== Perform6: WARN SD storage encryption failed — continuing (check OS/firmware/model) ===")
+    LedLog("=== Perform6: WARN SD storage encryption failed — continuing ===")
+  end if
+End Sub
+
+Sub AttachStorageHotplug(msgPort as Object)
+  hotplug = CreateObject("roStorageHotplug")
+  if type(hotplug) <> "roStorageHotplug" then return
+  hotplug.SetPort(msgPort)
+  SafePrint("=== Perform6: storage hotplug monitor attached ===")
+End Sub
+
+Sub HandleStorageDetached(ev as Object)
+  LedLog("=== Perform6: SECURITY storage detached ===")
+  SafePrint("=== Perform6: SECURITY storage detached ===")
 End Sub
 
 Function TryCreateHtmlWidget(rect as Object, msgPort as Object, url as String) as Object
@@ -1025,6 +1115,9 @@ Sub Main()
   profile = ResolveHardwareProfile(identity)
   LedLog("=== Perform6: hardware profile " + profile + " ===")
 
+  ' Enable player-bound SD encryption before HtmlWidget / cache downloads (non-destructive format).
+  EnsureStorageEncryption()
+
   displayMode = ReadDisplayMode()
   ' XT/XC always BrightAuthor-style multi-output (React + native LED video).
   multiOutput = (profile = "XT2145" or profile = "XC4055")
@@ -1039,6 +1132,8 @@ Sub Main()
       Sleep(10000)
     end while
   end if
+
+  AttachStorageHotplug(msgPort)
 
   vm = CreateObject("roVideoMode")
   if type(vm) = "roVideoMode" then
@@ -1315,6 +1410,8 @@ Sub Main()
           SafePrint("=== Perform6: HTML load-finished ===")
         end if
       end if
+    else if type(ev) = "roStorageDetached" then
+      HandleStorageDetached(ev)
     end if
   end while
 End Sub
