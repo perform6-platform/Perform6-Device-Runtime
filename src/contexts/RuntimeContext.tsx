@@ -22,6 +22,8 @@ import {
   getCredentials,
   fetchAndStoreCredentials,
   clearCachedMediaVersionIds,
+  prefetchLedSdFromSync,
+  collectLedPrefetchUrls,
 } from '../services';
 import { sendPlaybackTelemetry } from '../services/playbackTelemetryApi';
 import { ApiError } from '../services/api';
@@ -161,6 +163,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     );
 
     if (result.success) {
+      // Pre-fill SD:/perform6-cache so native LEDs play offline without a first stream.
+      prefetchLedSdFromSync(result.syncData);
       if (result.manifest) {
         setPlaybackManifest(result.manifest);
         setSyncState({
@@ -179,6 +183,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
             syncJobId: result.syncData?.syncJobId,
             screens: result.manifest.screens.length,
             completeReportFailures: result.completeReportFailures ?? 0,
+            ledSdPrefetch: collectLedPrefetchUrls(result.syncData).length,
             ota: result.ota?.updateAvailable
               ? {
                   version: result.ota.version,

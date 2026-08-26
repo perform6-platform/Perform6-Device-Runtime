@@ -17,7 +17,7 @@ export default function XT2145Simulator() {
 
   return (
     <div className="p6-xt2145-sim flex h-full flex-col lg:flex-row">
-      <div className="relative min-h-0 flex-[3] overflow-hidden border-b border-slate-800 lg:border-b-0 lg:border-r">
+      <div className="relative h-full min-h-0 flex-[3] overflow-hidden border-b border-slate-800 lg:border-b-0 lg:border-r">
         <div className="absolute left-2 top-2 z-20 rounded bg-black/70 px-2 py-1 text-[10px] uppercase tracking-wide text-p6-cyan">
           Touch Screen · {deviceInfo?.model ?? 'XT2145'}
         </div>

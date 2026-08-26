@@ -6,6 +6,9 @@
 ' XT/XC always use BrightAuthor-style MULTI (React on HDMI-1 + native video on LEDs).
 ' SetScreenModes only when config differs (avoids reboot loop). Do NOT call SetMode.
 ' Do NOT set trusted_iframes_enabled. Do NOT call roTouchScreen.Enable.
+' Storage: whole-SD EncryptStorage is DISABLED — it breaks HtmlWidget file:///index.html
+' (ERR_FILE_NOT_FOUND / roStorageInfo). Keep autorun + index.html + assets plaintext
+' (BrightAuthor-style). Protect media later via app-level cache encryption if needed.
 
 Sub SafePrint(msg as String)
   print msg
@@ -20,6 +23,29 @@ Sub LedLog(msg as String)
   if type(existing) <> "roString" and type(existing) <> "String" then existing = ""
   if Len(existing) > 60000 then existing = ""
   WriteAsciiFile(path, existing + msg + Chr(10))
+End Sub
+
+' ---------------------------------------------------------------------------
+' SD EncryptStorage (DISABLED)
+' Whole-card generate_key left the mount half-broken: HtmlWidget could not load
+' index.html, roStorageInfo failed, DWS reported "Storage card not found".
+' Do not re-enable until a separate provisioning path is proven on XT/XC.
+' ---------------------------------------------------------------------------
+
+Sub EnsureStorageEncryption()
+  SafePrint("=== Perform6: SD EncryptStorage disabled (plaintext SD for HtmlWidget) ===")
+End Sub
+
+Sub AttachStorageHotplug(msgPort as Object)
+  hotplug = CreateObject("roStorageHotplug")
+  if type(hotplug) <> "roStorageHotplug" then return
+  hotplug.SetPort(msgPort)
+  SafePrint("=== Perform6: storage hotplug monitor attached ===")
+End Sub
+
+Sub HandleStorageDetached(ev as Object)
+  LedLog("=== Perform6: SECURITY storage detached ===")
+  SafePrint("=== Perform6: SECURITY storage detached ===")
 End Sub
 
 Function TryCreateHtmlWidget(rect as Object, msgPort as Object, url as String) as Object
@@ -169,6 +195,8 @@ Function PayloadString(payload as Object, key as String) as String
     value = payload.role
   else if key = "target" then
     value = payload.target
+  else if key = "urls" then
+    value = payload.urls
   end if
   if type(value) = "roString" or type(value) = "String" then
     return value
@@ -383,25 +411,96 @@ Function PlayNetworkStream(st as Object, url as String) as Boolean
   return (ok = true)
 End Function
 
-' Keep the SD cache small: drop anything the outputs are not using right now.
+Function FindPrefetchWorker(states as Object) as Object
+  for each st in states
+    if type(st) = "roAssociativeArray" then
+      if st.key = "prefetch" then return st
+    end if
+  end for
+  return invalid
+End Function
+
+Function FindKeepNames(states as Object) as Object
+  worker = FindPrefetchWorker(states)
+  if type(worker) = "roAssociativeArray" then
+    if type(worker.keepNames) = "roAssociativeArray" then return worker.keepNames
+  end if
+  return invalid
+End Function
+
+Function CreatePrefetchWorker() as Object
+  st = CreateObject("roAssociativeArray")
+  st.vp = invalid
+  st.key = "prefetch"
+  st.nonce = 0
+  st.loopMode = true
+  st.paused = false
+  st.wantUrl = ""
+  st.playingUrl = ""
+  st.localName = ""
+  st.idleShown = false
+  st.volumePercent = -1
+  st.ignoreEnded = false
+  st.ignoreEndedSpan = invalid
+  st.stream = invalid
+  st.xfer = invalid
+  st.xferUrl = ""
+  st.xferTmp = ""
+  st.xferDest = ""
+  st.xferName = ""
+  st.queue = CreateObject("roArray", 0, true)
+  st.keepNames = CreateObject("roAssociativeArray")
+  return st
+End Function
+
+Function SplitPipeUrls(text as String) as Object
+  out = CreateObject("roArray", 0, true)
+  if Len(text) = 0 then return out
+  start = 1
+  while start <= Len(text)
+    pipe = Instr(start, text, "|")
+    if pipe = 0 then
+      part = Mid(text, start)
+      if Len(part) > 0 then out.Push(part)
+      exit while
+    end if
+    if pipe > start then
+      out.Push(Mid(text, start, pipe - start))
+    end if
+    start = pipe + 1
+  end while
+  return out
+End Function
+
+' Drop files that are neither sync-assigned nor in active use.
 Sub PruneCache(states as Object)
   files = MatchFiles(CacheDir(), "*")
   if type(files) <> "roList" and type(files) <> "roArray" then return
-  if files.Count() <= 6 then return
+
+  keepNames = FindKeepNames(states)
 
   for each name in files
-    keep = false
-    for each st in states
-      if type(st) = "roAssociativeArray" then
-        if name = st.localName or name = st.xferName then keep = true
+    isPart = false
+    if Right(name, 5) = ".part" then isPart = true
+    if not isPart then
+      keep = false
+      if type(keepNames) = "roAssociativeArray" then
+        flag = keepNames.Lookup(name)
+        if type(flag) <> "Invalid" then keep = true
       end if
-    end for
-    if not keep then DeleteFile(CacheDir() + "/" + name)
+      for each st in states
+        if type(st) = "roAssociativeArray" then
+          if name = st.localName or name = st.xferName then keep = true
+        end if
+      end for
+      if not keep then DeleteFile(CacheDir() + "/" + name)
+    end if
   end for
 End Sub
 
 Sub StartCacheDownload(st as Object, url as String, msgPort as Object, states as Object)
   if type(st.xfer) = "roUrlTransfer" and st.xferUrl = url then return
+  if type(st.xfer) = "roUrlTransfer" then return
 
   CreateDirectory(CacheDir())
   name = CacheNameFor(url)
@@ -425,6 +524,47 @@ Sub StartCacheDownload(st as Object, url as String, msgPort as Object, states as
   end if
 End Sub
 
+Sub DrainPrefetchQueue(msgPort as Object, states as Object)
+  worker = FindPrefetchWorker(states)
+  if type(worker) <> "roAssociativeArray" then return
+  if type(worker.xfer) = "roUrlTransfer" then return
+  if type(worker.queue) <> "roArray" then return
+
+  while worker.queue.Count() > 0
+    url = worker.queue[0]
+    worker.queue.Delete(0)
+    if Len(CachedPathFor(url)) > 0 then
+      LedLog("=== Perform6: prefetch already cached " + CacheNameFor(url) + " ===")
+    else
+      StartCacheDownload(worker, url, msgPort, states)
+      return
+    end if
+  end while
+End Sub
+
+Sub HandleLedPrefetch(payload as Object, msgPort as Object, states as Object)
+  worker = FindPrefetchWorker(states)
+  if type(worker) <> "roAssociativeArray" then return
+
+  urls = SplitPipeUrls(PayloadString(payload, "urls"))
+  worker.keepNames = CreateObject("roAssociativeArray")
+  worker.queue = CreateObject("roArray", 0, true)
+
+  for each url in urls
+    if IsNetworkSrc(url) then
+      name = CacheNameFor(url)
+      worker.keepNames.AddReplace(name, true)
+      if Len(CachedPathFor(url)) = 0 then
+        worker.queue.Push(url)
+      end if
+    end if
+  end for
+
+  LedLog("=== Perform6: prefetch " + IntToStr(urls.Count()) + " urls, queue " + IntToStr(worker.queue.Count()) + " ===")
+  PruneCache(states)
+  DrainPrefetchQueue(msgPort, states)
+End Sub
+
 Function FindStateForUrlEvent(states as Object, ev as Object) as Object
   ident = ev.GetSourceIdentity()
   for each st in states
@@ -437,7 +577,7 @@ Function FindStateForUrlEvent(states as Object, ev as Object) as Object
   return invalid
 End Function
 
-Sub HandleCacheEvent(st as Object, ev as Object)
+Sub HandleCacheEvent(st as Object, ev as Object, msgPort as Object, states as Object)
   ' 1 = transfer complete.
   if ev.GetInt() <> 1 then return
 
@@ -453,6 +593,7 @@ Sub HandleCacheEvent(st as Object, ev as Object)
     LedLog("=== Perform6: LED " + st.key + " cache failed HTTP " + IntToStr(code) + " ===")
     DeleteFile(tmp)
     st.xferName = ""
+    DrainPrefetchQueue(msgPort, states)
     return
   end if
 
@@ -462,28 +603,34 @@ Sub HandleCacheEvent(st as Object, ev as Object)
     LedLog("=== Perform6: LED " + st.key + " cache move failed ===")
     DeleteFile(tmp)
     st.xferName = ""
+    DrainPrefetchQueue(msgPort, states)
     return
   end if
   LedLog("=== Perform6: LED " + st.key + " cached " + dest + " ===")
 
-  ' Only take over when nothing is on screen — never interrupt a running stream.
-  if st.wantUrl = url and Len(st.playingUrl) = 0 then
-    if st.idleShown = true then
-      st.vp.StopClear()
-      st.vp.SetViewMode("FillScreenAndCentered")
-      st.idleShown = false
-    end if
-    if PlayLocalFile(st.vp, dest) then
-      st.playingUrl = url
-      st.localName = name
-      st.vp.SetLoopMode(st.loopMode)
-      if st.paused then
-        st.vp.Pause()
-      else
-        st.vp.Resume()
+  ' Prefetch worker has no video player — only fill SD.
+  if st.key <> "prefetch" and type(st.vp) = "roVideoPlayer" then
+    ' Only take over when nothing is on screen — never interrupt a running stream.
+    if st.wantUrl = url and Len(st.playingUrl) = 0 then
+      if st.idleShown = true then
+        st.vp.StopClear()
+        st.vp.SetViewMode("FillScreenAndCentered")
+        st.idleShown = false
+      end if
+      if PlayLocalFile(st.vp, dest) then
+        st.playingUrl = url
+        st.localName = name
+        st.vp.SetLoopMode(st.loopMode)
+        if st.paused then
+          st.vp.Pause()
+        else
+          st.vp.Resume()
+        end if
       end if
     end if
   end if
+
+  DrainPrefetchQueue(msgPort, states)
 End Sub
 
 Sub PlayNativeSrc(st as Object, src as String, msgPort as Object, states as Object)
@@ -1025,6 +1172,9 @@ Sub Main()
   profile = ResolveHardwareProfile(identity)
   LedLog("=== Perform6: hardware profile " + profile + " ===")
 
+  ' Whole-SD EncryptStorage disabled — see EnsureStorageEncryption().
+  EnsureStorageEncryption()
+
   displayMode = ReadDisplayMode()
   ' XT/XC always BrightAuthor-style multi-output (React + native LED video).
   multiOutput = (profile = "XT2145" or profile = "XC4055")
@@ -1039,6 +1189,8 @@ Sub Main()
       Sleep(10000)
     end while
   end if
+
+  AttachStorageHotplug(msgPort)
 
   vm = CreateObject("roVideoMode")
   if type(vm) = "roVideoMode" then
@@ -1078,10 +1230,11 @@ Sub Main()
   primaryUrl = ""
   touchFallbackTried = false
   primaryFallbackTried = false
-  ledStates = CreateObject("roArray", 3, true)
+  ledStates = CreateObject("roArray", 4, true)
   ledState = invalid
   led2State = invalid
   led3State = invalid
+  ledStates.Push(CreatePrefetchWorker())
 
   if profile = "XT2145" and multiOutput then
     SafePrint("=== Perform6: XT React HDMI-1 + native video HDMI-2 ===")
@@ -1250,7 +1403,7 @@ Sub Main()
     else if type(ev) = "roUrlEvent" then
       cacheState = FindStateForUrlEvent(ledStates, ev)
       if type(cacheState) = "roAssociativeArray" then
-        HandleCacheEvent(cacheState, ev)
+        HandleCacheEvent(cacheState, ev, msgPort, ledStates)
       end if
     else if type(ev) = "roHtmlWidgetEvent" then
       data = ev.GetData()
@@ -1265,7 +1418,9 @@ Sub Main()
             msgType = PayloadString(payload, "type")
             sender = PayloadString(payload, "role")
             target = PayloadString(payload, "target")
-            if msgType = "xt-playback" or msgType = "xc-playback" then
+            if msgType = "led-cache-prefetch" then
+              HandleLedPrefetch(payload, msgPort, ledStates)
+            else if msgType = "xt-playback" or msgType = "xc-playback" then
               pausedText = "play"
               if PayloadBool(payload, "paused", false) then pausedText = "paused"
               LedLog("=== Perform6: msg " + msgType + " from " + sender + " target " + target + " " + pausedText + " vol " + IntToStr(PayloadInt(payload, "volumePercent", 100)) + " nonce " + IntToStr(PayloadInt(payload, "restartNonce", 0)) + " src " + PayloadString(payload, "src") + " ===")
@@ -1315,6 +1470,8 @@ Sub Main()
           SafePrint("=== Perform6: HTML load-finished ===")
         end if
       end if
+    else if type(ev) = "roStorageDetached" then
+      HandleStorageDetached(ev)
     end if
   end while
 End Sub

@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { getBluefinOverlayRoot } from '../../shared/bluefinViewport';
 import { cn } from '../../lib/cn';
 import { experienceModalClassMap, type P6Accent, type P6Experience } from './types';
 
@@ -198,6 +199,6 @@ export function SessionModal({
         </div>
       </div>
     </div>,
-    document.body,
+    getBluefinOverlayRoot(),
   );
 }

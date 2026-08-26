@@ -17,3 +17,4 @@ export * from './credentialStore';
 export * from './credentials';
 export * from './registrationWatcher';
 export * from './networkHealth';
+export * from './ledSdPrefetch';
