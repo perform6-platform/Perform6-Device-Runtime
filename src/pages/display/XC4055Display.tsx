@@ -22,7 +22,7 @@ function XcOutputSurface({
 }) {
   const screen = manifest ? findScreenForTarget(manifest, target) : undefined;
   const video = getCurrentVideo(screen);
-  const offlineSrc = useOfflineVideoSrc(video?.id);
+  const offlineSrc = useOfflineVideoSrc(video?.id, video?.url);
   const videoSrc = offlineSrc ?? (video?.url ? video.url : null);
   const label =
     screen?.label?.trim() || XC4055_SCREEN_FALLBACK_LABELS[target] || target;

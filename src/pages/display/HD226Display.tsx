@@ -18,7 +18,7 @@ export default function HD226Display() {
     ? findScreenForClusterMember(manifest, member)
     : undefined;
   const video = getCurrentVideo(screen);
-  const offlineSrc = useOfflineVideoSrc(video?.id);
+  const offlineSrc = useOfflineVideoSrc(video?.id, video?.url);
   const videoSrc = offlineSrc ?? (video?.url ? video.url : null);
   const label = screen?.label ?? member;
   const screenKey =

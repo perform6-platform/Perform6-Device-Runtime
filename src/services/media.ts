@@ -1,5 +1,11 @@
 import type { SyncMediaItem } from '../shared/types/api';
-import { indexedDbContentStore } from './contentStore/indexedDbContentStore';
+import {
+  clearSdCached,
+  downloadMediaItemsToSd,
+  hasSdCachedMedia,
+  resolveSdPlaybackUrl,
+  type SdDownloadProgress,
+} from './sdCacheBridge';
 import { resolveMediaFileUrl } from './manifest';
 import { offlineCacheService } from './offlineCache';
 
@@ -12,143 +18,83 @@ export interface CachedMediaMeta {
   checksum?: string;
 }
 
-const blobUrlCache = new Map<string, string>();
-
-async function sha256Hex(blob: Blob): Promise<string> {
-  const buffer = await blob.arrayBuffer();
-  const hash = await crypto.subtle.digest('SHA-256', buffer);
-  return [...new Uint8Array(hash)]
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-export async function resolveLocalPlaybackUrl(
-  mediaVersionId: string,
-): Promise<string | null> {
-  if (blobUrlCache.has(mediaVersionId)) {
-    return blobUrlCache.get(mediaVersionId)!;
-  }
-
-  const blob = await indexedDbContentStore.get(mediaVersionId);
-  if (!blob) return null;
-
-  const objectUrl = URL.createObjectURL(blob);
-  blobUrlCache.set(mediaVersionId, objectUrl);
-  return objectUrl;
-}
-
-/** True when IndexedDB actually holds the media blob (not just a cache_records claim). */
-export async function hasLocalMediaBlob(mediaVersionId: string): Promise<boolean> {
-  if (blobUrlCache.has(mediaVersionId)) return true;
-  return indexedDbContentStore.has(mediaVersionId);
-}
-
-export function revokeLocalPlaybackUrl(mediaVersionId: string): void {
-  const existing = blobUrlCache.get(mediaVersionId);
-  if (existing) {
-    URL.revokeObjectURL(existing);
-    blobUrlCache.delete(mediaVersionId);
-  }
-}
-
 export interface DownloadProgress {
   bytesDownloaded: number;
   totalBytes: number | null;
 }
 
+/** Local playback URL from SD:/perform6-cache (file://). */
+export async function resolveLocalPlaybackUrl(
+  mediaVersionId: string,
+  fallbackFileUrl?: string | null,
+): Promise<string | null> {
+  return resolveSdPlaybackUrl(mediaVersionId, fallbackFileUrl);
+}
+
+/** True when we have confirmed this mediaVersionId is on SD. */
+export async function hasLocalMediaBlob(
+  mediaVersionId: string,
+): Promise<boolean> {
+  return hasSdCachedMedia(mediaVersionId);
+}
+
+export function revokeLocalPlaybackUrl(_mediaVersionId: string): void {
+  // file:// URLs do not need revokeObjectURL
+}
+
+/**
+ * Download one item into SD:/perform6-cache via autorun (no IndexedDB).
+ * Prefer downloadMediaItemsToSd for batches.
+ */
 export async function downloadMediaItem(
   item: SyncMediaItem,
   onProgress?: (progress: DownloadProgress) => void | Promise<void>,
 ): Promise<number> {
-  const resolvedUrl = resolveMediaFileUrl(item.fileUrl);
-  const response = await fetch(resolvedUrl);
-  if (!response.ok) {
-    throw new Error(`Download failed (${response.status})`);
-  }
-
-  const totalHeader = response.headers.get('content-length');
-  const totalBytes = totalHeader ? Number(totalHeader) : item.fileSize ? Number(item.fileSize) : null;
-
-  if (!response.body) {
-    const blob = await response.blob();
-    if (item.checksum) {
-      const actual = await sha256Hex(blob);
-      if (actual !== item.checksum.toLowerCase()) {
-        throw new Error('Checksum verification failed');
-      }
-    }
-    await indexedDbContentStore.put(item.mediaVersionId, blob, {
-      checksum: item.checksum,
+  const { succeeded, failed } = await downloadMediaItemsToSd([item], async (p) => {
+    await onProgress?.({
+      bytesDownloaded: p.bytesDownloaded,
+      totalBytes: p.totalBytes,
     });
-    await offlineCacheService.storeMediaMeta({
-      assetId: item.mediaVersionId,
-      url: resolvedUrl,
-      type: 'video',
-      cachedAt: new Date().toISOString(),
-      sizeBytes: blob.size,
-      checksum: item.checksum,
-    });
-    await onProgress?.({ bytesDownloaded: blob.size, totalBytes: blob.size });
-    return blob.size;
-  }
-
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let bytesDownloaded = 0;
-  let lastReportedAt = 0;
-  // Throttle progress reports to at most one every ~2s so a large file
-  // doesn't flood the backend with hundreds of requests.
-  const PROGRESS_MIN_INTERVAL_MS = 2000;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (value) {
-      chunks.push(value);
-      bytesDownloaded += value.length;
-      const now = Date.now();
-      if (now - lastReportedAt >= PROGRESS_MIN_INTERVAL_MS) {
-        lastReportedAt = now;
-        await onProgress?.({ bytesDownloaded, totalBytes });
-      }
-    }
-  }
-
-  const blob = new Blob(chunks as BlobPart[], {
-    type: response.headers.get('content-type') ?? 'video/mp4',
   });
-
-  if (item.checksum) {
-    const actual = await sha256Hex(blob);
-    if (actual !== item.checksum.toLowerCase()) {
-      throw new Error('Checksum verification failed');
-    }
+  if (failed.includes(item.mediaVersionId) || !succeeded.includes(item.mediaVersionId)) {
+    throw new Error('SD cache download failed');
   }
-
-  await indexedDbContentStore.put(item.mediaVersionId, blob, {
-    checksum: item.checksum,
-  });
-
+  const size = item.fileSize != null ? Number(item.fileSize) : 0;
   await offlineCacheService.storeMediaMeta({
     assetId: item.mediaVersionId,
-    url: resolvedUrl,
+    url: resolveMediaFileUrl(item.fileUrl),
     type: 'video',
     cachedAt: new Date().toISOString(),
-    sizeBytes: blob.size,
+    sizeBytes: size || undefined,
     checksum: item.checksum,
   });
+  return size;
+}
 
-  await onProgress?.({ bytesDownloaded: blob.size, totalBytes: totalBytes ?? blob.size });
-  return blob.size;
+export async function downloadMediaBatchToSd(
+  items: SyncMediaItem[],
+  onProgress?: (progress: SdDownloadProgress) => void | Promise<void>,
+): Promise<{ succeeded: string[]; failed: string[] }> {
+  const result = await downloadMediaItemsToSd(items, onProgress);
+  for (const item of items) {
+    if (!result.succeeded.includes(item.mediaVersionId)) continue;
+    await offlineCacheService.storeMediaMeta({
+      assetId: item.mediaVersionId,
+      url: resolveMediaFileUrl(item.fileUrl),
+      type: 'video',
+      cachedAt: new Date().toISOString(),
+      sizeBytes: item.fileSize != null ? Number(item.fileSize) : undefined,
+      checksum: item.checksum,
+    });
+  }
+  return result;
 }
 
 export async function evictCachedMedia(mediaVersionIds: string[]): Promise<void> {
   if (mediaVersionIds.length === 0) return;
-  for (const id of mediaVersionIds) {
-    revokeLocalPlaybackUrl(id);
-  }
-  await indexedDbContentStore.deleteMany(mediaVersionIds);
+  clearSdCached(mediaVersionIds);
   await offlineCacheService.removeMany(mediaVersionIds);
+  // Physical SD delete is handled by autorun prune via keep-set rebuild in syncEngine.
 }
 
 /** @deprecated Use downloadMediaItem — kept for tests */

@@ -6,9 +6,7 @@
 ' XT/XC always use BrightAuthor-style MULTI (React on HDMI-1 + native video on LEDs).
 ' SetScreenModes only when config differs (avoids reboot loop). Do NOT call SetMode.
 ' Do NOT set trusted_iframes_enabled. Do NOT call roTouchScreen.Enable.
-' Storage: whole-SD EncryptStorage is DISABLED — it breaks HtmlWidget file:///index.html
-' (ERR_FILE_NOT_FOUND / roStorageInfo). Keep autorun + index.html + assets plaintext
-' (BrightAuthor-style). Protect media later via app-level cache encryption if needed.
+' Media cache: SD:/perform6-cache only (no whole-SD EncryptStorage — breaks HtmlWidget).
 
 Sub SafePrint(msg as String)
   print msg
@@ -23,17 +21,6 @@ Sub LedLog(msg as String)
   if type(existing) <> "roString" and type(existing) <> "String" then existing = ""
   if Len(existing) > 60000 then existing = ""
   WriteAsciiFile(path, existing + msg + Chr(10))
-End Sub
-
-' ---------------------------------------------------------------------------
-' SD EncryptStorage (DISABLED)
-' Whole-card generate_key left the mount half-broken: HtmlWidget could not load
-' index.html, roStorageInfo failed, DWS reported "Storage card not found".
-' Do not re-enable until a separate provisioning path is proven on XT/XC.
-' ---------------------------------------------------------------------------
-
-Sub EnsureStorageEncryption()
-  SafePrint("=== Perform6: SD EncryptStorage disabled (plaintext SD for HtmlWidget) ===")
 End Sub
 
 Sub AttachStorageHotplug(msgPort as Object)
@@ -302,6 +289,17 @@ Function IsNetworkSrc(src as String) as Boolean
   return false
 End Function
 
+' HtmlWidget uses file:///SD:/… — roVideoPlayer wants SD:/…
+Function NormalizeLocalSrc(src as String) as String
+  if Left(src, 15) = "file:///SD:/" then
+    return "SD:/" + Mid(src, 16)
+  end if
+  if Left(src, 14) = "file://SD:/" then
+    return "SD:/" + Mid(src, 15)
+  end if
+  return src
+End Function
+
 Function IntToStr(value as Integer) as String
   s = StrI(value)
   while Len(s) > 0 and Left(s, 1) = " "
@@ -450,8 +448,44 @@ Function CreatePrefetchWorker() as Object
   st.xferName = ""
   st.queue = CreateObject("roArray", 0, true)
   st.keepNames = CreateObject("roAssociativeArray")
+  st.urlIds = CreateObject("roAssociativeArray")
+  st.notifyHtml = invalid
+  st.prefetchTotal = 0
+  st.prefetchDone = 0
   return st
 End Function
+
+Sub SetCacheNotifyHtml(states as Object, html as Object)
+  worker = FindPrefetchWorker(states)
+  if type(worker) <> "roAssociativeArray" then return
+  worker.notifyHtml = html
+End Sub
+
+Function LookupUrlMediaId(worker as Object, url as String) as String
+  if type(worker) <> "roAssociativeArray" then return ""
+  if type(worker.urlIds) <> "roAssociativeArray" then return ""
+  id = worker.urlIds.Lookup(url)
+  if type(id) = "roString" or type(id) = "String" then return id
+  return ""
+End Function
+
+Sub PostCacheProgress(states as Object, status as String, url as String, name as String, mediaVersionId as String, errorText as String)
+  worker = FindPrefetchWorker(states)
+  if type(worker) <> "roAssociativeArray" then return
+  html = worker.notifyHtml
+  if type(html) <> "roHtmlWidget" then return
+
+  msg = CreateObject("roAssociativeArray")
+  msg.type = "led-cache-progress"
+  msg.status = status
+  msg.url = url
+  msg.name = name
+  msg.mediaVersionId = mediaVersionId
+  msg.error = errorText
+  msg.doneCount = IntToStr(worker.prefetchDone)
+  msg.totalCount = IntToStr(worker.prefetchTotal)
+  html.PostJSMessage(msg)
+End Sub
 
 Function SplitPipeUrls(text as String) as Object
   out = CreateObject("roArray", 0, true)
@@ -520,6 +554,9 @@ Sub StartCacheDownload(st as Object, url as String, msgPort as Object, states as
     st.xferDest = dest
     st.xferName = name
     LedLog("=== Perform6: LED " + st.key + " caching " + url + " ===")
+    worker = FindPrefetchWorker(states)
+    mediaId = LookupUrlMediaId(worker, url)
+    PostCacheProgress(states, "start", url, name, mediaId, "")
     PruneCache(states)
   end if
 End Sub
@@ -533,13 +570,20 @@ Sub DrainPrefetchQueue(msgPort as Object, states as Object)
   while worker.queue.Count() > 0
     url = worker.queue[0]
     worker.queue.Delete(0)
+    name = CacheNameFor(url)
+    mediaId = LookupUrlMediaId(worker, url)
     if Len(CachedPathFor(url)) > 0 then
-      LedLog("=== Perform6: prefetch already cached " + CacheNameFor(url) + " ===")
+      LedLog("=== Perform6: prefetch already cached " + name + " ===")
+      worker.prefetchDone = worker.prefetchDone + 1
+      PostCacheProgress(states, "skip", url, name, mediaId, "")
     else
       StartCacheDownload(worker, url, msgPort, states)
       return
     end if
   end while
+
+  PostCacheProgress(states, "complete", "", "", "", "")
+  LedLog("=== Perform6: prefetch queue empty ===")
 End Sub
 
 Sub HandleLedPrefetch(payload as Object, msgPort as Object, states as Object)
@@ -547,22 +591,47 @@ Sub HandleLedPrefetch(payload as Object, msgPort as Object, states as Object)
   if type(worker) <> "roAssociativeArray" then return
 
   urls = SplitPipeUrls(PayloadString(payload, "urls"))
+  ids = SplitPipeUrls(PayloadString(payload, "ids"))
   worker.keepNames = CreateObject("roAssociativeArray")
   worker.queue = CreateObject("roArray", 0, true)
+  worker.urlIds = CreateObject("roAssociativeArray")
+  worker.prefetchTotal = urls.Count()
+  worker.prefetchDone = 0
 
+  i = 0
   for each url in urls
     if IsNetworkSrc(url) then
       name = CacheNameFor(url)
       worker.keepNames.AddReplace(name, true)
+      mediaId = ""
+      if i < ids.Count() then mediaId = ids[i]
+      worker.urlIds.AddReplace(url, mediaId)
       if Len(CachedPathFor(url)) = 0 then
         worker.queue.Push(url)
+      else
+        worker.prefetchDone = worker.prefetchDone + 1
+        PostCacheProgress(states, "skip", url, name, mediaId, "")
       end if
     end if
+    i = i + 1
   end for
 
   LedLog("=== Perform6: prefetch " + IntToStr(urls.Count()) + " urls, queue " + IntToStr(worker.queue.Count()) + " ===")
   PruneCache(states)
   DrainPrefetchQueue(msgPort, states)
+End Sub
+
+Sub HandleLedCacheEvict(payload as Object, states as Object)
+  urls = SplitPipeUrls(PayloadString(payload, "urls"))
+  for each url in urls
+    if IsNetworkSrc(url) then
+      name = CacheNameFor(url)
+      path = CacheDir() + "/" + name
+      DeleteFile(path)
+      DeleteFile(path + ".part")
+      LedLog("=== Perform6: evict " + name + " ===")
+    end if
+  end for
 End Sub
 
 Function FindStateForUrlEvent(states as Object, ev as Object) as Object
@@ -593,6 +662,12 @@ Sub HandleCacheEvent(st as Object, ev as Object, msgPort as Object, states as Ob
     LedLog("=== Perform6: LED " + st.key + " cache failed HTTP " + IntToStr(code) + " ===")
     DeleteFile(tmp)
     st.xferName = ""
+    worker = FindPrefetchWorker(states)
+    if type(worker) = "roAssociativeArray" then
+      worker.prefetchDone = worker.prefetchDone + 1
+    end if
+    mediaId = LookupUrlMediaId(worker, url)
+    PostCacheProgress(states, "failed", url, name, mediaId, "HTTP " + IntToStr(code))
     DrainPrefetchQueue(msgPort, states)
     return
   end if
@@ -603,10 +678,22 @@ Sub HandleCacheEvent(st as Object, ev as Object, msgPort as Object, states as Ob
     LedLog("=== Perform6: LED " + st.key + " cache move failed ===")
     DeleteFile(tmp)
     st.xferName = ""
+    worker = FindPrefetchWorker(states)
+    if type(worker) = "roAssociativeArray" then
+      worker.prefetchDone = worker.prefetchDone + 1
+    end if
+    mediaId = LookupUrlMediaId(worker, url)
+    PostCacheProgress(states, "failed", url, name, mediaId, "move failed")
     DrainPrefetchQueue(msgPort, states)
     return
   end if
   LedLog("=== Perform6: LED " + st.key + " cached " + dest + " ===")
+  worker = FindPrefetchWorker(states)
+  if type(worker) = "roAssociativeArray" then
+    worker.prefetchDone = worker.prefetchDone + 1
+  end if
+  mediaId = LookupUrlMediaId(worker, url)
+  PostCacheProgress(states, "done", url, name, mediaId, "")
 
   ' Prefetch worker has no video player — only fill SD.
   if st.key <> "prefetch" and type(st.vp) = "roVideoPlayer" then
@@ -638,6 +725,7 @@ Sub PlayNativeSrc(st as Object, src as String, msgPort as Object, states as Obje
   st.localName = ""
   ' A fresh decoder session starts at default volume — force the next re-apply.
   st.volumePercent = -1
+  src = NormalizeLocalSrc(src)
 
   ' Leaving the idle logo: release the still image and restore video scaling.
   if st.idleShown = true then
@@ -1172,9 +1260,6 @@ Sub Main()
   profile = ResolveHardwareProfile(identity)
   LedLog("=== Perform6: hardware profile " + profile + " ===")
 
-  ' Whole-SD EncryptStorage disabled — see EnsureStorageEncryption().
-  EnsureStorageEncryption()
-
   displayMode = ReadDisplayMode()
   ' XT/XC always BrightAuthor-style multi-output (React + native LED video).
   multiOutput = (profile = "XT2145" or profile = "XC4055")
@@ -1268,6 +1353,7 @@ Sub Main()
     RoutePlayerAudio(htmlTouch, "none")
     SafePrint("=== Perform6: Show HDMI-1 touch HtmlWidget ===")
     htmlTouch.Show()
+    SetCacheNotifyHtml(ledStates, htmlTouch)
 
     ' Let the first plane settle before enabling the second video port.
     Sleep(1500)
@@ -1314,6 +1400,7 @@ Sub Main()
     RoutePlayerAudio(htmlPrimary, "hdmi-1")
     SafePrint("=== Perform6: Show HDMI-1 primary HtmlWidget ===")
     htmlPrimary.Show()
+    SetCacheNotifyHtml(ledStates, htmlPrimary)
 
     Sleep(1500)
     LedLog("=== Perform6: HDMI-2 native roVideoPlayer ===")
@@ -1369,6 +1456,7 @@ Sub Main()
     RoutePlayerAudio(html, "hdmi")
     SafePrint("=== Perform6: Show HtmlWidget ===")
     html.Show()
+    SetCacheNotifyHtml(ledStates, html)
   end if
 
   EnableDiagnosticWebServer()
@@ -1420,6 +1508,8 @@ Sub Main()
             target = PayloadString(payload, "target")
             if msgType = "led-cache-prefetch" then
               HandleLedPrefetch(payload, msgPort, ledStates)
+            else if msgType = "led-cache-evict" then
+              HandleLedCacheEvict(payload, ledStates)
             else if msgType = "xt-playback" or msgType = "xc-playback" then
               pausedText = "play"
               if PayloadBool(payload, "paused", false) then pausedText = "paused"

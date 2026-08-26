@@ -18,3 +18,5 @@ export * from './credentials';
 export * from './registrationWatcher';
 export * from './networkHealth';
 export * from './ledSdPrefetch';
+export * from './sdCacheBridge';
+export * from './sdCacheName';

@@ -6,8 +6,14 @@ import {
   getCachedMediaVersionIds,
   removeCachedMediaVersionIds,
 } from './manifest';
-import { downloadMediaItem, evictCachedMedia, hasLocalMediaBlob } from './media';
+import { downloadMediaBatchToSd, evictCachedMedia } from './media';
 import { checkOtaUpdate } from './ota';
+import {
+  clearSdCached,
+  hasSdCachedMedia,
+  listSdCachedMediaVersionIds,
+  markSdCached,
+} from './sdCacheBridge';
 import {
   checkSync,
   reportDownloadCompleteWithRetry,
@@ -21,7 +27,6 @@ export interface SyncEngineResult {
   syncData: SyncCheckResponseData | null;
   ota?: Awaited<ReturnType<typeof checkOtaUpdate>>;
   error?: string;
-  /** Completes that failed after retries — admin may still show MISSING until next sync. */
   completeReportFailures?: number;
 }
 
@@ -33,14 +38,16 @@ export async function runSyncEngine(
   let completeReportFailures = 0;
 
   try {
-    // Only report IDs that still have a local blob — never trust localStorage alone.
-    const claimedIds = getCachedMediaVersionIds();
+    const claimedIds = [
+      ...new Set([...getCachedMediaVersionIds(), ...listSdCachedMediaVersionIds()]),
+    ];
     const verifiedCachedIds: string[] = [];
     for (const id of claimedIds) {
-      if (await hasLocalMediaBlob(id)) {
+      if (hasSdCachedMedia(id)) {
         verifiedCachedIds.push(id);
       } else {
         removeCachedMediaVersionIds([id]);
+        clearSdCached([id]);
       }
     }
 
@@ -53,96 +60,64 @@ export async function runSyncEngine(
       removeCachedMediaVersionIds(syncData.evictMediaVersionIds);
     }
 
-    const toDownload: NonNullable<SyncCheckResponseData['media']> = [];
-    const alreadyLocal: NonNullable<SyncCheckResponseData['media']> = [];
-
     const mediaItems = [...(syncData.media ?? [])].sort((a, b) => {
       const rank = (role?: string) =>
         role === 'current' ? 0 : role === 'prefetch' ? 1 : 2;
       return rank(a.weekRole) - rank(b.weekRole);
     });
 
-    for (const item of mediaItems) {
-      if (item.cached) {
-        const locallyPresent = await hasLocalMediaBlob(item.mediaVersionId);
-        if (locallyPresent) {
-          alreadyLocal.push(item);
-          continue;
-        }
-        // Stale localStorage / server-side cache claim — force re-download.
-        removeCachedMediaVersionIds([item.mediaVersionId]);
-      } else {
-        const locallyPresent = await hasLocalMediaBlob(item.mediaVersionId);
-        if (locallyPresent) {
-          // Blob exists but server does not know yet (e.g. played via fileUrl
-          // fallback earlier, or download-complete never landed).
-          alreadyLocal.push(item);
-          continue;
-        }
-      }
-      toDownload.push(item);
-    }
+    const downloadStart = Date.now();
 
-    // Re-affirm local cache to the server so admin "Required media" shows CACHED.
-    for (const item of alreadyLocal) {
-      addCachedMediaVersionId(item.mediaVersionId);
-      try {
-        await reportDownloadCompleteWithRetry(auth, {
-          syncJobId: syncData.syncJobId,
-          mediaVersionId: item.mediaVersionId,
-          status: 'SUCCESS',
-          bytesDownloaded: item.fileSize != null ? String(item.fileSize) : '0',
-        });
-      } catch {
-        completeReportFailures += 1;
-        // Playback can continue offline; next sync will re-affirm.
-      }
-    }
-
-    for (const item of toDownload) {
-      const downloadStart = Date.now();
-      try {
-        const bytesDownloaded = await downloadMediaItem(item, async (progress) => {
+    if (mediaItems.length > 0) {
+      // One SD keep-set + download pass. Already-cached files report status=skip.
+      const { succeeded, failed } = await downloadMediaBatchToSd(
+        mediaItems,
+        async (progress) => {
           try {
             await reportDownloadProgress(auth, {
               syncJobId: syncData.syncJobId,
-              mediaVersionId: item.mediaVersionId,
+              mediaVersionId: progress.mediaVersionId,
               bytesDownloaded: String(progress.bytesDownloaded),
               totalBytes:
-                progress.totalBytes != null ? String(progress.totalBytes) : undefined,
+                progress.totalBytes != null
+                  ? String(progress.totalBytes)
+                  : undefined,
               phase: 'DOWNLOADING',
             });
           } catch {
-            // Progress is best-effort; complete is durable.
+            /* best-effort */
           }
-        });
-        addCachedMediaVersionId(item.mediaVersionId);
+        },
+      );
 
-        try {
-          await reportDownloadCompleteWithRetry(auth, {
-            syncJobId: syncData.syncJobId,
-            mediaVersionId: item.mediaVersionId,
-            status: 'SUCCESS',
-            bytesDownloaded: String(bytesDownloaded),
-            durationMs: Date.now() - downloadStart,
-          });
-        } catch {
-          completeReportFailures += 1;
-        }
-      } catch (downloadError) {
-        try {
-          await reportDownloadCompleteWithRetry(auth, {
-            syncJobId: syncData.syncJobId,
-            mediaVersionId: item.mediaVersionId,
-            status: 'FAILED',
-            durationMs: Date.now() - downloadStart,
-            errorMessage:
-              downloadError instanceof Error
-                ? downloadError.message
-                : 'Download failed',
-          });
-        } catch {
-          completeReportFailures += 1;
+      for (const item of mediaItems) {
+        if (succeeded.includes(item.mediaVersionId) || hasSdCachedMedia(item.mediaVersionId)) {
+          markSdCached(item.mediaVersionId, item.fileUrl);
+          addCachedMediaVersionId(item.mediaVersionId);
+          try {
+            await reportDownloadCompleteWithRetry(auth, {
+              syncJobId: syncData.syncJobId,
+              mediaVersionId: item.mediaVersionId,
+              status: 'SUCCESS',
+              bytesDownloaded:
+                item.fileSize != null ? String(item.fileSize) : '0',
+              durationMs: Date.now() - downloadStart,
+            });
+          } catch {
+            completeReportFailures += 1;
+          }
+        } else if (failed.includes(item.mediaVersionId)) {
+          try {
+            await reportDownloadCompleteWithRetry(auth, {
+              syncJobId: syncData.syncJobId,
+              mediaVersionId: item.mediaVersionId,
+              status: 'FAILED',
+              durationMs: Date.now() - downloadStart,
+              errorMessage: 'SD:/perform6-cache download failed',
+            });
+          } catch {
+            completeReportFailures += 1;
+          }
         }
       }
     }

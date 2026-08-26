@@ -22,9 +22,8 @@ import {
   getCredentials,
   fetchAndStoreCredentials,
   clearCachedMediaVersionIds,
-  prefetchLedSdFromSync,
-  collectLedPrefetchUrls,
 } from '../services';
+import { clearAllSdCachedMarks } from '../services/sdCacheBridge';
 import { sendPlaybackTelemetry } from '../services/playbackTelemetryApi';
 import { ApiError } from '../services/api';
 import type { ClusterMember, DeviceInfo, DeviceRegistrationStatus } from '../shared/types';
@@ -163,8 +162,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     );
 
     if (result.success) {
-      // Pre-fill SD:/perform6-cache so native LEDs play offline without a first stream.
-      prefetchLedSdFromSync(result.syncData);
+      // Media already landed in SD:/perform6-cache inside runSyncEngine.
       if (result.manifest) {
         setPlaybackManifest(result.manifest);
         setSyncState({
@@ -183,7 +181,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
             syncJobId: result.syncData?.syncJobId,
             screens: result.manifest.screens.length,
             completeReportFailures: result.completeReportFailures ?? 0,
-            ledSdPrefetch: collectLedPrefetchUrls(result.syncData).length,
+            sdCacheMedia: result.syncData?.media?.length ?? 0,
             ota: result.ota?.updateAvailable
               ? {
                   version: result.ota.version,
@@ -392,6 +390,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       // Full local wipe so re-pair after admin disable never reuses stale code/token/cache.
       clearDeviceStore();
       clearCachedMediaVersionIds();
+      clearAllSdCachedMarks();
       setPlaybackManifest(null);
       setSimulatorSession({ active: true, pendingRoute: route });
 

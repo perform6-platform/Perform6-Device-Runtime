@@ -245,10 +245,13 @@ function main() {
         builtAt: new Date().toISOString(),
         displayMode,
         storageEncryption: {
-          enabled: true,
-          method: 'generate_key',
-          scope: 'SD card volume (player-bound unique key)',
-          note: 'Cached videos not readable on PC; card from Player A will not play on Player B.',
+          enabled: false,
+          note: 'Plaintext SD — HtmlWidget requires readable index.html. Media lives in SD:/perform6-cache only (single-cache model).',
+        },
+        mediaCache: {
+          path: 'SD:/perform6-cache',
+          naming: 'SimpleHash(fileUrl)+ext',
+          usedBy: ['HtmlWidget file:// playback', 'native roVideoPlayer LEDs'],
         },
         displayModeFile: 'perform6-display.txt',
         displayModeOptions: ['MULTI', 'MULTI_NOFULLRES'],
@@ -299,10 +302,9 @@ function main() {
       `Version: ${version}`,
       '',
       'Supported firmwares: BrightSign OS 8.2+ and 9.x (Series 5: XT/XC/HD).',
-      'Storage encryption: player-bound unique key (generate_key) on first boot —',
-      '  cached MP4s in perform6-cache are not readable on a PC or on another player.',
-      '  First boot after upgrade purges old plaintext cache once; content re-syncs encrypted.',
-      '  Requires BrightSign OS with roDeviceCustomization.EncryptStorage support.',
+      'Storage: plaintext SD (no EncryptStorage). App files stay readable for HtmlWidget.',
+      'Media cache: SD:/perform6-cache/ — single source for Bluefin/HD HTML and XT/XC LEDs.',
+      '  Videos download once into perform6-cache (not IndexedDB). Rotation prune removes unused files.',
       '',
       `Display mode (perform6-display.txt): ${displayMode}`,
       '  MULTI           = BrightAuthor-style: HDMI-1 React + secondary native roVideoPlayer(s)',
@@ -315,10 +317,10 @@ function main() {
           ? 'Layout: HDMI-1 = React primary; HDMI-2/3 = native video for SCREEN_2/SCREEN_3.'
           : 'Canvas follows the player native resolution.',
       profileKey === 'XT2145'
-        ? 'Bluefin owns pairing/sync/touch; LED plays http(s) fileUrl from deployment/sync (not blob cache).'
+        ? 'Bluefin + LED both play from SD:/perform6-cache (file:// / PlayFile); HTTPS only as online fallback.'
         : profileKey === 'XC4055'
-          ? 'HDMI-1 owns pairing/sync and SCREEN_1; HDMI-2/3 play http(s) fileUrls from the synced manifest.'
-          : 'Each output shows a corner badge: HDMI label, live canvas size, version.',
+          ? 'All outputs play from SD:/perform6-cache after sync; HTTPS fallback while online.'
+          : 'Each HD226 player caches assigned media to SD:/perform6-cache and plays file://.',
       profileKey === 'XT2145'
         ? 'Audio: Bluefin HDMI-1 is silent; programme audio is routed only to LED HDMI-2.'
         : profileKey === 'XC4055'
@@ -331,9 +333,7 @@ function main() {
       ...(profileKey === 'XT2145' || profileKey === 'XC4055'
         ? [
             'LED video playback:',
-            '  Network URLs stream via roRtspStream (a plain PlayFile("https://…") is rejected',
-            '  by BrightScript as "Bad drive"), and each clip is cached to SD:/perform6-cache/',
-            '  so the LED keeps playing when the network drops.',
+            '  Prefer SD:/perform6-cache local files; otherwise stream via roRtspStream and cache.',
             '  Default idle: led-idle.png (Perform6 logo) is packaged on the SD root and loops',
             '  on the LED(s) from boot until the first deployment video arrives.',
             '  Optional override: place led-idle.mp4 on the SD root to replace the logo.',

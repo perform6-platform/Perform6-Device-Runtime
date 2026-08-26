@@ -7,8 +7,11 @@ import {
 import type { PlaybackManifest } from '../shared/types';
 import { resolveLocalPlaybackUrl } from '../services/media';
 
-/** Resolve SD-sim (IndexedDB) playback URL for a mediaVersionId — null if not cached. */
-export function useOfflineVideoSrc(mediaVersionId: string | null | undefined): string | null {
+/** Resolve SD:/perform6-cache playback URL for a mediaVersionId — null if not ready. */
+export function useOfflineVideoSrc(
+  mediaVersionId: string | null | undefined,
+  fallbackFileUrl?: string | null,
+): string | null {
   const [src, setSrc] = useState<string | null>(null);
 
   useEffect(() => {
@@ -19,14 +22,14 @@ export function useOfflineVideoSrc(mediaVersionId: string | null | undefined): s
       return;
     }
 
-    void resolveLocalPlaybackUrl(mediaVersionId).then((url) => {
+    void resolveLocalPlaybackUrl(mediaVersionId, fallbackFileUrl).then((url) => {
       if (!cancelled) setSrc(url);
     });
 
     return () => {
       cancelled = true;
     };
-  }, [mediaVersionId]);
+  }, [mediaVersionId, fallbackFileUrl]);
 
   return src;
 }
@@ -37,8 +40,8 @@ function useSlotOfflineSrc(
 ): string | null {
   const screen = manifest ? findTouchScreen(manifest, slotId) : undefined;
   const video = getCurrentVideo(screen);
-  const offlineSrc = useOfflineVideoSrc(video?.id);
-  // Prefer IndexedDB; fall back to sync fileUrl from DB (never local mock mp4).
+  const offlineSrc = useOfflineVideoSrc(video?.id, video?.url);
+  // Prefer SD cache file://; fall back to sync fileUrl (HTTPS) while online.
   return offlineSrc ?? (video?.url ? video.url : null);
 }
 
