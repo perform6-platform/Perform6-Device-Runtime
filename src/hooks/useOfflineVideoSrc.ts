@@ -6,6 +6,7 @@ import {
 } from '../services/playback';
 import type { PlaybackManifest } from '../shared/types';
 import { resolveLocalPlaybackUrl } from '../services/media';
+import { subscribeSdCacheProgress } from '../services/sdCacheBridge';
 
 /** Resolve SD:/perform6-cache playback URL for a mediaVersionId — null if not ready. */
 export function useOfflineVideoSrc(
@@ -22,12 +23,24 @@ export function useOfflineVideoSrc(
       return;
     }
 
-    void resolveLocalPlaybackUrl(mediaVersionId, fallbackFileUrl).then((url) => {
-      if (!cancelled) setSrc(url);
+    const resolve = () => {
+      void resolveLocalPlaybackUrl(mediaVersionId, fallbackFileUrl).then((url) => {
+        if (!cancelled) setSrc(url);
+      });
+    };
+
+    resolve();
+
+    const unsubscribe = subscribeSdCacheProgress((event) => {
+      if (event.mediaVersionId !== mediaVersionId) return;
+      if (event.status === 'done' || event.status === 'skip') {
+        resolve();
+      }
     });
 
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, [mediaVersionId, fallbackFileUrl]);
 

@@ -23,7 +23,7 @@ import {
   fetchAndStoreCredentials,
   clearCachedMediaVersionIds,
 } from '../services';
-import { clearAllSdCachedMarks } from '../services/sdCacheBridge';
+import { clearAllSdCachedMarks, isSdBulkDownloadInProgress } from '../services/sdCacheBridge';
 import { sendPlaybackTelemetry } from '../services/playbackTelemetryApi';
 import { ApiError } from '../services/api';
 import type { ClusterMember, DeviceInfo, DeviceRegistrationStatus } from '../shared/types';
@@ -92,6 +92,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   const activeDeviceInfo = useRef<DeviceInfo | null>(null);
 
   const credentialFetchStarted = useRef(false);
+  const syncRunningRef = useRef(false);
   const [hdPairingHistory, setHdPairingHistory] = useState<HdPairingSessionEntry[]>(() =>
     loadHdPairingSession().entries,
   );
@@ -142,92 +143,105 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     const info = activeDeviceInfo.current ?? deviceInfo;
     if (!auth || !info) return;
 
-    setSyncState({ inProgress: true, error: null, runtimePhase: 'syncing' });
-    pushDebugLog({ category: 'sync', message: 'POST /sync/check started' });
-
-    const result = await runSyncEngine(
-      {
-        ...auth,
-        clusterMember: info.clusterMember,
-        // XC4055 single player drives all three HDMI LEDs — never filter sync
-        // to one SCREEN_*/HDMI port or targets{} empties and LEDs stay blank.
-        // XT2145 touch bindings use TOUCH_MAIN (not HDMI) — same unfiltered sync.
-        // HD226 still scopes by clusterMember on the auth object.
-        displayTarget:
-          info.hardwareProfile === 'XC4055' || info.hardwareProfile === 'XT2145'
-            ? undefined
-            : info.displayTarget,
-      },
-      info.hardwareProfile,
-    );
-
-    if (result.success) {
-      // Media already landed in SD:/perform6-cache inside runSyncEngine.
-      if (result.manifest) {
-        setPlaybackManifest(result.manifest);
-        setSyncState({
-          lastCheckAt: new Date().toISOString(),
-          lastSyncAt: new Date().toISOString(),
-          syncJobId: result.syncData?.syncJobId ?? null,
-          inProgress: false,
-          error: null,
-          runtimePhase: 'ready',
-        });
-        setConnectionStatus('online');
-        pushDebugLog({
-          category: 'sync',
-          message: 'Sync completed',
-          data: {
-            syncJobId: result.syncData?.syncJobId,
-            screens: result.manifest.screens.length,
-            completeReportFailures: result.completeReportFailures ?? 0,
-            sdCacheMedia: result.syncData?.media?.length ?? 0,
-            ota: result.ota?.updateAvailable
-              ? {
-                  version: result.ota.version,
-                  reachable: result.ota.reachable,
-                  downloadUrl: result.ota.downloadUrl,
-                }
-              : undefined,
-          },
-        });
-      } else {
-        setSyncState({
-          lastCheckAt: new Date().toISOString(),
-          lastSyncAt: new Date().toISOString(),
-          syncJobId: result.syncData?.syncJobId ?? null,
-          inProgress: false,
-          error: 'Sync returned no playback content',
-          runtimePhase: 'ready',
-        });
-        setConnectionStatus('online');
-        pushDebugLog({
-          category: 'sync',
-          message: 'Sync OK but no playback manifest content',
-          data: { syncJobId: result.syncData?.syncJobId },
-        });
-      }
-      return;
-    }
-
-    if (runtimeConfig.isSimulator) {
-      await applyMockManifest();
-      setSyncState({ inProgress: false, error: null, runtimePhase: 'ready' });
-      setConnectionStatus('online');
+    if (syncRunningRef.current || isSdBulkDownloadInProgress()) {
       pushDebugLog({
         category: 'sync',
-        message: `Sync failed — using mock manifest: ${result.error}`,
+        message: 'Sync skipped — download or sync already in progress',
       });
       return;
     }
 
-    setSyncState({
-      inProgress: false,
-      error: result.error ?? 'Sync failed',
-      runtimePhase: 'error',
-    });
-    setConnectionStatus('offline');
-    pushDebugLog({ category: 'sync', message: result.error ?? 'Sync failed' });
+    syncRunningRef.current = true;
+    setSyncState({ inProgress: true, error: null, runtimePhase: 'syncing' });
+    pushDebugLog({ category: 'sync', message: 'POST /sync/check started' });
+
+    try {
+      const result = await runSyncEngine(
+        {
+          ...auth,
+          clusterMember: info.clusterMember,
+          // XC4055 single player drives all three HDMI LEDs — never filter sync
+          // to one SCREEN_*/HDMI port or targets{} empties and LEDs stay blank.
+          // XT2145 touch bindings use TOUCH_MAIN (not HDMI) — same unfiltered sync.
+          // HD226 still scopes by clusterMember on the auth object.
+          displayTarget:
+            info.hardwareProfile === 'XC4055' || info.hardwareProfile === 'XT2145'
+              ? undefined
+              : info.displayTarget,
+        },
+        info.hardwareProfile,
+      );
+
+      if (result.success) {
+        // Media already landed in SD:/perform6-cache inside runSyncEngine.
+        if (result.manifest) {
+          setPlaybackManifest(result.manifest);
+          setSyncState({
+            lastCheckAt: new Date().toISOString(),
+            lastSyncAt: new Date().toISOString(),
+            syncJobId: result.syncData?.syncJobId ?? null,
+            inProgress: false,
+            error: null,
+            runtimePhase: 'ready',
+          });
+          setConnectionStatus('online');
+          pushDebugLog({
+            category: 'sync',
+            message: 'Sync completed',
+            data: {
+              syncJobId: result.syncData?.syncJobId,
+              screens: result.manifest.screens.length,
+              completeReportFailures: result.completeReportFailures ?? 0,
+              sdCacheMedia: result.syncData?.media?.length ?? 0,
+              ota: result.ota?.updateAvailable
+                ? {
+                    version: result.ota.version,
+                    reachable: result.ota.reachable,
+                    downloadUrl: result.ota.downloadUrl,
+                  }
+                : undefined,
+            },
+          });
+        } else {
+          setSyncState({
+            lastCheckAt: new Date().toISOString(),
+            lastSyncAt: new Date().toISOString(),
+            syncJobId: result.syncData?.syncJobId ?? null,
+            inProgress: false,
+            error: 'Sync returned no playback content',
+            runtimePhase: 'ready',
+          });
+          setConnectionStatus('online');
+          pushDebugLog({
+            category: 'sync',
+            message: 'Sync OK but no playback manifest content',
+            data: { syncJobId: result.syncData?.syncJobId },
+          });
+        }
+        return;
+      }
+
+      if (runtimeConfig.isSimulator) {
+        await applyMockManifest();
+        setSyncState({ inProgress: false, error: null, runtimePhase: 'ready' });
+        setConnectionStatus('online');
+        pushDebugLog({
+          category: 'sync',
+          message: `Sync failed — using mock manifest: ${result.error}`,
+        });
+        return;
+      }
+
+      setSyncState({
+        inProgress: false,
+        error: result.error ?? 'Sync failed',
+        runtimePhase: 'error',
+      });
+      setConnectionStatus('offline');
+      pushDebugLog({ category: 'sync', message: result.error ?? 'Sync failed' });
+    } finally {
+      syncRunningRef.current = false;
+    }
   }, [
     applyMockManifest,
     deviceInfo,

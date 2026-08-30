@@ -107,7 +107,7 @@ export const runtimeConfig: RuntimeConfig = {
   simMacAddress: env('VITE_SIM_MAC_ADDRESS'),
   simIpAddress: env('VITE_SIM_IP_ADDRESS'),
   heartbeatIntervalMs: envInt('VITE_HEARTBEAT_INTERVAL_MS', 60_000),
-  syncIntervalMs: envInt('VITE_SYNC_INTERVAL_MS', 300_000),
+  syncIntervalMs: envInt('VITE_SYNC_INTERVAL_MS', 1_800_000),
   pairingPollMs: envInt('VITE_PAIRING_POLL_MS', 30_000),
   runtimeVersion: env('VITE_RUNTIME_VERSION', '0.1.0'),
   showOutputDiagnostics: envBool('VITE_SHOW_OUTPUT_DIAGNOSTICS', true),

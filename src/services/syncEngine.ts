@@ -67,10 +67,12 @@ export async function runSyncEngine(
     });
 
     const downloadStart = Date.now();
+    let succeeded: string[] = [];
+    let failed: string[] = [];
 
     if (mediaItems.length > 0) {
       // One SD keep-set + download pass. Already-cached files report status=skip.
-      const { succeeded, failed } = await downloadMediaBatchToSd(
+      const batch = await downloadMediaBatchToSd(
         mediaItems,
         async (progress) => {
           try {
@@ -89,6 +91,8 @@ export async function runSyncEngine(
           }
         },
       );
+      succeeded = batch.succeeded;
+      failed = batch.failed;
 
       for (const item of mediaItems) {
         if (succeeded.includes(item.mediaVersionId) || hasSdCachedMedia(item.mediaVersionId)) {
@@ -122,9 +126,25 @@ export async function runSyncEngine(
       }
     }
 
+    const expectedDownloads = mediaItems.length;
+    const cachedCount = mediaItems.filter(
+      (item) =>
+        succeeded.includes(item.mediaVersionId) || hasSdCachedMedia(item.mediaVersionId),
+    ).length;
+    const failedCount = mediaItems.filter((item) =>
+      failed.includes(item.mediaVersionId),
+    ).length;
+
     await reportSyncStatus(auth, {
       syncJobId: syncData.syncJobId,
-      status: 'SUCCESS',
+      status:
+        expectedDownloads > 0 && cachedCount === 0 && failedCount > 0
+          ? 'FAILED'
+          : 'SUCCESS',
+      message:
+        expectedDownloads > 0
+          ? `Cached ${cachedCount}/${expectedDownloads} media files`
+          : undefined,
     });
 
     const manifest = buildRuntimeManifest(syncData, profile);

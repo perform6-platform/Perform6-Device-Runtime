@@ -8,6 +8,9 @@ const EVICT_MESSAGE = 'led-cache-evict';
 const PROGRESS_TYPE = 'led-cache-progress';
 const READY_KEY = 'perform6-sd-cache-ready';
 
+/** URLs per BSMessagePort prefetch message (avoids payload truncation). */
+export const PREFETCH_CHUNK_SIZE = 8;
+
 export type SdCacheProgressStatus = 'start' | 'done' | 'failed' | 'skip' | 'complete';
 
 export interface SdCacheProgressEvent {
@@ -25,6 +28,7 @@ type ProgressListener = (event: SdCacheProgressEvent) => void;
 
 let sharedPort: BrightSignMessagePort | null | undefined;
 const listeners = new Set<ProgressListener>();
+let bulkDownloadInProgress = false;
 
 function createMessagePort(): BrightSignMessagePort | null {
   try {
@@ -109,6 +113,11 @@ export function isSdCacheBridgeAvailable(): boolean {
   return getPort() != null;
 }
 
+/** True while a multi-file SD download batch is running (blocks interval sync). */
+export function isSdBulkDownloadInProgress(): boolean {
+  return bulkDownloadInProgress;
+}
+
 function prefetchRole(): string {
   if (runtimeConfig.hardwareProfile === 'XC4055') return 'primary';
   if (runtimeConfig.hardwareProfile === 'XT2145') return 'touch';
@@ -123,12 +132,21 @@ export function subscribeSdCacheProgress(listener: ProgressListener): () => void
   };
 }
 
+function chunkItems<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
 /**
  * Ask autorun to download URLs into SD:/perform6-cache (all hardware profiles).
  * ids[i] aligns with urls[i] for progress reporting.
  */
 export function requestSdCachePrefetch(
   items: Array<{ mediaVersionId: string; fileUrl: string }>,
+  options?: { append?: boolean },
 ): boolean {
   const port = getPort();
   if (!port) {
@@ -157,8 +175,12 @@ export function requestSdCachePrefetch(
     urls: urls.join('|'),
     ids: ids.join('|'),
     count: String(urls.length),
+    append: options?.append ? 'true' : 'false',
   });
-  console.info('[Perform6] SD cache prefetch requested', { count: urls.length });
+  console.info('[Perform6] SD cache prefetch requested', {
+    count: urls.length,
+    append: options?.append ?? false,
+  });
   return true;
 }
 
@@ -196,25 +218,47 @@ export interface SdDownloadProgress {
   status: SdCacheProgressStatus;
 }
 
-/**
- * Prefetch missing items to SD and resolve when the batch finishes.
- * Per-item progress is approximate (file start/done) because BrightScript
- * AsyncGetToFile does not stream byte counts to JS.
- */
-export async function downloadMediaItemsToSd(
+function findPendingItem(
+  pending: Map<string, SyncMediaItem>,
+  url: string,
+  mediaVersionId?: string,
+): { url: string; item: SyncMediaItem } | undefined {
+  if (url) {
+    const item = pending.get(url);
+    if (item) return { url, item };
+  }
+  if (mediaVersionId) {
+    for (const [key, candidate] of pending) {
+      if (candidate.mediaVersionId === mediaVersionId) {
+        return { url: key, item: candidate };
+      }
+    }
+  }
+  return undefined;
+}
+
+function chunkTimeoutMs(items: SyncMediaItem[]): number {
+  const perFileMs = items.map((item) => {
+    const bytes = item.fileSize != null ? Number(item.fileSize) : 0;
+    if (bytes > 0) {
+      // ~400 KB/s effective + 10 min floor per large file.
+      return Math.max(600_000, Math.ceil(bytes / 400_000) * 1000);
+    }
+    return 900_000;
+  });
+  const sum = perFileMs.reduce((a, b) => a + b, 0);
+  return Math.max(300_000, sum);
+}
+
+async function downloadMediaChunkToSd(
   items: SyncMediaItem[],
   onProgress?: (progress: SdDownloadProgress) => void | Promise<void>,
+  options?: { append?: boolean },
 ): Promise<{ succeeded: string[]; failed: string[] }> {
   const succeeded: string[] = [];
   const failed: string[] = [];
 
   if (items.length === 0) {
-    return { succeeded, failed };
-  }
-
-  if (!isSdCacheBridgeAvailable()) {
-    // Non-player / missing bridge: cannot write SD — report failure so sync stays honest.
-    for (const item of items) failed.push(item.mediaVersionId);
     return { succeeded, failed };
   }
 
@@ -236,8 +280,12 @@ export async function downloadMediaItemsToSd(
       settled = true;
       unsubscribe();
       for (const item of pending.values()) failed.push(item.mediaVersionId);
+      console.warn('[Perform6] SD cache chunk timed out', {
+        pending: pending.size,
+        chunkSize: items.length,
+      });
       resolve();
-    }, Math.max(120_000, items.length * 180_000));
+    }, chunkTimeoutMs(items));
 
     const finish = () => {
       if (settled) return;
@@ -248,8 +296,10 @@ export async function downloadMediaItemsToSd(
     };
 
     const unsubscribe = subscribeSdCacheProgress((event) => {
-      const url = event.url ? resolveMediaFileUrl(event.url) : '';
-      const item = url ? pending.get(url) : undefined;
+      const resolvedUrl = event.url ? resolveMediaFileUrl(event.url) : '';
+      const match = findPendingItem(pending, resolvedUrl, event.mediaVersionId);
+      const item = match?.item;
+      const url = match?.url ?? resolvedUrl;
 
       if (event.status === 'start' && item) {
         void onProgress?.({
@@ -261,10 +311,7 @@ export async function downloadMediaItemsToSd(
         return;
       }
 
-      if (
-        (event.status === 'done' || event.status === 'skip') &&
-        item
-      ) {
+      if ((event.status === 'done' || event.status === 'skip') && item) {
         pending.delete(url);
         markSdCached(item.mediaVersionId, item.fileUrl);
         succeeded.push(item.mediaVersionId);
@@ -294,9 +341,14 @@ export async function downloadMediaItemsToSd(
       }
 
       if (event.status === 'complete') {
-        for (const left of pending.values()) failed.push(left.mediaVersionId);
-        pending.clear();
-        finish();
+        // Autorun finished this chunk's queue — only resolve when all items accounted for.
+        if (pending.size === 0) {
+          finish();
+        } else {
+          console.warn('[Perform6] SD cache complete with pending items — waiting', {
+            pending: pending.size,
+          });
+        }
       }
     });
 
@@ -305,6 +357,7 @@ export async function downloadMediaItemsToSd(
         mediaVersionId: item.mediaVersionId,
         fileUrl: item.fileUrl,
       })),
+      { append: options?.append },
     );
     if (!ok) {
       for (const item of items) failed.push(item.mediaVersionId);
@@ -315,19 +368,54 @@ export async function downloadMediaItemsToSd(
   return { succeeded, failed };
 }
 
+/**
+ * Prefetch missing items to SD and resolve when the batch finishes.
+ * Sends URLs in small chunks so BSMessagePort payloads stay within limits.
+ */
+export async function downloadMediaItemsToSd(
+  items: SyncMediaItem[],
+  onProgress?: (progress: SdDownloadProgress) => void | Promise<void>,
+): Promise<{ succeeded: string[]; failed: string[] }> {
+  const succeeded: string[] = [];
+  const failed: string[] = [];
+
+  if (items.length === 0) {
+    return { succeeded, failed };
+  }
+
+  if (!isSdCacheBridgeAvailable()) {
+    for (const item of items) failed.push(item.mediaVersionId);
+    return { succeeded, failed };
+  }
+
+  bulkDownloadInProgress = true;
+  try {
+    const chunks = chunkItems(items, PREFETCH_CHUNK_SIZE);
+    for (let index = 0; index < chunks.length; index++) {
+      const chunk = chunks[index];
+      const result = await downloadMediaChunkToSd(chunk, onProgress, {
+        append: index > 0,
+      });
+      succeeded.push(...result.succeeded);
+      failed.push(...result.failed);
+    }
+  } finally {
+    bulkDownloadInProgress = false;
+  }
+
+  return { succeeded, failed };
+}
+
+/**
+ * Local playback URL only when we have confirmed the file on SD.
+ * Returns null while downloading so callers can fall back to HTTPS.
+ */
 export function resolveSdPlaybackUrl(
   mediaVersionId: string,
-  fallbackFileUrl?: string | null,
+  _fallbackFileUrl?: string | null,
 ): string | null {
   const cachedUrl = getSdCachedUrl(mediaVersionId);
   if (cachedUrl) return sdCacheFileUrl(cachedUrl);
-  if (fallbackFileUrl) {
-    const resolved = resolveMediaFileUrl(fallbackFileUrl);
-    if (resolved.startsWith('http')) {
-      // Optimistic path when mark is missing but file may already be on SD.
-      return sdCacheFileUrl(resolved);
-    }
-  }
   return null;
 }
 

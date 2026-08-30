@@ -586,18 +586,35 @@ Sub DrainPrefetchQueue(msgPort as Object, states as Object)
   LedLog("=== Perform6: prefetch queue empty ===")
 End Sub
 
+Function QueueHasUrl(queue as Object, url as String) as Boolean
+  if type(queue) <> "roArray" then return false
+  for each qUrl in queue
+    if qUrl = url then return true
+  end for
+  return false
+End Function
+
 Sub HandleLedPrefetch(payload as Object, msgPort as Object, states as Object)
   worker = FindPrefetchWorker(states)
   if type(worker) <> "roAssociativeArray" then return
 
   urls = SplitPipeUrls(PayloadString(payload, "urls"))
   ids = SplitPipeUrls(PayloadString(payload, "ids"))
-  worker.keepNames = CreateObject("roAssociativeArray")
-  worker.queue = CreateObject("roArray", 0, true)
-  worker.urlIds = CreateObject("roAssociativeArray")
-  worker.prefetchTotal = urls.Count()
-  worker.prefetchDone = 0
+  appendFlag = PayloadString(payload, "append")
+  busy = false
+  if type(worker.xfer) = "roUrlTransfer" then busy = true
+  if type(worker.queue) = "roArray" and worker.queue.Count() > 0 then busy = true
+  appendMode = (appendFlag = "true") or busy
 
+  if not appendMode then
+    worker.keepNames = CreateObject("roAssociativeArray")
+    worker.queue = CreateObject("roArray", 0, true)
+    worker.urlIds = CreateObject("roAssociativeArray")
+    worker.prefetchTotal = 0
+    worker.prefetchDone = 0
+  end if
+
+  addedToQueue = 0
   i = 0
   for each url in urls
     if IsNetworkSrc(url) then
@@ -607,7 +624,15 @@ Sub HandleLedPrefetch(payload as Object, msgPort as Object, states as Object)
       if i < ids.Count() then mediaId = ids[i]
       worker.urlIds.AddReplace(url, mediaId)
       if Len(CachedPathFor(url)) = 0 then
-        worker.queue.Push(url)
+        if appendMode then
+          if not QueueHasUrl(worker.queue, url) then
+            worker.queue.Push(url)
+            addedToQueue = addedToQueue + 1
+          end if
+        else
+          worker.queue.Push(url)
+          addedToQueue = addedToQueue + 1
+        end if
       else
         worker.prefetchDone = worker.prefetchDone + 1
         PostCacheProgress(states, "skip", url, name, mediaId, "")
@@ -616,7 +641,13 @@ Sub HandleLedPrefetch(payload as Object, msgPort as Object, states as Object)
     i = i + 1
   end for
 
-  LedLog("=== Perform6: prefetch " + IntToStr(urls.Count()) + " urls, queue " + IntToStr(worker.queue.Count()) + " ===")
+  if appendMode then
+    worker.prefetchTotal = worker.prefetchTotal + addedToQueue
+  else
+    worker.prefetchTotal = urls.Count()
+  end if
+
+  LedLog("=== Perform6: prefetch " + IntToStr(urls.Count()) + " urls, queue " + IntToStr(worker.queue.Count()) + ", append=" + appendFlag + " ===")
   PruneCache(states)
   DrainPrefetchQueue(msgPort, states)
 End Sub
