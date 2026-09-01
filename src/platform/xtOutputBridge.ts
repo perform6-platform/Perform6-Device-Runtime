@@ -1,4 +1,5 @@
 import { runtimeConfig } from '../config/runtime';
+import { isLocalPlaybackSrc } from '../services/playbackSrc';
 import { useRuntimeStore } from '../stores/runtimeStore';
 
 const PLAYBACK_MESSAGE = 'xt-playback';
@@ -23,12 +24,12 @@ function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-/** Native roVideoPlayer cannot play blob: IndexedDB URLs. */
+/** Native roVideoPlayer: local SD/file only. Never HTTPS VOD. */
 function nativePlayableSrc(src: string | null | undefined, fallbackSrc: string | null | undefined): string {
   const primary = asString(src);
   const fallback = asString(fallbackSrc);
-  if (primary && !primary.startsWith('blob:')) return primary;
-  if (fallback && !fallback.startsWith('blob:')) return fallback;
+  if (isLocalPlaybackSrc(primary)) return primary;
+  if (isLocalPlaybackSrc(fallback)) return fallback;
   return '';
 }
 
@@ -40,9 +41,9 @@ function postTouchPlayback(port: BrightSignMessagePort): void {
     type: PLAYBACK_MESSAGE,
     role: 'touch',
     src,
-    fallbackSrc: asString(meta?.fallbackSrc).startsWith('blob:')
-      ? ''
-      : asString(meta?.fallbackSrc),
+    fallbackSrc: isLocalPlaybackSrc(asString(meta?.fallbackSrc))
+      ? asString(meta?.fallbackSrc)
+      : '',
     mediaVersionId: meta?.mediaVersionId ?? '',
     mediaTitle: meta?.title ?? '',
     screenKey: meta?.screenKey ?? 'SCREEN_1',

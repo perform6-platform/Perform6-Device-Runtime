@@ -19,10 +19,9 @@ function SimulatorScreenPane({
 }) {
   const screen = manifest ? findScreenForTarget(manifest, target) : undefined;
   const video = getCurrentVideo(screen);
-  const offlineSrc = useOfflineVideoSrc(video?.id);
-  // Prefer cached SD media; fall back to sync fileUrl so sim panes are not blank
-  // when IndexedDB is empty but the assignment is valid.
-  const videoSrc = offlineSrc ?? (video?.url ? video.url : null);
+  const offlineSrc = useOfflineVideoSrc(video?.id, video?.url);
+  // Simulator: HTTPS fallback is inside useOfflineVideoSrc. Device: SD only.
+  const videoSrc = offlineSrc;
   const categoryLabel = screen?.label?.trim();
   const paneLabel = categoryLabel
     ? /^screen\s*\d/i.test(categoryLabel)

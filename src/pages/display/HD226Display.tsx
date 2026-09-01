@@ -19,7 +19,7 @@ export default function HD226Display() {
     : undefined;
   const video = getCurrentVideo(screen);
   const offlineSrc = useOfflineVideoSrc(video?.id, video?.url);
-  const videoSrc = offlineSrc ?? (video?.url ? video.url : null);
+  const videoSrc = offlineSrc;
   const label = screen?.label ?? member;
   const screenKey =
     screen?.displayTarget ??

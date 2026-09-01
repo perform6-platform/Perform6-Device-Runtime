@@ -35,9 +35,8 @@ export default function HD226Simulator() {
     ? findScreenForClusterMember(manifest, activeMember)
     : undefined;
   const video = getCurrentVideo(screen);
-  const offlineSrc = useOfflineVideoSrc(video?.id);
-  // Prefer cached SD media; fall back to resolved fileUrl from the sync manifest.
-  const videoSrc = offlineSrc ?? (video?.url ? video.url : null);
+  const offlineSrc = useOfflineVideoSrc(video?.id, video?.url);
+  const videoSrc = offlineSrc;
 
   const hasVideo = Boolean(videoSrc);
   const memberInDeployment = deployedMembers.includes(activeMember);

@@ -1,5 +1,7 @@
 import { runtimeConfig } from '../config/runtime';
 import { findScreenForTarget, getCurrentVideo } from '../services/playback';
+import { isLocalPlaybackSrc } from '../services/playbackSrc';
+import { resolveSdPlaybackUrl, subscribeSdCacheProgress } from '../services/sdCacheBridge';
 import type { DisplayTarget } from '../shared/types';
 import { useRuntimeStore } from '../stores/runtimeStore';
 
@@ -23,11 +25,10 @@ function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-/** Native roVideoPlayer cannot play blob: IndexedDB URLs. */
+/** Native roVideoPlayer: local SD/file only. Never HTTPS VOD. */
 function nativePlayableSrc(src: string | null | undefined): string {
   const value = asString(src);
-  if (!value || value.startsWith('blob:')) return '';
-  return value;
+  return isLocalPlaybackSrc(value) ? value : '';
 }
 
 async function postScreenPlayback(
@@ -39,15 +40,15 @@ async function postScreenPlayback(
   const screen = manifest ? findScreenForTarget(manifest, screenKey) : undefined;
   const video = getCurrentVideo(screen);
   const mediaVersionId = video?.id ?? '';
-  const fallbackSrc = nativePlayableSrc(video?.url);
-  const src = fallbackSrc;
+  const cached = mediaVersionId ? resolveSdPlaybackUrl(mediaVersionId, video?.url) : null;
+  const src = nativePlayableSrc(cached);
 
   port.PostBSMessage({
     type: PLAYBACK_MESSAGE,
     role: 'primary',
     target,
     src,
-    fallbackSrc,
+    fallbackSrc: '',
     mediaVersionId,
     mediaTitle: video?.title ?? '',
     screenKey,
@@ -93,6 +94,12 @@ export function initXcOutputBridge(): void {
 
   port.addEventListener('bsmessage', (event) => {
     if (asString(event.data.type) === LED_READY_MESSAGE) {
+      void publishSecondaryScreens(port);
+    }
+  });
+
+  subscribeSdCacheProgress((event) => {
+    if (event.status === 'done' || event.status === 'skip') {
       void publishSecondaryScreens(port);
     }
   });

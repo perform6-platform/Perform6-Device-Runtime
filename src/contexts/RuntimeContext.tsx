@@ -170,6 +170,11 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
               : info.displayTarget,
         },
         info.hardwareProfile,
+        {
+          onManifest: (earlyManifest) => {
+            if (earlyManifest) setPlaybackManifest(earlyManifest);
+          },
+        },
       );
 
       if (result.success) {

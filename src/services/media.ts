@@ -74,8 +74,9 @@ export async function downloadMediaItem(
 export async function downloadMediaBatchToSd(
   items: SyncMediaItem[],
   onProgress?: (progress: SdDownloadProgress) => void | Promise<void>,
+  options?: { manifest?: import('../shared/types').PlaybackManifest | null },
 ): Promise<{ succeeded: string[]; failed: string[] }> {
-  const result = await downloadMediaItemsToSd(items, onProgress);
+  const result = await downloadMediaItemsToSd(items, onProgress, options);
   for (const item of items) {
     if (!result.succeeded.includes(item.mediaVersionId)) continue;
     await offlineCacheService.storeMediaMeta({

@@ -81,23 +81,9 @@ Function TryCreateHtmlWidget(rect as Object, msgPort as Object, url as String) a
 End Function
 
 Sub EnableJsObjectsSafe(html as Object)
-  if type(html) <> "roHtmlWidget" then
-    return
-  end if
-
-  urls = CreateObject("roAssociativeArray")
-  if type(urls) <> "roAssociativeArray" then
-    return
-  end if
-
-  urls.all = "local"
-  html.AllowJavaScriptUrls(urls)
-
-  urls2 = CreateObject("roAssociativeArray")
-  if type(urls2) = "roAssociativeArray" then
-    urls2.all = "*"
-    html.AllowJavaScriptUrls(urls2)
-  end if
+  ' JS objects are enabled via brightsign_js_objects_enabled on widget create.
+  ' AllowJavaScriptUrls is deprecated on BrightSignOS 9.1+ (log spam / ignored).
+  if type(html) <> "roHtmlWidget" then return
 End Sub
 
 Function CreateAudioOutputSafe(outputName as String) as Object
@@ -274,6 +260,10 @@ Function IsPlayableNativeSrc(src as String) as Boolean
   if Left(src, 5) = "blob:" then
     return false
   end if
+  ' HTTPS/HTTP MP4 is VOD — never play from the network. RTSP/UDP live is OK.
+  low = LCase(src)
+  if Left(low, 7) = "http://" then return false
+  if Left(low, 8) = "https://" then return false
   return true
 End Function
 
@@ -348,6 +338,38 @@ Function FileExistsIn(dir as String, name as String) as Boolean
   end if
   return false
 End Function
+
+Function PartFileBytes(path as String) as Integer
+  fs = CreateObject("roFileSystem")
+  if type(fs) <> "roFileSystem" then return 0
+  stat = fs.Stat(path)
+  if type(stat) <> "roAssociativeArray" then return 0
+  size = stat.size
+  if type(size) = "roInteger" or type(size) = "Integer" then return size
+  return 0
+End Function
+
+Function UrlRetryCount(worker as Object, url as String) as Integer
+  if type(worker) <> "roAssociativeArray" then return 0
+  if type(worker.retryCounts) <> "roAssociativeArray" then return 0
+  n = worker.retryCounts.Lookup(url)
+  if type(n) = "roInteger" or type(n) = "Integer" then return n
+  return 0
+End Function
+
+Sub SetUrlRetryCount(worker as Object, url as String, count as Integer)
+  if type(worker) <> "roAssociativeArray" then return
+  if type(worker.retryCounts) <> "roAssociativeArray" then
+    worker.retryCounts = CreateObject("roAssociativeArray")
+  end if
+  worker.retryCounts.AddReplace(url, count)
+End Sub
+
+Sub ClearUrlRetryCount(worker as Object, url as String)
+  if type(worker) <> "roAssociativeArray" then return
+  if type(worker.retryCounts) <> "roAssociativeArray" then return
+  worker.retryCounts.Delete(url)
+End Sub
 
 Function CacheNameFor(url as String) as String
   return SimpleHash(url) + UrlExtension(url)
@@ -452,6 +474,7 @@ Function CreatePrefetchWorker() as Object
   st.notifyHtml = invalid
   st.prefetchTotal = 0
   st.prefetchDone = 0
+  st.retryCounts = CreateObject("roAssociativeArray")
   return st
 End Function
 
@@ -540,13 +563,19 @@ Sub StartCacheDownload(st as Object, url as String, msgPort as Object, states as
   name = CacheNameFor(url)
   dest = CacheDir() + "/" + name
   tmp = dest + ".part"
+  resumeAt = PartFileBytes(tmp)
 
   xfer = CreateObject("roUrlTransfer")
   if type(xfer) <> "roUrlTransfer" then return
   xfer.SetUrl(url)
   xfer.SetPort(msgPort)
+  if resumeAt > 0 then
+    xfer.AddHeader("Range", "bytes=" + IntToStr(resumeAt) + "-")
+    LedLog("=== Perform6: resume cache at " + IntToStr(resumeAt) + " " + url + " ===")
+  else
+    DeleteFile(tmp)
+  end if
 
-  DeleteFile(tmp)
   if xfer.AsyncGetToFile(tmp) then
     st.xfer = xfer
     st.xferUrl = url
@@ -594,6 +623,50 @@ Function QueueHasUrl(queue as Object, url as String) as Boolean
   return false
 End Function
 
+Sub QueueInsertFront(queue as Object, url as String)
+  if type(queue) <> "roArray" then return
+  if QueueHasUrl(queue, url) then return
+  nextQ = CreateObject("roArray", 0, true)
+  nextQ.Push(url)
+  for each qUrl in queue
+    nextQ.Push(qUrl)
+  end for
+  while queue.Count() > 0
+    queue.Delete(0)
+  end while
+  for each qUrl in nextQ
+    queue.Push(qUrl)
+  end for
+End Sub
+
+Sub HandleLedKeepSet(payload as Object, states as Object)
+  worker = FindPrefetchWorker(states)
+  if type(worker) <> "roAssociativeArray" then return
+
+  urls = SplitPipeUrls(PayloadString(payload, "urls"))
+  appendFlag = PayloadString(payload, "append")
+  pruneFlag = PayloadString(payload, "prune")
+
+  if appendFlag <> "true" then
+    worker.keepNames = CreateObject("roAssociativeArray")
+  end if
+  if type(worker.keepNames) <> "roAssociativeArray" then
+    worker.keepNames = CreateObject("roAssociativeArray")
+  end if
+
+  for each url in urls
+    if IsNetworkSrc(url) then
+      name = CacheNameFor(url)
+      worker.keepNames.AddReplace(name, true)
+    end if
+  end for
+
+  if pruneFlag = "true" then
+    PruneCache(states)
+  end if
+  LedLog("=== Perform6: keep-set urls " + IntToStr(urls.Count()) + " append=" + appendFlag + " prune=" + pruneFlag + " ===")
+End Sub
+
 Sub HandleLedPrefetch(payload as Object, msgPort as Object, states as Object)
   worker = FindPrefetchWorker(states)
   if type(worker) <> "roAssociativeArray" then return
@@ -614,6 +687,7 @@ Sub HandleLedPrefetch(payload as Object, msgPort as Object, states as Object)
     worker.prefetchDone = 0
   end if
 
+  priorityFlag = PayloadString(payload, "priority")
   addedToQueue = 0
   i = 0
   for each url in urls
@@ -626,11 +700,19 @@ Sub HandleLedPrefetch(payload as Object, msgPort as Object, states as Object)
       if Len(CachedPathFor(url)) = 0 then
         if appendMode then
           if not QueueHasUrl(worker.queue, url) then
-            worker.queue.Push(url)
+            if priorityFlag = "true" then
+              QueueInsertFront(worker.queue, url)
+            else
+              worker.queue.Push(url)
+            end if
             addedToQueue = addedToQueue + 1
           end if
         else
-          worker.queue.Push(url)
+          if priorityFlag = "true" then
+            QueueInsertFront(worker.queue, url)
+          else
+            worker.queue.Push(url)
+          end if
           addedToQueue = addedToQueue + 1
         end if
       else
@@ -648,7 +730,9 @@ Sub HandleLedPrefetch(payload as Object, msgPort as Object, states as Object)
   end if
 
   LedLog("=== Perform6: prefetch " + IntToStr(urls.Count()) + " urls, queue " + IntToStr(worker.queue.Count()) + ", append=" + appendFlag + " ===")
-  PruneCache(states)
+  if not appendMode then
+    PruneCache(states)
+  end if
   DrainPrefetchQueue(msgPort, states)
 End Sub
 
@@ -691,10 +775,26 @@ Sub HandleCacheEvent(st as Object, ev as Object, msgPort as Object, states as Ob
 
   if code < 200 or code > 299 then
     LedLog("=== Perform6: LED " + st.key + " cache failed HTTP " + IntToStr(code) + " ===")
+    worker = FindPrefetchWorker(states)
+    ' Range invalid — drop partial and restart from byte 0.
+    if code = 416 then
+      DeleteFile(tmp)
+      if type(worker) = "roAssociativeArray" then ClearUrlRetryCount(worker, url)
+    end if
+    retries = UrlRetryCount(worker, url) + 1
+    if type(worker) = "roAssociativeArray" and retries <= 3 then
+      SetUrlRetryCount(worker, url, retries)
+      LedLog("=== Perform6: cache retry " + IntToStr(retries) + " for " + url + " ===")
+      QueueInsertFront(worker.queue, url)
+      Sleep(retries * 5000)
+      st.xferName = ""
+      DrainPrefetchQueue(msgPort, states)
+      return
+    end if
     DeleteFile(tmp)
     st.xferName = ""
-    worker = FindPrefetchWorker(states)
     if type(worker) = "roAssociativeArray" then
+      ClearUrlRetryCount(worker, url)
       worker.prefetchDone = worker.prefetchDone + 1
     end if
     mediaId = LookupUrlMediaId(worker, url)
@@ -707,10 +807,21 @@ Sub HandleCacheEvent(st as Object, ev as Object, msgPort as Object, states as Ob
   moved = MoveFile(tmp, dest)
   if moved <> true then
     LedLog("=== Perform6: LED " + st.key + " cache move failed ===")
+    worker = FindPrefetchWorker(states)
+    retries = UrlRetryCount(worker, url) + 1
+    if type(worker) = "roAssociativeArray" and retries <= 3 then
+      SetUrlRetryCount(worker, url, retries)
+      LedLog("=== Perform6: cache move retry " + IntToStr(retries) + " for " + url + " ===")
+      QueueInsertFront(worker.queue, url)
+      Sleep(retries * 5000)
+      st.xferName = ""
+      DrainPrefetchQueue(msgPort, states)
+      return
+    end if
     DeleteFile(tmp)
     st.xferName = ""
-    worker = FindPrefetchWorker(states)
     if type(worker) = "roAssociativeArray" then
+      ClearUrlRetryCount(worker, url)
       worker.prefetchDone = worker.prefetchDone + 1
     end if
     mediaId = LookupUrlMediaId(worker, url)
@@ -721,6 +832,7 @@ Sub HandleCacheEvent(st as Object, ev as Object, msgPort as Object, states as Ob
   LedLog("=== Perform6: LED " + st.key + " cached " + dest + " ===")
   worker = FindPrefetchWorker(states)
   if type(worker) = "roAssociativeArray" then
+    ClearUrlRetryCount(worker, url)
     worker.prefetchDone = worker.prefetchDone + 1
   end if
   mediaId = LookupUrlMediaId(worker, url)
@@ -771,11 +883,12 @@ Sub PlayNativeSrc(st as Object, src as String, msgPort as Object, states as Obje
       LedLog("=== Perform6: LED " + st.key + " play cached " + cached + " ===")
       ok = PlayLocalFile(st.vp, cached)
       if ok then st.localName = CacheNameFor(src)
-    end if
-    if not ok then
+    else if Left(LCase(src), 7) = "rtsp://" or Left(LCase(src), 6) = "rtp://" or Left(LCase(src), 6) = "udp://" then
       ok = PlayNetworkStream(st, src)
-      if ok then LedLog("=== Perform6: LED " + st.key + " streaming " + src + " ===")
-      StartCacheDownload(st, src, msgPort, states)
+      if ok then LedLog("=== Perform6: LED " + st.key + " live " + src + " ===")
+    else
+      ' HTTPS VOD — never stream and never start a second roUrlTransfer on this LED.
+      LedLog("=== Perform6: LED " + st.key + " wait cache (no HTTPS play) ===")
     end if
   else
     ok = PlayLocalFile(st.vp, src)
@@ -1539,6 +1652,8 @@ Sub Main()
             target = PayloadString(payload, "target")
             if msgType = "led-cache-prefetch" then
               HandleLedPrefetch(payload, msgPort, ledStates)
+            else if msgType = "led-cache-keep" then
+              HandleLedKeepSet(payload, ledStates)
             else if msgType = "led-cache-evict" then
               HandleLedCacheEvict(payload, ledStates)
             else if msgType = "xt-playback" or msgType = "xc-playback" then

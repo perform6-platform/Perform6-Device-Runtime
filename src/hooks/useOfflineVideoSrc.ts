@@ -6,26 +6,27 @@ import {
 } from '../services/playback';
 import type { PlaybackManifest } from '../shared/types';
 import { resolveLocalPlaybackUrl } from '../services/media';
+import { resolvePlaybackSrc } from '../services/playbackSrc';
 import { subscribeSdCacheProgress } from '../services/sdCacheBridge';
 
-/** Resolve SD:/perform6-cache playback URL for a mediaVersionId — null if not ready. */
+/** Resolve playback URL — SD cache on device, HTTPS only in the simulator. */
 export function useOfflineVideoSrc(
   mediaVersionId: string | null | undefined,
   fallbackFileUrl?: string | null,
 ): string | null {
-  const [src, setSrc] = useState<string | null>(null);
+  const [localSrc, setLocalSrc] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     if (!mediaVersionId) {
-      setSrc(null);
+      setLocalSrc(null);
       return;
     }
 
     const resolve = () => {
       void resolveLocalPlaybackUrl(mediaVersionId, fallbackFileUrl).then((url) => {
-        if (!cancelled) setSrc(url);
+        if (!cancelled) setLocalSrc(url);
       });
     };
 
@@ -44,7 +45,7 @@ export function useOfflineVideoSrc(
     };
   }, [mediaVersionId, fallbackFileUrl]);
 
-  return src;
+  return resolvePlaybackSrc(localSrc, fallbackFileUrl);
 }
 
 function useSlotOfflineSrc(
@@ -53,9 +54,7 @@ function useSlotOfflineSrc(
 ): string | null {
   const screen = manifest ? findTouchScreen(manifest, slotId) : undefined;
   const video = getCurrentVideo(screen);
-  const offlineSrc = useOfflineVideoSrc(video?.id, video?.url);
-  // Prefer SD cache file://; fall back to sync fileUrl (HTTPS) while online.
-  return offlineSrc ?? (video?.url ? video.url : null);
+  return useOfflineVideoSrc(video?.id, video?.url);
 }
 
 /**

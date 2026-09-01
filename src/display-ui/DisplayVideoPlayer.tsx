@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useRuntimeStore } from '../stores/runtimeStore';
 import { useVideoPlaybackTelemetry } from '../hooks/useVideoPlaybackTelemetry';
+import { safeHtmlVideoSrc } from '../services/playbackSrc';
 
 interface DisplayVideoPlayerProps {
   src: string | null;
@@ -31,6 +32,7 @@ export function DisplayVideoPlayer({
   const storeMeta = useRuntimeStore((s) => s.displayPlaybackMeta);
   const setDisplayPaused = useRuntimeStore((s) => s.setDisplayPaused);
   const loop = loopProp ?? storeLoop;
+  const playSrc = safeHtmlVideoSrc(src);
 
   const resolvedScreenKey = screenKey ?? storeMeta?.screenKey ?? null;
   const resolvedMediaVersionId =
@@ -46,7 +48,7 @@ export function DisplayVideoPlayer({
           title: resolvedTitle,
         }
       : null,
-    Boolean(src && resolvedScreenKey),
+    Boolean(playSrc && resolvedScreenKey),
   );
 
   useEffect(() => {
@@ -55,7 +57,7 @@ export function DisplayVideoPlayer({
 
     if (paused) video.pause();
     else void video.play().catch(() => {});
-  }, [paused, src]);
+  }, [paused, playSrc]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -63,7 +65,7 @@ export function DisplayVideoPlayer({
 
     video.muted = muted;
     video.volume = volume;
-  }, [muted, volume, src]);
+  }, [muted, volume, playSrc]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -71,7 +73,7 @@ export function DisplayVideoPlayer({
 
     video.currentTime = 0;
     if (!paused) void video.play().catch(() => {});
-  }, [restartNonce, paused, src]);
+  }, [restartNonce, paused, playSrc]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -86,7 +88,7 @@ export function DisplayVideoPlayer({
 
     video.addEventListener('ended', onEnded);
     return () => video.removeEventListener('ended', onEnded);
-  }, [loop, setDisplayPaused, src]);
+  }, [loop, setDisplayPaused, playSrc]);
 
   return (
     <div className={`p6-display-player relative h-full min-h-[12rem] overflow-hidden bg-black ${className}`}>
@@ -95,11 +97,11 @@ export function DisplayVideoPlayer({
           {label}
         </div>
       )}
-      {src ? (
+      {playSrc ? (
         <video
           ref={videoRef}
-          key={src}
-          src={src}
+          key={playSrc}
+          src={playSrc}
           className="h-full w-full object-cover"
           autoPlay
           muted={muted}

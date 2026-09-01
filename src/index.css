@@ -932,6 +932,51 @@ body::-webkit-scrollbar,
   padding-bottom: 0.25rem;
 }
 
+.p6-glow-card--disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  filter: grayscale(0.35);
+  pointer-events: none;
+}
+
+.p6-download-overlay {
+  position: absolute;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 30;
+  max-width: min(22rem, calc(100% - 2.5rem));
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(8, 18, 32, 0.88);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+  color: #fff;
+  text-align: right;
+  pointer-events: none;
+}
+
+.p6-download-overlay__status {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #7eb8ff;
+}
+
+.p6-download-overlay__title {
+  margin: 0.35rem 0 0;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.p6-download-overlay__meta {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.72);
+}
+
 /* ─── Session modal ─── */
 
 .p6-modal-overlay {

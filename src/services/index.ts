@@ -20,3 +20,6 @@ export * from './networkHealth';
 export * from './ledSdPrefetch';
 export * from './sdCacheBridge';
 export * from './sdCacheName';
+export * from './playbackSrc';
+export * from './downloadProgress';
+export * from './touchProgramGate';

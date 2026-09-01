@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { HomeHeroVideo } from '../components/home';
-import { useDisplayPlayback } from '../hooks/useRuntime';
+import { HomeHeroVideo, DownloadProgressOverlay } from '../components/home';
+import { useDisplayPlayback, useSync } from '../hooks/useRuntime';
 import { useTouchVideos, getTouchSlotMedia } from '../hooks/useOfflineVideoSrc';
+import { useTouchProgramGate } from '../hooks/useTouchProgramGate';
 import { useRuntimeStore } from '../stores/runtimeStore';
 import { runtimeConfig } from '../config/runtime';
 import { BluefinMasterFrame } from '../layout/BluefinMasterFrame';
@@ -26,6 +27,11 @@ import {
   type TouchProgramSource,
 } from '../lib/touchSessionPolicy';
 import type { P6Experience } from '../components/ui';
+
+function simOnlyFallback(url: string | null | undefined): string | null {
+  if (!url) return null;
+  return runtimeConfig.isSimulator ? url : null;
+}
 
 const START_HERE_ITEMS = [
   {
@@ -68,6 +74,7 @@ const SESSION_EXPERIENCE: Record<ActiveSession['source'], P6Experience> = {
 
 export default function Home() {
   const { playbackState, setDisplayVideoSrc } = useDisplayPlayback();
+  const { runSyncNow } = useSync();
   const resetDisplayControls = useRuntimeStore((s) => s.resetDisplayControls);
   const setDisplayVideoLoop = useRuntimeStore((s) => s.setDisplayVideoLoop);
   const setDisplayPaused = useRuntimeStore((s) => s.setDisplayPaused);
@@ -75,6 +82,13 @@ export default function Home() {
   const setDisplayVolume = useRuntimeStore((s) => s.setDisplayVolume);
   const setDisplayVideoEndedHandler = useRuntimeStore((s) => s.setDisplayVideoEndedHandler);
   const touchVideos = useTouchVideos(playbackState.manifest);
+  const {
+    showDownloadOverlay,
+    downloadUi,
+    programsReadyCount,
+    programsTotalCount,
+    isSlotReady,
+  } = useTouchProgramGate(playbackState.manifest, runSyncNow);
   const [startHereOpen, setStartHereOpen] = useState(false);
   const [phase1Open, setPhase1Open] = useState(false);
   const [phase2Open, setPhase2Open] = useState(false);
@@ -108,7 +122,7 @@ export default function Home() {
       screenKey: 'SCREEN_1',
       mediaVersionId: idleMedia.mediaVersionId,
       title: idleMedia.title,
-      fallbackSrc: idleMedia.url,
+      fallbackSrc: simOnlyFallback(idleMedia.url),
     });
   }, [
     playbackState.manifest,
@@ -134,7 +148,7 @@ export default function Home() {
       screenKey: 'SCREEN_1',
       mediaVersionId: idleMedia.mediaVersionId,
       title: idleMedia.title,
-      fallbackSrc: idleMedia.url,
+      fallbackSrc: simOnlyFallback(idleMedia.url),
     });
   }, [
     sessionOpen,
@@ -177,21 +191,21 @@ export default function Home() {
 
   const beginSession = (source: ActiveSession['source'], videoSrc: string | null) => {
     if (!videoSrc) return;
+    const slot = source as TouchPlaybackSlot;
+    const media = getTouchSlotMedia(playbackState.manifest, slot);
     resetDisplayControls();
     // Full Program: start each session at 50% so playback is never unexpectedly loud.
     if (source === 'full-program') {
       setDisplayVolume(DEFAULT_VOLUME);
       setDisplayMuted(false);
     }
-    const slot = source as TouchPlaybackSlot;
-    const media = getTouchSlotMedia(playbackState.manifest, slot);
     // Looping programs: loop until 45-min timer. Full Program: single play.
     setDisplayVideoLoop(isTouchLoopingProgram(source));
     setDisplayVideoSrc(videoSrc, {
       screenKey: 'SCREEN_1',
       mediaVersionId: media.mediaVersionId,
       title: media.title ?? SESSION_LABEL[source],
-      fallbackSrc: media.url,
+      fallbackSrc: simOnlyFallback(media.url),
     });
     setActiveSession({
       source,
@@ -202,6 +216,7 @@ export default function Home() {
   };
 
   const handleStartHereOpen = () => {
+    if (!isSlotReady('start-here')) return;
     setPhase1Open(false);
     setPhase2Open(false);
     setFullProgramOpen(false);
@@ -209,6 +224,7 @@ export default function Home() {
   };
 
   const handlePhase1Open = () => {
+    if (!isSlotReady('phase1')) return;
     setStartHereOpen(false);
     setPhase2Open(false);
     setFullProgramOpen(false);
@@ -216,6 +232,7 @@ export default function Home() {
   };
 
   const handlePhase2Open = () => {
+    if (!isSlotReady('phase2')) return;
     setStartHereOpen(false);
     setPhase1Open(false);
     setFullProgramOpen(false);
@@ -223,6 +240,7 @@ export default function Home() {
   };
 
   const handleFullProgramOpen = () => {
+    if (!isSlotReady('full-program')) return;
     setStartHereOpen(false);
     setPhase1Open(false);
     setPhase2Open(false);
@@ -244,6 +262,8 @@ export default function Home() {
           experience="start-here"
           className="p6-home__start-here"
           onClick={handleStartHereOpen}
+          disabled={!isSlotReady('start-here')}
+          aria-label={isSlotReady('start-here') ? 'Start Here' : 'Start Here — downloading'}
         >
           <StartHereContent
             title="Start Here"
@@ -279,7 +299,13 @@ export default function Home() {
           <span className="p6-small p6-muted">Complete the full guided session</span>
         </div>
 
-        <GlowCard experience="phase" className="p6-home__phase1" onClick={handlePhase1Open}>
+        <GlowCard
+          experience="phase"
+          className="p6-home__phase1"
+          onClick={handlePhase1Open}
+          disabled={!isSlotReady('phase1')}
+          aria-label={isSlotReady('phase1') ? 'Phase 1' : 'Phase 1 — downloading'}
+        >
           <PhaseCardContent
             title="Phase 1"
             keywords="Mobility · Stability · Power"
@@ -289,7 +315,13 @@ export default function Home() {
           />
         </GlowCard>
 
-        <GlowCard experience="phase" className="p6-home__phase2" onClick={handlePhase2Open}>
+        <GlowCard
+          experience="phase"
+          className="p6-home__phase2"
+          onClick={handlePhase2Open}
+          disabled={!isSlotReady('phase2')}
+          aria-label={isSlotReady('phase2') ? 'Phase 2' : 'Phase 2 — downloading'}
+        >
           <PhaseCardContent
             title="Phase 2"
             keywords="Strength · Energy · Recovery"
@@ -303,6 +335,8 @@ export default function Home() {
           experience="full-program"
           className="p6-home__full-program"
           onClick={handleFullProgramOpen}
+          disabled={!isSlotReady('full-program')}
+          aria-label={isSlotReady('full-program') ? 'Full Program' : 'Full Program — downloading'}
         >
           <FullProgramContent
             title="Full Program"
@@ -413,6 +447,14 @@ export default function Home() {
         startedAt={activeSession?.startedAt}
         totalSeconds={activeSession?.source === 'full-program' ? 3600 : 45 * 60}
       />
+
+      {showDownloadOverlay ? (
+        <DownloadProgressOverlay
+          ui={downloadUi}
+          programsReadyCount={programsReadyCount}
+          programsTotalCount={programsTotalCount}
+        />
+      ) : null}
     </main>
   );
 

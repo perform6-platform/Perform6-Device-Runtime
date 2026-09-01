@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { safeHtmlVideoSrc } from '../../services/playbackSrc';
 
 type HomeHeroVideoProps = {
   src: string | null;
@@ -14,9 +15,11 @@ export function HomeHeroVideo({
 }: HomeHeroVideoProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
+  const playSrc = safeHtmlVideoSrc(src);
+
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !src) return;
+    if (!video || !playSrc) return;
 
     if (paused) {
       video.pause();
@@ -25,19 +28,19 @@ export function HomeHeroVideo({
 
     video.muted = true;
     void video.play().catch(() => {});
-  }, [paused, src]);
+  }, [paused, playSrc]);
 
   return (
     <div
       className={`p6-home__hero${overlay === 'overview' ? ' p6-home__hero--overview' : ''}`}
       aria-hidden
     >
-      {src ? (
+      {playSrc ? (
         <video
           ref={videoRef}
-          key={src}
+          key={playSrc}
           className="p6-home__hero-video"
-          src={src}
+          src={playSrc}
           autoPlay
           muted
           loop

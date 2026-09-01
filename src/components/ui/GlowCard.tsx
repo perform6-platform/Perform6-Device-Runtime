@@ -27,6 +27,7 @@ export function GlowCard({
       className={cn(
         'p6-glow-card',
         experience ? experienceCardClassMap[experience] : accentClassMap[variant],
+        props.disabled && 'p6-glow-card--disabled',
         className,
       )}
       {...props}

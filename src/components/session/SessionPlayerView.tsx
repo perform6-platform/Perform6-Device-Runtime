@@ -2,6 +2,7 @@ import type { RefObject } from 'react';
 import { cn } from '../../lib/cn';
 import { VideoControlBar } from '../ui/VideoControlBar';
 import type { P6Accent } from '../ui/types';
+import { safeHtmlVideoSrc } from '../../services/playbackSrc';
 
 export type SessionPlayerViewProps = {
   videoRef: RefObject<HTMLVideoElement>;
@@ -54,6 +55,8 @@ export function SessionPlayerView({
   onFullscreen,
   onRestart,
 }: SessionPlayerViewProps) {
+  const playSrc = safeHtmlVideoSrc(videoSrc);
+
   return (
     <div className="p6-session-player-overlay">
       <div
@@ -72,9 +75,9 @@ export function SessionPlayerView({
         <div className="p6-session-player__video-wrap">
           <video
             ref={videoRef}
-            key={videoSrc}
+            key={playSrc ?? videoSrc}
             className="p6-session-player__video"
-            src={videoSrc}
+            src={playSrc ?? undefined}
             playsInline
             autoPlay
             muted={muted}
