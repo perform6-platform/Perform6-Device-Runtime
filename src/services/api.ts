@@ -1,4 +1,5 @@
 import { runtimeConfig } from '../config/runtime';
+import { handleDeviceRevoked, isDeviceAuthFailure } from './deviceAuthRevoke';
 
 export class ApiError extends Error {
   constructor(
@@ -79,7 +80,12 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     if (res.status === 204) return undefined as T;
     return (await res.json()) as T;
   } catch (e) {
-    if (e instanceof ApiError) throw e;
+    if (e instanceof ApiError) {
+      if (options.deviceId && isDeviceAuthFailure(e)) {
+        handleDeviceRevoked(e.message);
+      }
+      throw e;
+    }
     const raw = e instanceof Error ? e.message : String(e);
     const name = e instanceof Error ? e.name : '';
     if (name === 'AbortError') {

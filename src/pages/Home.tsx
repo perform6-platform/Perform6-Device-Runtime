@@ -8,6 +8,14 @@ import { runtimeConfig } from '../config/runtime';
 import { BluefinMasterFrame } from '../layout/BluefinMasterFrame';
 import type { TouchPlaybackSlot } from '../services/playback';
 import {
+  registerRemoteCommandExecutor,
+  type DeviceRemoteCommand,
+} from '../services/remoteCommandBridge';
+import {
+  buildTouchCurrentContent,
+  setTouchUiState,
+} from '../services/touchUiTelemetry';
+import {
   FullProgramContent,
   GlowCard,
   Logo,
@@ -78,6 +86,7 @@ export default function Home() {
   const resetDisplayControls = useRuntimeStore((s) => s.resetDisplayControls);
   const setDisplayVideoLoop = useRuntimeStore((s) => s.setDisplayVideoLoop);
   const setDisplayPaused = useRuntimeStore((s) => s.setDisplayPaused);
+  const displayPaused = useRuntimeStore((s) => s.displayPaused);
   const setDisplayMuted = useRuntimeStore((s) => s.setDisplayMuted);
   const setDisplayVolume = useRuntimeStore((s) => s.setDisplayVolume);
   const setDisplayVideoEndedHandler = useRuntimeStore((s) => s.setDisplayVideoEndedHandler);
@@ -193,6 +202,7 @@ export default function Home() {
     if (!videoSrc) return;
     const slot = source as TouchPlaybackSlot;
     const media = getTouchSlotMedia(playbackState.manifest, slot);
+    const startedAt = Date.now();
     resetDisplayControls();
     // Full Program: start each session at 50% so playback is never unexpectedly loud.
     if (source === 'full-program') {
@@ -211,9 +221,116 @@ export default function Home() {
       source,
       experience: SESSION_EXPERIENCE[source],
       videoSrc,
-      startedAt: Date.now(),
+      startedAt,
     });
+    closeOverview();
   };
+
+  const beginSessionRef = useRef(beginSession);
+  beginSessionRef.current = beginSession;
+  const touchVideosRef = useRef(touchVideos);
+  touchVideosRef.current = touchVideos;
+
+  useEffect(() => {
+    if (activeSession) {
+      const media = getTouchSlotMedia(playbackState.manifest, activeSession.source);
+      setTouchUiState({
+        playbackState: displayPaused ? 'PAUSED' : 'PLAYING',
+        currentContent: buildTouchCurrentContent({
+          slot: activeSession.source,
+          title: media.title ?? SESSION_LABEL[activeSession.source],
+          mediaVersionId: media.mediaVersionId,
+          screenKey: 'SCREEN_1',
+          sessionStartedAt: activeSession.startedAt,
+        }),
+      });
+      return;
+    }
+
+    if (modalOpen) {
+      let slot = 'touch-default';
+      if (startHereOpen) slot = 'start-here';
+      else if (phase1Open) slot = 'phase1';
+      else if (phase2Open) slot = 'phase2';
+      else if (fullProgramOpen) slot = 'full-program';
+
+      const media = getTouchSlotMedia(playbackState.manifest, slot as TouchPlaybackSlot);
+      setTouchUiState({
+        playbackState: 'MODAL',
+        currentContent: buildTouchCurrentContent({
+          slot,
+          title: media.title ?? SESSION_LABEL[slot as ActiveSession['source']] ?? 'Overview',
+          mediaVersionId: media.mediaVersionId,
+          screenKey: 'SCREEN_1',
+          sessionStartedAt: null,
+        }),
+      });
+      return;
+    }
+
+    const idleMedia = getTouchSlotMedia(playbackState.manifest, 'touch-default');
+    setTouchUiState({
+      playbackState: 'MENU',
+      currentContent: buildTouchCurrentContent({
+        slot: 'touch-default',
+        title: idleMedia.title ?? 'Main menu',
+        mediaVersionId: idleMedia.mediaVersionId,
+        screenKey: 'SCREEN_1',
+        sessionStartedAt: null,
+      }),
+    });
+  }, [
+    activeSession,
+    displayPaused,
+    fullProgramOpen,
+    modalOpen,
+    phase1Open,
+    phase2Open,
+    playbackState.manifest,
+    startHereOpen,
+  ]);
+
+  useEffect(() => {
+    return registerRemoteCommandExecutor(async (command: DeviceRemoteCommand) => {
+      switch (command.action) {
+        case 'PAUSE':
+          setDisplayPaused(true);
+          break;
+        case 'PLAY':
+          setDisplayPaused(false);
+          break;
+        case 'TOGGLE_PAUSE':
+          useRuntimeStore.getState().toggleDisplayPaused();
+          break;
+        case 'RETURN_TO_MENU':
+          returnToMainMenuRef.current();
+          closeOverview();
+          break;
+        case 'SELECT_TOUCH_SLOT': {
+          const slot = command.slot;
+          if (!slot) break;
+          const videos = touchVideosRef.current;
+          if (slot === 'touch-default') {
+            returnToMainMenuRef.current();
+            closeOverview();
+            break;
+          }
+          const videoBySlot: Record<string, string | null> = {
+            'start-here': videos.startHere,
+            phase1: videos.phase1,
+            phase2: videos.phase2,
+            'full-program': videos.fullProgram,
+          };
+          const videoSrc = videoBySlot[slot];
+          if (!videoSrc) break;
+          beginSessionRef.current(slot as ActiveSession['source'], videoSrc);
+          break;
+        }
+        default:
+          break;
+      }
+    });
+  }, [closeOverview, setDisplayPaused]);
 
   const handleStartHereOpen = () => {
     if (!isSlotReady('start-here')) return;

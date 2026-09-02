@@ -75,10 +75,15 @@ export async function downloadMediaBatchToSd(
   items: SyncMediaItem[],
   onProgress?: (progress: SdDownloadProgress) => void | Promise<void>,
   options?: { manifest?: import('../shared/types').PlaybackManifest | null },
-): Promise<{ succeeded: string[]; failed: string[] }> {
+): Promise<{
+  succeeded: string[];
+  downloaded: string[];
+  failed: string[];
+  failureReasons: Record<string, string>;
+}> {
   const result = await downloadMediaItemsToSd(items, onProgress, options);
   for (const item of items) {
-    if (!result.succeeded.includes(item.mediaVersionId)) continue;
+    if (!result.downloaded.includes(item.mediaVersionId)) continue;
     await offlineCacheService.storeMediaMeta({
       assetId: item.mediaVersionId,
       url: resolveMediaFileUrl(item.fileUrl),

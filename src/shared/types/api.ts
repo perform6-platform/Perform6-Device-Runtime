@@ -194,6 +194,7 @@ export interface DeviceHeartbeatRequest {
     title?: string;
     mediaVersionId?: string;
     screenKey?: string;
+    sessionStartedAt?: number;
   };
   metadata?: Record<string, unknown>;
 }

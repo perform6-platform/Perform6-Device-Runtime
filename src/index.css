@@ -944,7 +944,7 @@ body::-webkit-scrollbar,
   right: 1.25rem;
   bottom: 1.25rem;
   z-index: 30;
-  max-width: min(22rem, calc(100% - 2.5rem));
+  max-width: min(28rem, calc(100% - 2.5rem));
   padding: 0.85rem 1rem;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -969,6 +969,40 @@ body::-webkit-scrollbar,
   font-size: 1rem;
   font-weight: 600;
   line-height: 1.25;
+}
+
+.p6-download-overlay__path {
+  margin: 0.25rem 0 0;
+  font-size: 0.72rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: rgba(255, 255, 255, 0.62);
+  word-break: break-all;
+  line-height: 1.35;
+}
+
+.p6-download-overlay__bar-wrap {
+  margin-top: 0.55rem;
+}
+
+.p6-download-overlay__bar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.p6-download-overlay__bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #3b9eff, #7eb8ff);
+  transition: width 0.35s ease;
+}
+
+.p6-download-overlay__bytes {
+  margin: 0.3rem 0 0;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .p6-download-overlay__meta {

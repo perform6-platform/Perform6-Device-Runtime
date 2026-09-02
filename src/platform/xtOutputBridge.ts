@@ -1,5 +1,7 @@
 import { runtimeConfig } from '../config/runtime';
+import { getSharedMessagePort, subscribeBsMessages } from './bsMessagePort';
 import { isLocalPlaybackSrc } from '../services/playbackSrc';
+import { subscribeSdCacheProgress } from '../services/sdCacheBridge';
 import { useRuntimeStore } from '../stores/runtimeStore';
 
 const PLAYBACK_MESSAGE = 'xt-playback';
@@ -9,16 +11,6 @@ const LED_ENDED_MESSAGE = 'xt-led-ended';
 let initialized = false;
 /** Suppress xt-led-ended briefly after Restart (StopClear can fake MediaEnded). */
 let ignoreLedEndedUntil = 0;
-
-function createMessagePort(): BrightSignMessagePort | null {
-  try {
-    const ctor = window.BSMessagePort;
-    return typeof ctor === 'function' ? new ctor() : null;
-  } catch (error) {
-    console.warn('[Perform6] XT output bridge unavailable', error);
-    return null;
-  }
-}
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
@@ -81,13 +73,13 @@ export function initXtOutputBridge(): void {
     return;
   }
 
-  const port = createMessagePort();
+  const port = getSharedMessagePort();
   if (!port) {
     console.error('[Perform6] BSMessagePort missing — XT HDMI relay cannot start');
     return;
   }
 
-  port.addEventListener('bsmessage', (event) => {
+  subscribeBsMessages((event) => {
     const type = asString(event.data.type);
     if (type === LED_READY_MESSAGE) {
       postTouchPlayback(port);
@@ -97,6 +89,12 @@ export function initXtOutputBridge(): void {
         return;
       }
       useRuntimeStore.getState().displayVideoEndedHandler?.();
+    }
+  });
+
+  subscribeSdCacheProgress((event) => {
+    if (event.status === 'done' || event.status === 'skip') {
+      postTouchPlayback(port);
     }
   });
 

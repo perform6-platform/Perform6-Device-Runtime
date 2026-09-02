@@ -2,7 +2,16 @@ import type { PlaybackManifest } from '../shared/types';
 import { findTouchScreen, getCurrentVideo, type TouchPlaybackSlot } from './playback';
 import { hasSdCachedMedia } from './sdCacheBridge';
 
-/** Touch program buttons — idle is excluded (plays while these download). */
+/** Touch slots that must be on SD before hiding the download overlay. */
+export const TOUCH_DOWNLOAD_SLOTS: TouchPlaybackSlot[] = [
+  'touch-default',
+  'start-here',
+  'phase1',
+  'phase2',
+  'full-program',
+];
+
+/** @deprecated Use TOUCH_DOWNLOAD_SLOTS — program buttons only (legacy). */
 export const TOUCH_PROGRAM_SLOTS: TouchPlaybackSlot[] = [
   'start-here',
   'phase1',
@@ -30,7 +39,7 @@ export interface TouchProgramSlotInfo {
 export function listTouchProgramSlots(
   manifest: PlaybackManifest | null | undefined,
 ): TouchProgramSlotInfo[] {
-  return TOUCH_PROGRAM_SLOTS.map((slot) => {
+  return TOUCH_DOWNLOAD_SLOTS.map((slot) => {
     const screen = manifest ? findTouchScreen(manifest, slot) : undefined;
     const video = getCurrentVideo(screen);
     const mediaVersionId = video?.id ?? null;
@@ -56,6 +65,13 @@ export function countTouchProgramsReady(
   return { ready, total: assigned.length, slots };
 }
 
+/** Minimum content on SD before hiding the full-screen download overlay. */
+export function areCriticalTouchContentReady(
+  manifest: PlaybackManifest | null | undefined,
+): boolean {
+  return isTouchProgramSlotReady(manifest, 'touch-default');
+}
+
 export function areTouchProgramsReady(
   manifest: PlaybackManifest | null | undefined,
 ): boolean {
@@ -78,7 +94,7 @@ export function touchProgramMediaVersionIds(
 ): Set<string> {
   const ids = new Set<string>();
   if (!manifest) return ids;
-  for (const slot of TOUCH_PROGRAM_SLOTS) {
+  for (const slot of TOUCH_DOWNLOAD_SLOTS) {
     const screen = findTouchScreen(manifest, slot);
     const video = getCurrentVideo(screen);
     if (video?.id) ids.add(video.id);

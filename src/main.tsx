@@ -8,6 +8,9 @@ import { DeviceProvider, RuntimeProvider } from './contexts';
 import { ErrorBoundary } from './components/status';
 import { initXtOutputBridge } from './platform/xtOutputBridge';
 import { initXcOutputBridge } from './platform/xcOutputBridge';
+import { installDeviceLogCollector } from './services/deviceLogCollector';
+
+installDeviceLogCollector();
 
 /** Older BrightSign Chromium builds may lack rAF. */
 function afterFirstPaint(cb: () => void) {

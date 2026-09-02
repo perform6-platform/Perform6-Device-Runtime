@@ -22,9 +22,19 @@ import {
   getCredentials,
   fetchAndStoreCredentials,
   clearCachedMediaVersionIds,
+  applyOtaUpdate,
 } from '../services';
 import { clearAllSdCachedMarks, isSdBulkDownloadInProgress } from '../services/sdCacheBridge';
 import { sendPlaybackTelemetry } from '../services/playbackTelemetryApi';
+import { registerDeviceRemoteControlHooks } from '../services/deviceRemoteControl';
+import { processRemoteCommands } from '../services/remoteCommandBridge';
+import {
+  consumeSyncOnBoot,
+  isMediaSyncPaused,
+  isOtaPaused,
+  reloadPerform6Ops,
+  startPerform6OpsPolling,
+} from '../services/perform6Ops';
 import { ApiError } from '../services/api';
 import type { ClusterMember, DeviceInfo, DeviceRegistrationStatus } from '../shared/types';
 import type { MockDeviceOptions } from '../shared/mockDevice';
@@ -53,7 +63,7 @@ interface RuntimeContextValue {
   isReady: boolean;
   needsCredentials: boolean;
   retryPairing: () => void;
-  runSyncNow: () => Promise<void>;
+  runSyncNow: (force?: boolean) => Promise<void>;
   beginSimulatorProfile: (options: BeginSimulatorProfileOptions) => Promise<void>;
   /** Simulator-only: clear current HD unit and POST /devices/pair as the next DEVICE_*. */
   pairNextHdDevice: (member?: ClusterMember) => Promise<void>;
@@ -138,10 +148,52 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     pushDebugLog({ category: 'playback', message: 'Mock manifest loaded', data: manifest });
   }, [deviceInfo, pushDebugLog, setPlaybackManifest, setSyncState]);
 
-  const runSyncNow = useCallback(async () => {
+  const runSyncNow = useCallback(async (force = false) => {
     const auth = getCredentials();
     const info = activeDeviceInfo.current ?? deviceInfo;
     if (!auth || !info) return;
+
+    await reloadPerform6Ops();
+    if (!force && isMediaSyncPaused()) {
+      if (!isOtaPaused()) {
+        pushDebugLog({
+          category: 'sync',
+          message: 'Media sync paused — running OTA check only',
+        });
+        setSyncState({ inProgress: true, error: null, runtimePhase: 'syncing' });
+        try {
+          const applied = await applyOtaUpdate(auth);
+          pushDebugLog({
+            category: 'sync',
+            message: applied.applied
+              ? `OTA applied v${applied.version ?? ''}`
+              : applied.error
+                ? `OTA not applied: ${applied.error}`
+                : 'OTA up to date',
+          });
+        } finally {
+          setSyncState({
+            lastCheckAt: new Date().toISOString(),
+            inProgress: false,
+            error: null,
+            runtimePhase: 'ready',
+          });
+        }
+        return;
+      }
+
+      pushDebugLog({
+        category: 'sync',
+        message: 'Sync skipped — pauseMediaSync in perform6-ops.json',
+      });
+      setSyncState({
+        lastCheckAt: new Date().toISOString(),
+        inProgress: false,
+        error: null,
+        runtimePhase: 'ready',
+      });
+      return;
+    }
 
     if (syncRunningRef.current || isSdBulkDownloadInProgress()) {
       pushDebugLog({
@@ -175,6 +227,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
             if (earlyManifest) setPlaybackManifest(earlyManifest);
           },
         },
+        { forceMediaSync: force },
       );
 
       if (result.success) {
@@ -203,8 +256,12 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
                     version: result.ota.version,
                     reachable: result.ota.reachable,
                     downloadUrl: result.ota.downloadUrl,
+                    applied: result.otaApplied,
+                    error: result.otaError,
                   }
-                : undefined,
+                : result.otaError
+                  ? { error: result.otaError }
+                  : undefined,
             },
           });
         } else {
@@ -790,6 +847,26 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   }, [fetchCredentials, hasCredentials, registrationStatus]);
 
   useEffect(() => {
+    if (runtimeConfig.isSimulator) return;
+    return startPerform6OpsPolling(60_000);
+  }, []);
+
+  useEffect(() => {
+    if (!isDeviceReady() || !deviceInfo || runtimeConfig.isSimulator) return;
+
+    void (async () => {
+      const shouldSync = await consumeSyncOnBoot();
+      if (shouldSync) {
+        pushDebugLog({
+          category: 'sync',
+          message: 'syncOnBoot requested via perform6-ops.json',
+        });
+        await runSyncNow(true);
+      }
+    })();
+  }, [deviceInfo, hasCredentials, pushDebugLog, runSyncNow]);
+
+  useEffect(() => {
     if (!isDeviceReady() || !deviceInfo) return;
     void runSyncNow();
     const id = window.setInterval(() => void runSyncNow(), runtimeConfig.syncIntervalMs);
@@ -804,15 +881,22 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   }, [deviceInfo, hasCredentials, navigate, pendingRoute]);
 
   useEffect(() => {
+    registerDeviceRemoteControlHooks({ runSyncNow });
+  }, [runSyncNow]);
+
+  useEffect(() => {
     if (!isDeviceReady()) return;
 
     const tick = () => {
       const auth = getCredentials();
       if (!auth) return;
       void sendDeviceHeartbeat(auth, { firmwareVersion: deviceInfo?.firmwareVersion })
-        .then(() => {
+        .then((result) => {
           setHeartbeat({ at: new Date().toISOString(), ok: true });
           pushDebugLog({ category: 'heartbeat', message: 'POST /devices/me/heartbeat OK' });
+          if (result.remoteCommands?.length) {
+            void processRemoteCommands(result.remoteCommands);
+          }
         })
         .catch(() => {
           setHeartbeat({ at: new Date().toISOString(), ok: false });

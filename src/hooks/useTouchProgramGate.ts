@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { PlaybackManifest } from '../shared/types';
 import { runtimeConfig } from '../config/runtime';
 import {
+  areCriticalTouchContentReady,
   areTouchProgramsReady,
   countTouchProgramsReady,
   isTouchProgramSlotReady,
@@ -37,7 +38,8 @@ export function useTouchProgramGate(
   }, []);
 
   const programsReady = runtimeConfig.isSimulator || areTouchProgramsReady(manifest);
-  const showDownloadOverlay = !runtimeConfig.isSimulator && !programsReady;
+  const criticalReady = runtimeConfig.isSimulator || areCriticalTouchContentReady(manifest);
+  const showDownloadOverlay = !criticalReady;
 
   useEffect(() => {
     if (runtimeConfig.isSimulator || programsReady || !runSyncNow) return;

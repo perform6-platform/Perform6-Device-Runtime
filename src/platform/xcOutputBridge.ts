@@ -1,4 +1,5 @@
 import { runtimeConfig } from '../config/runtime';
+import { getSharedMessagePort, subscribeBsMessages } from './bsMessagePort';
 import { findScreenForTarget, getCurrentVideo } from '../services/playback';
 import { isLocalPlaybackSrc } from '../services/playbackSrc';
 import { resolveSdPlaybackUrl, subscribeSdCacheProgress } from '../services/sdCacheBridge';
@@ -10,16 +11,6 @@ const LED_READY_MESSAGE = 'xc-led-ready';
 
 let initialized = false;
 let publishSequence = 0;
-
-function createMessagePort(): BrightSignMessagePort | null {
-  try {
-    const ctor = window.BSMessagePort;
-    return typeof ctor === 'function' ? new ctor() : null;
-  } catch (error) {
-    console.warn('[Perform6] XC output bridge unavailable', error);
-    return null;
-  }
-}
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
@@ -86,13 +77,13 @@ export function initXcOutputBridge(): void {
     return;
   }
 
-  const port = createMessagePort();
+  const port = getSharedMessagePort();
   if (!port) {
     console.error('[Perform6] BSMessagePort missing — XC HDMI relay cannot start');
     return;
   }
 
-  port.addEventListener('bsmessage', (event) => {
+  subscribeBsMessages((event) => {
     if (asString(event.data.type) === LED_READY_MESSAGE) {
       void publishSecondaryScreens(port);
     }

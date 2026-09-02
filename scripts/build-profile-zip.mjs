@@ -215,6 +215,16 @@ function main() {
   const displayMode = profile.displayMode;
   fs.writeFileSync(path.join(outFolder, 'perform6-display.txt'), `${displayMode}\n`);
 
+  const defaultOpsPath = path.join(root, 'brightsign', 'perform6-ops.json');
+  if (fs.existsSync(defaultOpsPath)) {
+    fs.copyFileSync(defaultOpsPath, path.join(outFolder, 'perform6-ops.json'));
+  }
+
+  const emergencyOpsPath = path.join(root, 'brightsign', 'perform6-ops.emergency.json');
+  if (fs.existsSync(emergencyOpsPath)) {
+    fs.copyFileSync(emergencyOpsPath, path.join(outFolder, 'perform6-ops.emergency.json'));
+  }
+
   const wiring =
     profileKey === 'XT2145'
       ? [
@@ -285,6 +295,8 @@ function main() {
           'assets/',
           'perform6-profile.txt',
           'perform6-display.txt',
+          'perform6-ops.json',
+          'perform6-ops.emergency.json',
           ...(profileKey === 'XT2145' || profileKey === 'XC4055' ? ['led-idle.png'] : []),
           'README-SD.txt',
         ],
@@ -353,6 +365,7 @@ function main() {
       '  autorun.brs',
       '  perform6-profile.txt',
       '  perform6-display.txt',
+      '  perform6-ops.json (field ops — pause sync/OTA, clear cache on boot)',
       '  index.html',
       '  assets/app.js',
       '  assets/style.css',
@@ -364,6 +377,15 @@ function main() {
       'After copy, reboot the player.',
       'First boot reboots once while the output layout is applied — that is expected.',
       'Changing perform6-display.txt also causes one extra reboot on the next start.',
+      '',
+      'Field maintenance (perform6-ops.json on SD root):',
+      '  pauseMediaSync     = true  → stop media downloads (sync-check skipped)',
+      '  pauseOta           = true  → skip OTA until set back to false',
+      '  clearCacheOnBoot   = true  → wipe SD:/perform6-cache once on next boot (auto-clears)',
+      '  rebootAfterCacheClear = true → reboot after clearCacheOnBoot',
+      '  syncOnBoot         = true  → run one sync after boot (auto-clears; bypasses pause)',
+      '  Emergency template: copy perform6-ops.emergency.json → perform6-ops.json',
+      '  See docs/CLIENT-SD-MAINTENANCE.md for full site procedure.',
       'DWS (browser): http://<player-ip>/',
       '',
     ].join('\n'),
