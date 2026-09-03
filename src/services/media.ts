@@ -6,6 +6,10 @@ import {
   resolveSdPlaybackUrl,
   type SdDownloadProgress,
 } from './sdCacheBridge';
+import {
+  downloadMediaItemsViaAssetPool,
+  isMediaAssetPoolAvailable,
+} from './mediaAssetPool';
 import { resolveMediaFileUrl } from './manifest';
 import { offlineCacheService } from './offlineCache';
 
@@ -23,7 +27,7 @@ export interface DownloadProgress {
   totalBytes: number | null;
 }
 
-/** Local playback URL from SD:/perform6-cache (file://). */
+/** Local playback URL from media asset pool or SD:/perform6-cache (file://). */
 export async function resolveLocalPlaybackUrl(
   mediaVersionId: string,
   fallbackFileUrl?: string | null,
@@ -43,21 +47,20 @@ export function revokeLocalPlaybackUrl(_mediaVersionId: string): void {
 }
 
 /**
- * Download one item into SD:/perform6-cache via autorun (no IndexedDB).
- * Prefer downloadMediaItemsToSd for batches.
+ * Download one item via BrightSign media asset pool (or autorun cache fallback).
  */
 export async function downloadMediaItem(
   item: SyncMediaItem,
   onProgress?: (progress: DownloadProgress) => void | Promise<void>,
 ): Promise<number> {
-  const { succeeded, failed } = await downloadMediaItemsToSd([item], async (p) => {
+  const { succeeded, failed } = await downloadMediaBatchToSd([item], async (p) => {
     await onProgress?.({
       bytesDownloaded: p.bytesDownloaded,
       totalBytes: p.totalBytes,
     });
   });
   if (failed.includes(item.mediaVersionId) || !succeeded.includes(item.mediaVersionId)) {
-    throw new Error('SD cache download failed');
+    throw new Error('SD media download failed');
   }
   const size = item.fileSize != null ? Number(item.fileSize) : 0;
   await offlineCacheService.storeMediaMeta({
@@ -81,7 +84,10 @@ export async function downloadMediaBatchToSd(
   failed: string[];
   failureReasons: Record<string, string>;
 }> {
-  const result = await downloadMediaItemsToSd(items, onProgress, options);
+  // BrightSign asset pool first (SD:/perform6-media-pool). OTA stays separate.
+  const result = isMediaAssetPoolAvailable()
+    ? await downloadMediaItemsViaAssetPool(items, onProgress, options)
+    : await downloadMediaItemsToSd(items, onProgress, options);
   for (const item of items) {
     if (!result.downloaded.includes(item.mediaVersionId)) continue;
     await offlineCacheService.storeMediaMeta({
@@ -100,7 +106,7 @@ export async function evictCachedMedia(mediaVersionIds: string[]): Promise<void>
   if (mediaVersionIds.length === 0) return;
   clearSdCached(mediaVersionIds);
   await offlineCacheService.removeMany(mediaVersionIds);
-  // Physical SD delete is handled by autorun prune via keep-set rebuild in syncEngine.
+  // Physical SD delete: asset-pool prune on next protect+fetch, or autorun keep-set.
 }
 
 /** @deprecated Use downloadMediaItem — kept for tests */

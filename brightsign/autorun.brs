@@ -1,25 +1,66 @@
 ' Perform6 BrightSign autorun - thin boot + deferred SD workers
 ' BOOT ONLY: identity, DWS, SetScreenModes, HtmlWidget Show, native LED idle/playback, reboot.
-' DEFERRED (after Show / when JS asks): cache prefetch, OTA install, perform6-ops clearCache.
+' DEFERRED (after Show / when JS asks): cache prefetch (legacy fallback), OTA install, clearCache.
+' MEDIA (preferred): JS @brightsign/assetpool → SD:/perform6-media-pool (isolated from OTA).
+' OTA (preferred): JS @brightsign/assetpool → SD:/perform6-ota-pool → copy to SD:/{path}; HTTP worker = fallback.
+' Clear-cache wipes only perform6-cache + perform6-media-pool — NEVER perform6-ota-pool or package files.
 ' Policy (pair, heartbeat, sync, OTA trigger) lives in React + API — not in this file.
 ' Profiles: XT2145 / XC4055 = React on HDMI-1 + roVideoPlayer on LEDs; HD226 = one HtmlWidget.
 ' Reads perform6-display.txt: MULTI (default) | MULTI_NOFULLRES.
 ' SetScreenModes only when config differs. Do NOT call SetMode / trusted_iframes / roTouchScreen.Enable.
-' Media cache: SD:/perform6-cache only (no whole-SD EncryptStorage - breaks HtmlWidget).
+' Legacy media cache: SD:/perform6-cache (autorun prefetch fallback only).
 
 Sub SafePrint(msg as String)
   print msg
+End Sub
+
+' Buffered SD log — avoid ReadAsciiFile+WriteAsciiFile on every line.
+' Flush every 20 lines or ~5s from the main loop; always flush before log-tail.
+Function LedLogState() as Object
+  g = GetGlobalAA()
+  if type(g.p6LedLog) <> "roAssociativeArray" then
+    g.p6LedLog = CreateObject("roAssociativeArray")
+    g.p6LedLog.buf = ""
+    g.p6LedLog.lines = 0
+    g.p6LedLog.dirty = false
+    g.p6LedLog.lastFlushMs = 0
+  end if
+  return g.p6LedLog
+End Function
+
+Sub FlushLedLog()
+  st = LedLogState()
+  if st.dirty <> true then return
+  path = "SD:/perform6-led.log"
+  existing = ReadAsciiFile(path)
+  if type(existing) <> "roString" and type(existing) <> "String" then existing = ""
+  if Len(existing) > 60000 then existing = Right(existing, 30000)
+  WriteAsciiFile(path, existing + st.buf)
+  st.buf = ""
+  st.lines = 0
+  st.dirty = false
+  st.lastFlushMs = ProgressNowMs()
+End Sub
+
+Sub MaybeFlushLedLog()
+  st = LedLogState()
+  if st.dirty <> true then return
+  lastMs = st.lastFlushMs
+  nowMs = ProgressNowMs()
+  if type(lastMs) <> "roInteger" and type(lastMs) <> "Integer" then lastMs = 0
+  if nowMs - lastMs < 5000 and st.lines < 20 then return
+  FlushLedLog()
 End Sub
 
 ' LED playback trail also lands on the card: BrightScript prints do not always
 ' show up in the DWS log view, and this is the only output we can read remotely.
 Sub LedLog(msg as String)
   SafePrint(msg)
-  path = "SD:/perform6-led.log"
-  existing = ReadAsciiFile(path)
-  if type(existing) <> "roString" and type(existing) <> "String" then existing = ""
-  if Len(existing) > 60000 then existing = ""
-  WriteAsciiFile(path, existing + msg + Chr(10))
+  st = LedLogState()
+  st.buf = st.buf + msg + Chr(10)
+  st.lines = st.lines + 1
+  st.dirty = true
+  if st.lines >= 20 then FlushLedLog()
 End Sub
 
 Sub AttachStorageHotplug(msgPort as Object)
@@ -29,9 +70,47 @@ Sub AttachStorageHotplug(msgPort as Object)
   SafePrint("=== Perform6: storage hotplug monitor attached ===")
 End Sub
 
-Sub HandleStorageDetached(ev as Object)
-  LedLog("=== Perform6: SECURITY storage detached ===")
-  SafePrint("=== Perform6: SECURITY storage detached ===")
+Function StorageEventPath(ev as Object) as String
+  path = ""
+  if type(ev) = "roStorageAttached" or type(ev) = "roStorageDetached" then
+    path = ev.GetString()
+  end if
+  if type(path) <> "roString" and type(path) <> "String" then path = ""
+  return path
+End Function
+
+Function IsSdStoragePath(path as String) as Boolean
+  if Len(path) = 0 then return true
+  upper = UCase(path)
+  if Instr(1, upper, "SD") > 0 then return true
+  if Instr(1, upper, "MMC") > 0 then return true
+  if Instr(1, upper, "/STORAGE/SD") > 0 then return true
+  return false
+End Function
+
+Sub PostStorageHotplug(states as Object, attached as Boolean, path as String)
+  if attached then
+    state = "attached"
+  else
+    state = "detached"
+  end if
+  LedLog("=== Perform6: storage " + state + " " + path + " ===")
+  html = ResolveP6Html(states, invalid)
+  if type(html) <> "roHtmlWidget" then return
+  msg = CreateObject("roAssociativeArray")
+  msg.type = "led-storage"
+  msg.state = state
+  msg.path = path
+  html.PostJSMessage(msg)
+End Sub
+
+Sub HandleStorageHotplug(ev as Object, states as Object, attached as Boolean)
+  path = StorageEventPath(ev)
+  if not IsSdStoragePath(path) then
+    SafePrint("=== Perform6: ignore non-SD storage event " + path + " ===")
+    return
+  end if
+  PostStorageHotplug(states, attached, path)
 End Sub
 
 Function TryCreateHtmlWidget(rect as Object, msgPort as Object, url as String) as Object
@@ -43,9 +122,10 @@ Function TryCreateHtmlWidget(rect as Object, msgPort as Object, url as String) a
   cfg.mouse_enabled = true
   cfg.brightsign_js_objects_enabled = true
   cfg.javascript_enabled = true
+  cfg.nodejs_enabled = true
   html = CreateObject("roHtmlWidget", rect, cfg)
   if type(html) = "roHtmlWidget" then
-    SafePrint("=== Perform6: HtmlWidget modern config OK ===")
+    SafePrint("=== Perform6: HtmlWidget modern config OK (nodejs) ===")
     return html
   end if
 
@@ -391,6 +471,74 @@ Function CacheDir() as String
   return "SD:/perform6-cache"
 End Function
 
+Function MediaPoolDir() as String
+  return "SD:/perform6-media-pool"
+End Function
+
+Function OtaPoolDir() as String
+  return "SD:/perform6-ota-pool"
+End Function
+
+' Only allow wipe of known media roots — never SD:/, OTA pool, or package files.
+Function IsSafeMediaWipePath(path as String) as Boolean
+  if path = CacheDir() then return true
+  if path = MediaPoolDir() then return true
+  ' Explicitly refuse OTA pool even if called by mistake.
+  if path = OtaPoolDir() then return false
+  return false
+End Function
+
+Function PathLooksLikeDirectory(fullPath as String) as Boolean
+  fs = CreateObject("roFileSystem")
+  if type(fs) <> "roFileSystem" then return false
+  st = fs.Stat(fullPath)
+  if type(st) <> "roAssociativeArray" then return false
+  if type(st.type) = "roString" or type(st.type) = "String" then
+    return Instr(1, LCase(st.type), "dir") > 0
+  end if
+  return false
+End Function
+
+' Nested wipe for BrightSign asset pools (hash subdirs). DeleteDirectory alone
+' is recursive on modern BOS; DeleteTree covers older builds / partial fails.
+Sub DeleteTree(path as String)
+  if Len(path) < 8 then return
+  if Instr(1, path, "..") > 0 then return
+  if Left(path, 4) <> "SD:/" then return
+
+  dir = path
+  if Right(dir, 1) <> "/" then dir = dir + "/"
+
+  names = MatchFiles(dir, "*")
+  if type(names) = "roList" or type(names) = "roArray" then
+    for each name in names
+      if Len(name) > 0 and name <> "." and name <> ".." then
+        full = dir + name
+        if PathLooksLikeDirectory(full) then
+          DeleteTree(full)
+        else
+          DeleteFile(full)
+        end if
+      end if
+    end for
+  end if
+
+  DeleteDirectory(path)
+End Sub
+
+Sub WipeMediaDirectory(path as String)
+  if not IsSafeMediaWipePath(path) then
+    LedLog("=== Perform6: refuse wipe of unsafe path " + path + " ===")
+    return
+  end if
+
+  ' Prefer OS recursive delete; always follow with DeleteTree for leftovers.
+  DeleteDirectory(path)
+  DeleteTree(path)
+  CreateDirectory(path)
+  LedLog("=== Perform6: wiped+recreated " + path + " ===")
+End Sub
+
 Function FileExistsIn(dir as String, name as String) as Boolean
   files = MatchFiles(dir, name)
   if type(files) = "roList" or type(files) = "roArray" then
@@ -407,6 +555,67 @@ Function PartFileBytes(path as String) as Integer
   size = stat.size
   if type(size) = "roInteger" or type(size) = "Integer" then return size
   return 0
+End Function
+
+Function HexHashesMatch(a as String, b as String) as Boolean
+  if Len(a) = 0 or Len(b) = 0 then return false
+  return LCase(a) = LCase(b)
+End Function
+
+' BrightSign docs: for large Internet transfers, average the min rate over 15+ minutes.
+Sub ConfigureDownloadTransfer(xfer as Object, msgPort as Object, url as String, userKey as String)
+  xfer.SetUrl(url)
+  xfer.SetPort(msgPort)
+  xfer.SetUserData(userKey)
+  xfer.SetMinimumTransferRate(1024, 900)
+End Sub
+
+' Docs-compliant downloads (do NOT mix resume_file with a hash-only pipe):
+' - resumeBytes > 0 → response_body_resume_file only (Range in place)
+' - fresh → response_pipe [hash SHA256, output_file] then fallbacks
+Function StartResumableGet(xfer as Object, dest as String, resumeBytes as Integer) as Boolean
+  params = CreateObject("roAssociativeArray")
+  params.method = "GET"
+
+  if resumeBytes > 0 then
+    params.response_body_resume_file = dest
+    if xfer.AsyncMethod(params) then return true
+    LedLog("=== Perform6: resume AsyncMethod failed — " + xfer.GetFailureReason() + " ===")
+    return false
+  end if
+
+  pipe = CreateObject("roArray", 2, true)
+  hashFilter = CreateObject("roAssociativeArray")
+  hashFilter.hash = "SHA256"
+  pipe.Push(hashFilter)
+  outFilter = CreateObject("roAssociativeArray")
+  outFilter.output_file = dest
+  pipe.Push(outFilter)
+  params.response_pipe = pipe
+  if xfer.AsyncMethod(params) then return true
+
+  reason = xfer.GetFailureReason()
+  if type(reason) <> "roString" and type(reason) <> "String" then reason = ""
+  if Len(reason) > 0 then LedLog("=== Perform6: hash pipe failed — " + reason + " ===")
+
+  params.Delete("response_pipe")
+  params.response_body_file = dest
+  if xfer.AsyncMethod(params) then return true
+  return xfer.AsyncGetToFile(dest)
+End Function
+
+Function EventSha256(ev as Object) as String
+  hex = ev.GetHash()
+  if type(hex) = "roString" or type(hex) = "String" then return hex
+  return ""
+End Function
+
+' Range ignored + append → file larger than expected (classic corrupt partial).
+Function IsRangeIgnoredCorruption(resumed as Boolean, code as Integer, actual as Integer, expected as Integer) as Boolean
+  if resumed <> true then return false
+  if expected <= 0 then return false
+  if actual > expected then return true
+  return false
 End Function
 
 Function UrlRetryCount(worker as Object, url as String) as Integer
@@ -449,7 +658,7 @@ Function HasSdSpaceForBytes(needed as Integer) as Boolean
 End Function
 
 Function HttpFailureIsRetryable(code as Integer) as Boolean
-  if code = 416 then return true
+  if code = 416 then return false
   if code = 408 then return true
   if code = 429 then return true
   if code >= 500 and code <= 599 then return true
@@ -630,6 +839,7 @@ Function CreatePrefetchWorker() as Object
   st.xferTmp = ""
   st.xferDest = ""
   st.xferName = ""
+  st.xferResumed = false
   st.queue = CreateObject("roArray", 0, true)
   st.keepNames = CreateObject("roAssociativeArray")
   st.urlIds = CreateObject("roAssociativeArray")
@@ -786,6 +996,7 @@ Sub PostLedLogTail(html as Object, requestId as String, text as String)
 End Sub
 
 Sub HandleLedLogTailRequest(payload as Object, states as Object)
+  FlushLedLog()
   worker = FindPrefetchWorker(states)
   html = invalid
   if type(worker) = "roAssociativeArray" then html = worker.notifyHtml
@@ -928,6 +1139,8 @@ Function CreateOtaWorker() as Object
   st.xferDest = ""
   st.xferPath = ""
   st.xferExpected = 0
+  st.xferHash = ""
+  st.xferResumed = false
   st.authBearer = ""
   st.deviceId = ""
   st.queue = CreateObject("roArray", 0, true)
@@ -973,11 +1186,18 @@ Sub PostOtaProgressBytes(states as Object, status as String, path as String, det
     logMsg = logMsg + " size=" + IntToStr(bytesTotal)
   end if
   if Len(detail) > 0 then logMsg = logMsg + " " + detail
-  LedLog("=== Perform6: " + logMsg + " ===")
+  ' Byte progress is high-frequency — console only; SD log on milestones.
+  if status = "progress" then
+    SafePrint("=== Perform6: " + logMsg + " ===")
+  else
+    LedLog("=== Perform6: " + logMsg + " ===")
+  end if
 
   html = ResolveP6Html(states, worker)
   if type(html) <> "roHtmlWidget" then
-    LedLog("=== Perform6: OTA JS notify skipped (no HtmlWidget) ===")
+    if status <> "progress" then
+      LedLog("=== Perform6: OTA JS notify skipped (no HtmlWidget) ===")
+    end if
     return
   end if
   worker.notifyHtml = html
@@ -1095,7 +1315,21 @@ Sub StartOtaDownload(worker as Object, item as Object, msgPort as Object, states
 
   tmp = dest + ".part"
   EnsureParentDir(dest)
-  bytesNeeded = expected
+  already = PartFileBytes(tmp)
+  if expected > 0 and PartFileBytes(dest) = expected then
+    worker.otaDone = worker.otaDone + 1
+    LedLog("=== Perform6: OTA already on SD " + dest + " ===")
+    DeleteFile(tmp)
+    PostOtaProgressBytes(states, "done", relPath, "already-present", expected, expected)
+    DrainOtaQueue(msgPort, states)
+    return
+  end if
+  if expected > 0 and already > expected then
+    LedLog("=== Perform6: OTA partial oversized — deleting " + tmp + " ===")
+    DeleteFile(tmp)
+    already = 0
+  end if
+  bytesNeeded = expected - already
   if bytesNeeded < 0 then bytesNeeded = 0
   if not HasSdSpaceForBytes(bytesNeeded) then
     LedLog("=== Perform6: OTA skipped - SD card full for " + relPath + " ===")
@@ -1105,8 +1339,6 @@ Sub StartOtaDownload(worker as Object, item as Object, msgPort as Object, states
     return
   end if
 
-  DeleteFile(tmp)
-
   xfer = CreateObject("roUrlTransfer")
   if type(xfer) <> "roUrlTransfer" then
     worker.otaDone = worker.otaDone + 1
@@ -1115,22 +1347,23 @@ Sub StartOtaDownload(worker as Object, item as Object, msgPort as Object, states
     return
   end if
 
-  xfer.SetUrl(url)
-  xfer.SetPort(msgPort)
-  xfer.SetMinimumTransferRate(256, 120)
+  ConfigureDownloadTransfer(xfer, msgPort, url, "ota")
   if Len(worker.authBearer) > 0 then
     xfer.AddHeader("Authorization", "Bearer " + worker.authBearer)
     if Len(worker.deviceId) > 0 then xfer.AddHeader("X-Device-Id", worker.deviceId)
   end if
 
-  if xfer.AsyncGetToFile(tmp) then
+  if StartResumableGet(xfer, tmp, already) then
     worker.xfer = xfer
     worker.xferUrl = url
     worker.xferTmp = tmp
     worker.xferDest = dest
     worker.xferPath = relPath
     worker.xferExpected = expected
-    PostOtaProgressBytes(states, "start", relPath, "dest=" + dest, 0, expected)
+    worker.xferHash = ""
+    if type(item.sha256) = "roString" or type(item.sha256) = "String" then worker.xferHash = item.sha256
+    worker.xferResumed = (already > 0)
+    PostOtaProgressBytes(states, "start", relPath, "dest=" + dest + " resume=" + IntToStr(already), already, expected)
   else
     worker.otaDone = worker.otaDone + 1
     PostOtaProgress(states, "failed", relPath, "download start failed")
@@ -1235,6 +1468,7 @@ Sub HandleLedOtaInstall(payload as Object, msgPort as Object, states as Object)
     end if
     item.size = 0
     if i < sizes.Count() then item.size = Val(sizes[i])
+    item.sha256 = PayloadString(payload, "fileSha256")
     worker.queue.Push(item)
     i = i + 1
   end while
@@ -1248,17 +1482,12 @@ Sub HandleOtaEvent(worker as Object, ev as Object, msgPort as Object, states as 
   eventType = ev.GetInt()
   if eventType = 2 then return
 
-  url = worker.xferUrl
   tmp = worker.xferTmp
   dest = worker.xferDest
   relPath = worker.xferPath
   expected = worker.xferExpected
-
-  if eventType = 0 then
-    downloaded = PartFileBytes(tmp)
-    MaybePostOtaProgress(states, relPath, downloaded, expected)
-    return
-  end if
+  expectedHash = ""
+  if type(worker.xferHash) = "roString" or type(worker.xferHash) = "String" then expectedHash = worker.xferHash
 
   if eventType <> 1 then
     reason = ev.GetFailureReason()
@@ -1270,7 +1499,6 @@ Sub HandleOtaEvent(worker as Object, ev as Object, msgPort as Object, states as 
     worker.xferUrl = ""
     worker.otaDone = worker.otaDone + 1
     PostOtaProgress(states, "failed", relPath, errorText)
-    DeleteFile(tmp)
     DrainOtaQueue(msgPort, states)
     return
   end if
@@ -1278,6 +1506,24 @@ Sub HandleOtaEvent(worker as Object, ev as Object, msgPort as Object, states as 
   code = ev.GetResponseCode()
   worker.xfer = invalid
   worker.xferUrl = ""
+  actual = PartFileBytes(tmp)
+
+  if code = 416 and expected > 0 and actual = expected then
+    code = 200
+  end if
+
+  resumed = false
+  if worker.xferResumed = true then resumed = true
+  worker.xferResumed = false
+
+  if IsRangeIgnoredCorruption(resumed, code, actual, expected) then
+    LedLog("=== Perform6: OTA Range ignored (file oversized) — delete " + relPath + " ===")
+    worker.otaDone = worker.otaDone + 1
+    PostOtaProgress(states, "failed", relPath, "range ignored — redeploy API Range support")
+    DeleteFile(tmp)
+    DrainOtaQueue(msgPort, states)
+    return
+  end if
 
   if code < 200 or code > 299 then
     reason = ev.GetFailureReason()
@@ -1286,9 +1532,40 @@ Sub HandleOtaEvent(worker as Object, ev as Object, msgPort as Object, states as 
     LedLog("=== Perform6: OTA HTTP failed " + errorText + " " + relPath + " ===")
     worker.otaDone = worker.otaDone + 1
     PostOtaProgress(states, "failed", relPath, errorText)
+    if code = 416 then DeleteFile(tmp)
+    DrainOtaQueue(msgPort, states)
+    return
+  end if
+
+  if expected > 1023 and actual < 1024 then
+    worker.otaDone = worker.otaDone + 1
+    PostOtaProgress(states, "failed", relPath, "file too small")
     DeleteFile(tmp)
     DrainOtaQueue(msgPort, states)
     return
+  end if
+  if expected > 0 and actual <> expected then
+    worker.otaDone = worker.otaDone + 1
+    PostOtaProgress(states, "failed", relPath, "size mismatch")
+    DeleteFile(tmp)
+    DrainOtaQueue(msgPort, states)
+    return
+  end if
+
+  gotHash = EventSha256(ev)
+  if resumed = true then
+    LedLog("=== Perform6: OTA resumed — size check only " + relPath + " ===")
+  else if Len(expectedHash) > 0 and Len(gotHash) > 0 then
+    if not HexHashesMatch(expectedHash, gotHash) then
+      LedLog("=== Perform6: OTA hash mismatch " + relPath + " ===")
+      worker.otaDone = worker.otaDone + 1
+      PostOtaProgress(states, "failed", relPath, "hash mismatch")
+      DeleteFile(tmp)
+      DrainOtaQueue(msgPort, states)
+      return
+    end if
+  else if Len(expectedHash) > 0 and Len(gotHash) = 0 then
+    LedLog("=== Perform6: OTA SHA-256 not returned — size check only " + relPath + " ===")
   end if
 
   DeleteFile(dest)
@@ -1301,30 +1578,15 @@ Sub HandleOtaEvent(worker as Object, ev as Object, msgPort as Object, states as 
     return
   end if
 
-  actual = PartFileBytes(dest)
-  if expected > 1023 and actual < 1024 then
-    worker.otaDone = worker.otaDone + 1
-    PostOtaProgress(states, "failed", relPath, "file too small")
-    DeleteFile(dest)
-    DrainOtaQueue(msgPort, states)
-    return
-  end if
-  if expected > 0 and actual <> expected then
-    worker.otaDone = worker.otaDone + 1
-    PostOtaProgress(states, "failed", relPath, "size mismatch")
-    DeleteFile(dest)
-    DrainOtaQueue(msgPort, states)
-    return
-  end if
-
   worker.otaDone = worker.otaDone + 1
-  LedLog("=== Perform6: OTA wrote " + dest + " ===")
+  LedLog("=== Perform6: OTA wrote " + dest + " bytes=" + IntToStr(actual) + " ===")
   PostOtaProgressBytes(states, "done", relPath, "saved=" + dest, actual, expected)
   DrainOtaQueue(msgPort, states)
 End Sub
 
 Sub RebootDeviceAfterOta()
   LedLog("=== Perform6: player reboot ===")
+  FlushLedLog()
   restart = CreateObject("roSystemRestart")
   if type(restart) = "roSystemRestart" then restart.Reboot()
   Sleep(5000)
@@ -1349,8 +1611,10 @@ Sub FatalHang(msg as String)
   SafePrint(msg)
   if ShouldAutoRebootOnce("perform6-boot-fail") then
     LedLog("=== Perform6: FATAL - auto reboot once ===")
+    FlushLedLog()
     RebootDeviceAfterOta()
   end if
+  FlushLedLog()
   while true
     Sleep(10000)
   end while
@@ -1431,10 +1695,26 @@ Sub StartCacheDownload(st as Object, url as String, msgPort as Object, states as
   worker = FindPrefetchWorker(states)
   mediaId = LookupUrlMediaId(worker, url)
   expected = LookupUrlExpectedSize(worker, url)
-  ' Always start clean - no resume/Range (corrupt partials on some Series 5 builds).
-  DeleteFile(tmp)
-  resumeAt = 0
-  bytesNeeded = expected
+  alreadyComplete = PartFileBytes(dest)
+  if expected > 0 and alreadyComplete = expected then
+    LedLog("=== Perform6: LED " + st.key + " cache already on SD " + dest + " ===")
+    DeleteFile(tmp)
+    if type(worker) = "roAssociativeArray" then
+      ClearUrlRetryCount(worker, url)
+      worker.prefetchDone = worker.prefetchDone + 1
+    end if
+    PostCacheProgress(states, "skip", url, name, mediaId, "", dest, alreadyComplete, expected)
+    DrainPrefetchQueue(msgPort, states)
+    return
+  end if
+  already = PartFileBytes(tmp)
+  if expected > 0 and already > expected then
+    LedLog("=== Perform6: cache partial oversized — deleting " + tmp + " ===")
+    DeleteFile(tmp)
+    already = 0
+  end if
+  resumeAt = already
+  bytesNeeded = expected - already
   if bytesNeeded < 0 then bytesNeeded = 0
   if not HasSdSpaceForBytes(bytesNeeded) then
     LedLog("=== Perform6: cache skipped - SD card full for " + url + " ===")
@@ -1450,19 +1730,16 @@ Sub StartCacheDownload(st as Object, url as String, msgPort as Object, states as
     FinishCacheFailure(st, worker, url, name, mediaId, tmp, "download start failed", true, msgPort, states)
     return
   end if
-  xfer.SetUrl(url)
-  xfer.SetPort(msgPort)
-  ' Fresh downloads only - resume/Range caused corrupt partials on some firmware.
-  xfer.EnableResume(false)
-  xfer.SetMinimumTransferRate(256, 120)
+  ConfigureDownloadTransfer(xfer, msgPort, url, st.key)
 
-  if xfer.AsyncGetToFile(tmp) then
+  if StartResumableGet(xfer, tmp, resumeAt) then
     st.xfer = xfer
     st.xferUrl = url
     st.xferTmp = tmp
     st.xferDest = dest
     st.xferName = name
-    LedLog("=== Perform6: LED " + st.key + " caching " + url + " ===")
+    st.xferResumed = (resumeAt > 0)
+    LedLog("=== Perform6: LED " + st.key + " caching " + url + " resume=" + IntToStr(resumeAt) + " ===")
     PostCacheProgress(states, "start", url, name, mediaId, "", dest, resumeAt, expected)
     PruneCache(states)
   else
@@ -1632,14 +1909,7 @@ Sub HandleLedPrefetch(payload as Object, msgPort as Object, states as Object)
 End Sub
 
 Sub HandleLedCacheClearAll(states as Object)
-  otaWorker = FindOtaWorker(states)
-  if type(otaWorker) = "roAssociativeArray" then
-    CancelOtaTransfer(otaWorker)
-    if type(otaWorker.queue) = "roArray" then
-      otaWorker.queue = CreateObject("roArray", 0, true)
-    end if
-  end if
-
+  ' MEDIA ONLY — never cancel / clear OTA (separate path).
   worker = FindPrefetchWorker(states)
   if type(worker) = "roAssociativeArray" then
     if type(worker.xfer) = "roUrlTransfer" then
@@ -1659,13 +1929,10 @@ Sub HandleLedCacheClearAll(states as Object)
     end if
   end if
 
-  files = MatchFiles(CacheDir(), "*")
-  if type(files) = "roList" or type(files) = "roArray" then
-    for each name in files
-      DeleteFile(CacheDir() + "/" + name)
-    end for
-  end if
-  LedLog("=== Perform6: cache cleared (remote clear-all) ===")
+  ' Flat legacy cache + nested asset-pool tree. OTA package files on SD:/ untouched.
+  WipeMediaDirectory(CacheDir())
+  WipeMediaDirectory(MediaPoolDir())
+  LedLog("=== Perform6: media cache+pool cleared (OTA untouched) ===")
 End Sub
 
 Sub HandleLedCacheEvict(payload as Object, states as Object)
@@ -1739,16 +2006,39 @@ Sub HandleLedCacheCancel(payload as Object, msgPort as Object, states as Object)
 End Sub
 
 Function FindStateForUrlEvent(states as Object, ev as Object) as Object
-  ident = ev.GetSourceIdentity()
+  ud = ev.GetUserData()
+  if type(ud) = "roString" or type(ud) = "String" then
+    for each st in states
+      if type(st) = "roAssociativeArray" then
+        if st.key = ud then return st
+      end if
+    end for
+  end if
+  return invalid
+End Function
+
+Sub HandleDownloadProgressTick(states as Object)
   for each st in states
     if type(st) = "roAssociativeArray" then
       if type(st.xfer) = "roUrlTransfer" then
-        if st.xfer.GetIdentity() = ident then return st
+        path = st.xferTmp
+        if type(path) <> "roString" and type(path) <> "String" then path = ""
+        if Len(path) = 0 then path = st.xferDest
+        downloaded = PartFileBytes(path)
+        if st.key = "ota" then
+          MaybePostOtaProgress(states, st.xferPath, downloaded, st.xferExpected)
+        else
+          worker = FindPrefetchWorker(states)
+          url = st.xferUrl
+          name = st.xferName
+          mediaId = LookupUrlMediaId(worker, url)
+          expected = LookupUrlExpectedSize(worker, url)
+          MaybePostCacheProgress(states, "progress", url, name, mediaId, path, downloaded, expected)
+        end if
       end if
     end if
   end for
-  return invalid
-End Function
+End Sub
 
 Sub HandleCacheEvent(st as Object, ev as Object, msgPort as Object, states as Object)
   eventType = ev.GetInt()
@@ -1761,14 +2051,6 @@ Sub HandleCacheEvent(st as Object, ev as Object, msgPort as Object, states as Ob
   worker = FindPrefetchWorker(states)
   mediaId = LookupUrlMediaId(worker, url)
   expected = LookupUrlExpectedSize(worker, url)
-
-  if eventType = 0 then
-    downloaded = PartFileBytes(tmp)
-    progressPath = dest
-    if Len(st.xferTmp) > 0 then progressPath = st.xferTmp
-    MaybePostCacheProgress(states, "progress", url, name, mediaId, progressPath, downloaded, expected)
-    return
-  end if
 
   if eventType <> 1 then
     reason = ev.GetFailureReason()
@@ -1785,16 +2067,38 @@ Sub HandleCacheEvent(st as Object, ev as Object, msgPort as Object, states as Ob
   if type(reason) <> "roString" and type(reason) <> "String" then reason = ""
   st.xfer = invalid
   st.xferUrl = ""
+  actual = PartFileBytes(tmp)
+
+  if code = 416 and expected > 0 and actual = expected then
+    code = 200
+  end if
+
+  resumed = false
+  if st.xferResumed = true then resumed = true
+  st.xferResumed = false
+
+  if IsRangeIgnoredCorruption(resumed, code, actual, expected) then
+    LedLog("=== Perform6: cache Range ignored (file oversized) — retry fresh ===")
+    DeleteFile(tmp)
+    FinishCacheFailure(st, worker, url, name, mediaId, tmp, "range ignored — redeploy API Range", true, msgPort, states)
+    return
+  end if
 
   if code < 200 or code > 299 then
     errorText = CacheHttpErrorText(code, reason)
     LedLog("=== Perform6: LED " + st.key + " cache failed " + errorText + " ===")
-    if code = 416 then
-      DeleteFile(tmp)
-      if type(worker) = "roAssociativeArray" then ClearUrlRetryCount(worker, url)
-    end if
+    if code = 416 then DeleteFile(tmp)
     FinishCacheFailure(st, worker, url, name, mediaId, tmp, errorText, HttpFailureIsRetryable(code), msgPort, states)
     return
+  end if
+
+  if expected > 0 then
+    if actual <> expected then
+      LedLog("=== Perform6: cache size mismatch after download " + IntToStr(actual) + "/" + IntToStr(expected) + " ===")
+      DeleteFile(tmp)
+      FinishCacheFailure(st, worker, url, name, mediaId, tmp, "size mismatch", true, msgPort, states)
+      return
+    end if
   end if
 
   DeleteFile(dest)
@@ -1809,18 +2113,6 @@ Sub HandleCacheEvent(st as Object, ev as Object, msgPort as Object, states as Ob
     end if
     FinishCacheFailure(st, worker, url, name, mediaId, tmp, moveError, moveRetry, msgPort, states)
     return
-  end if
-
-  expected = LookupUrlExpectedSize(worker, url)
-  if expected > 0 then
-    actual = PartFileBytes(dest)
-    if actual <> expected then
-      LedLog("=== Perform6: cache size mismatch after download " + IntToStr(actual) + "/" + IntToStr(expected) + " ===")
-      DeleteFile(dest)
-      DeleteFile(tmp)
-      FinishCacheFailure(st, worker, url, name, mediaId, tmp, "size mismatch", true, msgPort, states)
-      return
-    end if
   end if
 
   LedLog("=== Perform6: LED " + st.key + " cached " + dest + " ===")
@@ -2008,22 +2300,58 @@ Sub PostLedReady(html as Object, msgType as String, role as String)
   html.PostJSMessage(ready)
 End Sub
 
+' Local DWS (docs): SetupDWS writes registry; BOS 9.1+ LDWS is off by default.
+' Password = player serial (digest auth, user "admin").
+' If SetupDWS returns true (reboot required), reboot once via marker — no loop.
 Sub EnableDiagnosticWebServer()
+  serial = ""
+  di = CreateObject("roDeviceInfo")
+  if type(di) = "roDeviceInfo" then serial = di.GetDeviceUniqueId()
+
   nc = CreateObject("roNetworkConfiguration", 0)
   if type(nc) <> "roNetworkConfiguration" then
     nc = CreateObject("roNetworkConfiguration", 1)
   end if
   if type(nc) <> "roNetworkConfiguration" then
+    LedLog("=== Perform6: DWS skipped — no network config ===")
     return
   end if
 
   dws = CreateObject("roAssociativeArray")
-  if type(dws) <> "roAssociativeArray" then
-    return
+  if type(dws) <> "roAssociativeArray" then return
+  dws.port = "default"
+  if Len(serial) > 0 then dws.open = serial
+
+  needsReboot = nc.SetupDWS(dws)
+  reason = nc.GetFailureReason()
+  if type(reason) <> "roString" and type(reason) <> "String" then reason = ""
+
+  reg = CreateObject("roRegistrySection", "networking")
+  if type(reg) = "roRegistrySection" then
+    reg.Write("dwse", "on")
+    reg.Write("http_server", "80")
+    reg.Flush()
   end if
-  dws.port = "80"
-  nc.SetupDWS(dws)
-  SafePrint("=== Perform6: DWS configured (no Apply) ===")
+
+  if Len(reason) > 0 then
+    LedLog("=== Perform6: DWS SetupDWS note " + reason + " ===")
+  end if
+
+  alreadyRebooted = FileExistsIn("SD:/", "perform6-dws-rebooted")
+  if needsReboot = true and alreadyRebooted = false then
+    WriteAsciiFile("SD:/perform6-dws-rebooted", "1")
+    LedLog("=== Perform6: DWS enabled — one-shot reboot for LDWS ===")
+    RebootDeviceAfterOta()
+    while true
+      Sleep(10000)
+    end while
+  end if
+
+  if needsReboot = true then
+    LedLog("=== Perform6: DWS configured (reboot already done) password=serial ===")
+  else
+    LedLog("=== Perform6: DWS enabled password=serial (admin) ===")
+  end if
 End Sub
 
 Function CollectDeviceIdentity() as Object
@@ -2032,6 +2360,7 @@ Function CollectDeviceIdentity() as Object
   info.model = ""
   info.fw = ""
   info.mac = ""
+  info.ip = ""
 
   di = CreateObject("roDeviceInfo")
   if type(di) = "roDeviceInfo" then
@@ -2052,9 +2381,14 @@ Function CollectDeviceIdentity() as Object
         else if type(cfg.mac_address) = "roString" and Len(cfg.mac_address) > 0 then
           info.mac = cfg.mac_address
         end if
+        if Len(info.ip) = 0 then
+          if type(cfg.ip4_address) = "roString" and Len(cfg.ip4_address) > 0 then
+            info.ip = cfg.ip4_address
+          end if
+        end if
       end if
     end if
-    if Len(info.mac) > 0 then
+    if Len(info.mac) > 0 and Len(info.ip) > 0 then
       exit while
     end if
     iface = iface + 1
@@ -2062,6 +2396,11 @@ Function CollectDeviceIdentity() as Object
 
   if Len(info.mac) > 0 then
     SafePrint("=== Perform6: mac=" + info.mac + " ===")
+  end if
+  if Len(info.ip) > 0 then
+    LedLog("=== Perform6: lan ip=" + info.ip + " ===")
+  else
+    LedLog("=== Perform6: lan ip unavailable at boot ===")
   end if
 
   return info
@@ -2102,6 +2441,10 @@ Function BuildAppUrl(basePath as String, identity as Object, profile as String, 
   if Len(identity.mac) > 0 then
     if Len(q) > 0 then q = q + "&"
     q = q + "bs_mac=" + UrlSafeToken(identity.mac)
+  end if
+  if Len(identity.ip) > 0 then
+    if Len(q) > 0 then q = q + "&"
+    q = q + "bs_ip=" + UrlSafeToken(identity.ip)
   end if
   if Len(profile) > 0 then
     if Len(q) > 0 then q = q + "&"
@@ -2301,6 +2644,7 @@ Sub LogDisplayIdentity(vm as Object, hdmiName as String)
   edid = vm.GetEdidIdentity(hdmiName)
   if type(edid) <> "roAssociativeArray" then
     SafePrint("=== Perform6: " + hdmiName + " EDID unavailable ===")
+    LedLog("=== Perform6: " + hdmiName + " EDID unavailable ===")
     return
   end if
 
@@ -2309,7 +2653,76 @@ Sub LogDisplayIdentity(vm as Object, hdmiName as String)
   if type(edid.manufacturer) = "roString" then manufacturer = edid.manufacturer
   if type(edid.monitor_name) = "roString" then monitorName = edid.monitor_name
   SafePrint("=== Perform6: " + hdmiName + " EDID " + manufacturer + " / " + monitorName + " ===")
+  LedLog("=== Perform6: " + hdmiName + " EDID " + manufacturer + " / " + monitorName + " ===")
 End Sub
+
+' Phase 4: prove whether hard-locked 60p was accepted by the real LED panel.
+Sub LogActiveDisplayModes(vm as Object, profile as String)
+  if type(vm) <> "roVideoMode" then return
+
+  active = vm.GetActiveMode()
+  if type(active) = "roAssociativeArray" then
+    modeText = ""
+    if type(active.videomode) = "roString" then modeText = active.videomode
+    colorText = ""
+    if type(active.colorspace) = "roString" then colorText = active.colorspace
+    depthText = ""
+    if type(active.colordepth) = "roString" then depthText = active.colordepth
+    LedLog("=== Perform6: GetActiveMode " + modeText + " " + colorText + " " + depthText + " ===")
+  else
+    LedLog("=== Perform6: GetActiveMode unavailable ===")
+  end if
+
+  fps = vm.GetFPS()
+  if type(fps) = "roInteger" or type(fps) = "Integer" then
+    LedLog("=== Perform6: GetFPS " + IntToStr(fps) + " ===")
+  end if
+
+  ' GetBestMode docs list "hdmi"/"vga"; multi-output also accepts HDMI-N names.
+  connectors = CreateObject("roArray", 4, true)
+  if profile = "XT2145" then
+    connectors.Push("HDMI-1")
+    connectors.Push("HDMI-2")
+  else if profile = "XC4055" then
+    connectors.Push("HDMI-1")
+    connectors.Push("HDMI-2")
+    connectors.Push("HDMI-3")
+  else
+    connectors.Push("hdmi")
+  end if
+
+  i = 0
+  while i < connectors.Count()
+    name = connectors[i]
+    best = vm.GetBestMode(name)
+    if type(best) <> "roString" and type(best) <> "String" then best = ""
+    if Len(best) = 0 and Left(UCase(name), 4) = "HDMI" then
+      ' Docs classic connector is "hdmi"; multi-output uses HDMI-N names.
+      fallback = vm.GetBestMode("hdmi")
+      if type(fallback) = "roString" or type(fallback) = "String" then
+        if Len(fallback) > 0 then
+          best = fallback
+          LedLog("=== Perform6: GetBestMode " + name + " blank — used hdmi=" + best + " ===")
+        end if
+      end if
+    end if
+    if Len(best) = 0 then best = "(blank/no EDID)"
+    LedLog("=== Perform6: GetBestMode " + name + "=" + best + " ===")
+    LogDisplayIdentity(vm, name)
+    i = i + 1
+  end while
+End Sub
+
+Function VideoEventName(code as Integer) as String
+  if code = 3 then return "Playing"
+  if code = 4 then return "Stopped"
+  if code = 5 then return "Paused"
+  if code = 6 then return "Resumed"
+  if code = 8 then return "MediaEnded"
+  if code = 14 then return "Underrun"
+  if code = 16 then return "Error"
+  return "code=" + IntToStr(code)
+End Function
 
 Function VideoModeMatches(actualMode as Dynamic, expectedMode as String) as Boolean
   if type(actualMode) <> "roString" and type(actualMode) <> "String" then
@@ -2540,6 +2953,7 @@ Sub Main()
         Sleep(10000)
       end while
     end if
+    LogActiveDisplayModes(vm, profile)
   end if
 
   ' Must be configured before any HTML/video player allocates an audio decoder.
@@ -2700,14 +3114,29 @@ Sub Main()
     ProcessOpsOnBoot(ledStates)
   end if
 
+  ' Running from SD — tell JS so Admin starts as Present until a detach event.
+  PostStorageHotplug(ledStates, true, "SD:")
+
   ' DWS already enabled early (before SetScreenModes) for field recovery.
+
+  progressTimer = CreateObject("roTimer")
+  if type(progressTimer) = "roTimer" then
+    progressTimer.SetPort(msgPort)
+    progressTimer.SetElapsed(15, 0)
+    progressTimer.Start()
+  end if
 
   while true
     ev = wait(100, msgPort)
     FlushDeferredCacheComplete(ledStates)
+    MaybeFlushLedLog()
     if type(ev) = "roVideoEvent" then
+      videoCode = ev.GetInt()
+      if videoCode <> 8 then
+        LedLog("=== Perform6: roVideoEvent " + VideoEventName(videoCode) + " ===")
+      end if
       ' 8 = MediaEnded - notify touch UI for non-looping XT playback.
-      if ev.GetInt() = 8 and profile = "XT2145" and type(htmlTouch) = "roHtmlWidget" then
+      if videoCode = 8 and profile = "XT2145" and type(htmlTouch) = "roHtmlWidget" then
         skipEnded = false
         if type(ledState) = "roAssociativeArray" and ledState.ignoreEnded = true then
           withinWindow = true
@@ -2729,6 +3158,12 @@ Sub Main()
           htmlTouch.PostJSMessage(ended)
           LedLog("=== Perform6: native LED media ended ===")
         end if
+      end if
+    else if type(ev) = "roTimerEvent" then
+      HandleDownloadProgressTick(ledStates)
+      if type(progressTimer) = "roTimer" then
+        progressTimer.SetElapsed(15, 0)
+        progressTimer.Start()
       end if
     else if type(ev) = "roUrlEvent" then
       cacheState = FindStateForUrlEvent(ledStates, ev)
@@ -2836,8 +3271,10 @@ Sub Main()
           SafePrint("=== Perform6: HTML load-finished ===")
         end if
       end if
+    else if type(ev) = "roStorageAttached" then
+      HandleStorageHotplug(ev, ledStates, true)
     else if type(ev) = "roStorageDetached" then
-      HandleStorageDetached(ev)
+      HandleStorageHotplug(ev, ledStates, false)
     end if
   end while
 End Sub

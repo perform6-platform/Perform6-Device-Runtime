@@ -5,7 +5,9 @@ import {
   listSdCachedMediaVersionIds,
   requestSdCacheClearAll,
 } from './sdCacheBridge';
+import { cancelMediaDownloads } from './mediaDownloadGate';
 import { clearCachedMediaVersionIds } from './manifest';
+import { clearPlaybackManifestCache } from './playbackManifestCache';
 import {
   cancelOtaInstall,
   clearOtaFailCooldown,
@@ -19,6 +21,7 @@ import {
   type SdFsResult,
 } from './sdFsBridge';
 import { reportSdFsResultSafe } from './sdFsResultApi';
+import { flushDeviceLogs } from './deviceLogsApi';
 
 const REBOOT_MESSAGE = 'led-ota-reboot';
 
@@ -27,6 +30,10 @@ export interface RemoteSyncNowOptions {
   skipOta?: boolean;
   /** Allow starting even if another sync/download looks busy (remote recovery). */
   interrupt?: boolean;
+  /** When interrupt: cancel OTA (default true). Set false for media-only recovery. */
+  cancelOta?: boolean;
+  /** When interrupt: cancel media downloads (default true). */
+  cancelMedia?: boolean;
 }
 
 let runSyncNowHook: ((options?: RemoteSyncNowOptions) => Promise<void>) | null =
@@ -52,12 +59,14 @@ export function requestDeviceReboot(): boolean {
 }
 
 export async function clearSdCacheRemotely(): Promise<void> {
-  cancelOtaInstall();
+  // Media only — do not cancel OTA (separate path).
   const mediaVersionIds = listSdCachedMediaVersionIds();
+  cancelMediaDownloads();
   requestSdCacheClearAll();
   clearAllSdCachedMarks();
   clearCachedMediaVersionIds();
-  console.info('[Perform6] Remote SD cache clear requested', {
+  clearPlaybackManifestCache();
+  console.info('[Perform6] Remote SD media cache clear requested', {
     trackedFiles: mediaVersionIds.length,
   });
 }
@@ -122,9 +131,7 @@ export async function executeSystemRemoteCommand(
       return true;
     case 'SYNC_NOW':
       if (runSyncNowHook) {
-        cancelOtaInstall();
-        // Plain Sync Now must NOT clear OTA fail cooldown — that lets media recover.
-        // Only ota-retry passes forceOta to unlock OTA again.
+        // Only cancel OTA when unlocking a stuck wave (forceOta / ota-retry).
         if (command.forceOta) {
           clearOtaFailCooldown();
         }
@@ -132,6 +139,8 @@ export async function executeSystemRemoteCommand(
           force: true,
           skipOta: command.skipOta === true,
           interrupt: true,
+          cancelOta: command.forceOta === true,
+          cancelMedia: true,
         });
       } else {
         console.warn('[Perform6] SYNC_NOW ignored — sync hook not registered');
@@ -140,12 +149,13 @@ export async function executeSystemRemoteCommand(
     case 'CLEAR_SD_CACHE':
       await clearSdCacheRemotely();
       if (runSyncNowHook) {
-        cancelOtaInstall();
-        // Prefer media refill after cache clear; OTA retry stays on ota-retry / cooldown end.
+        // Media refill only — leave OTA alone.
         void runSyncNowHook({
           force: true,
           skipOta: true,
           interrupt: true,
+          cancelOta: false,
+          cancelMedia: true,
         });
       }
       return true;
@@ -155,6 +165,20 @@ export async function executeSystemRemoteCommand(
     case 'SD_DELETE':
       await runSdFsCommand(command);
       return true;
+    case 'UPLOAD_LOGS': {
+      const auth = getCredentials();
+      if (!auth) {
+        console.warn('[Perform6] UPLOAD_LOGS skipped — no credentials');
+        return true;
+      }
+      try {
+        const n = await flushDeviceLogs(auth);
+        console.info('[Perform6] UPLOAD_LOGS flushed', { entries: n });
+      } catch (error) {
+        console.warn('[Perform6] UPLOAD_LOGS failed', error);
+      }
+      return true;
+    }
     default:
       return false;
   }

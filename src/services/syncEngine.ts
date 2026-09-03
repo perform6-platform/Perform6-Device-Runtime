@@ -8,7 +8,7 @@ import {
 } from './manifest';
 import { downloadMediaBatchToSd, evictCachedMedia } from './media';
 import { checkOtaUpdate } from './ota';
-import { applyOtaUpdate, cancelOtaInstall, getLastOtaFailReason, shouldSkipOtaAfterRecentFail } from './otaApply';
+import { applyOtaUpdate, getLastOtaFailReason, shouldSkipOtaAfterRecentFail } from './otaApply';
 import { flushDeviceLogs } from './deviceLogsApi';
 import {
   clearSdCached,
@@ -46,6 +46,8 @@ export interface SyncEngineOptions {
   forceMediaSync?: boolean;
   /** Skip OTA apply (remote SYNC_NOW / after recent OTA failure). */
   skipOta?: boolean;
+  /** Skip media downloads (OTA-only pass while media pipeline is busy). */
+  skipMedia?: boolean;
 }
 
 function p0MediaVersionIds(
@@ -88,7 +90,9 @@ export async function runSyncEngine(
 ): Promise<SyncEngineResult> {
   const startMs = Date.now();
   let completeReportFailures = 0;
-  const mediaSyncAllowed = !isMediaSyncPaused() || options?.forceMediaSync === true;
+  const mediaSyncAllowed =
+    options?.skipMedia !== true &&
+    (!isMediaSyncPaused() || options?.forceMediaSync === true);
 
   try {
     const claimedIds = [
@@ -128,14 +132,12 @@ export async function runSyncEngine(
       const reason = options?.skipOta
         ? 'skipOta requested'
         : `recent OTA fail cooldown (${getLastOtaFailReason() || 'unknown'})`;
-      console.info(`[Perform6] OTA skipped before media — ${reason}`);
-      // Ensure any leftover OTA transfer cannot starve media.
-      cancelOtaInstall();
+      console.info(`[Perform6] OTA skipped — ${reason} (media pipeline independent)`);
     } else if (
       !isOtaPaused() &&
       (syncData.runtime?.updateAvailable || ota.updateAvailable)
     ) {
-      console.info('[Perform6] OTA update available — applying before media downloads');
+      console.info('[Perform6] OTA update available — applying (media path not cancelled)');
       try {
         await flushDeviceLogs(auth);
       } catch {
@@ -155,19 +157,36 @@ export async function runSyncEngine(
       if (applied.error) {
         otaError = applied.error;
         console.warn(
-          '[Perform6] OTA failed — isolating media sync (cancel OTA, then videos)',
+          '[Perform6] OTA failed — media continues on separate path',
           applied.error,
         );
       }
-      // Always cancel before media so OTA HTTP cannot compete with cache downloads.
-      cancelOtaInstall();
-      await new Promise<void>((resolve) => window.setTimeout(resolve, 1000));
-    } else {
-      cancelOtaInstall();
     }
 
     if (otaError) {
       console.info('[Perform6] Proceeding with media download after OTA failure');
+    }
+
+    if (!mediaSyncAllowed) {
+      console.info(
+        options?.skipMedia
+          ? '[Perform6] Media download skipped — media pipeline busy or skipMedia'
+          : '[Perform6] Media download skipped — pauseMediaSync in perform6-ops.json',
+      );
+      try {
+        await flushDeviceLogs(auth);
+      } catch {
+        /* best-effort */
+      }
+      return {
+        success: true,
+        manifest,
+        syncData,
+        ota,
+        otaApplied,
+        otaError,
+        completeReportFailures,
+      };
     }
 
     const onAirIds = p0MediaVersionIds(manifest, profile);
@@ -193,8 +212,8 @@ export async function runSyncEngine(
     const progressLastSentMs = new Map<string, number>();
     const PROGRESS_REPORT_INTERVAL_MS = 3000;
 
-    if (mediaItems.length > 0 && mediaSyncAllowed) {
-      // One SD keep-set + download pass. Already-cached files report status=skip.
+    if (mediaItems.length > 0) {
+      // Asset pool (preferred) or autorun perform6-cache — never OTA worker.
       const batch = await downloadMediaBatchToSd(
         mediaItems,
         async (progress) => {
@@ -263,20 +282,18 @@ export async function runSyncEngine(
               durationMs: Date.now() - downloadStart,
               errorMessage:
                 failureReasons[item.mediaVersionId] ??
-                'SD:/perform6-cache download failed',
+                'Media download failed (asset pool / SD cache)',
             });
           } catch {
             completeReportFailures += 1;
           }
         }
       }
-    } else if (mediaItems.length > 0 && !mediaSyncAllowed) {
-      console.info('[Perform6] Media download skipped — pauseMediaSync in perform6-ops.json');
     }
 
-    const expectedDownloads = mediaSyncAllowed ? mediaItems.length : 0;
+    const expectedDownloads = mediaItems.length;
     const cachedCount = mediaItems.filter((item) =>
-      downloaded.includes(item.mediaVersionId),
+      downloaded.includes(item.mediaVersionId) || succeeded.includes(item.mediaVersionId),
     ).length;
     const failedCount = mediaItems.filter((item) =>
       failed.includes(item.mediaVersionId),

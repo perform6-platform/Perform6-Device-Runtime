@@ -17,6 +17,8 @@ const CANCEL_MESSAGE = 'led-cache-cancel';
 const PROGRESS_TYPE = 'led-cache-progress';
 const READY_KEY = 'perform6-sd-cache-ready';
 const CONFIRMED_KEY = 'perform6-sd-cache-confirmed';
+/** mediaVersionId → SD:/perform6-media-pool/… path from AssetPoolFiles.getPath */
+const MEDIA_POOL_PATHS_KEY = 'perform6-media-pool-paths';
 
 /** Normalize URLs so autorun progress events match pending map keys. */
 function normalizeCacheUrl(url: string): string {
@@ -36,9 +38,11 @@ export const KEEP_CHUNK_SIZE = 12;
 
 const MAX_DOWNLOAD_RETRIES = 3;
 const RETRY_DELAYS_MS = [5_000, 15_000, 30_000];
-/** Zero byte growth this long → cancel transfer then retry (not silent skip). */
-const DOWNLOAD_STALL_MS = 120_000;
-const MIN_FILE_TIMEOUT_MS = 5 * 60_000;
+/** Bytes not growing this long → cancel then retry.
+ *  Autorun averages SetMinimumTransferRate over 15 minutes (BrightSign docs).
+ *  This watchdog must outlast that window so autorun reports the real CURL error first. */
+const DOWNLOAD_STALL_MS = 20 * 60_000;
+const MIN_FILE_TIMEOUT_MS = 20 * 60_000;
 const MAX_FILE_TIMEOUT_MS = 45 * 60_000;
 /** Assumed floor throughput for hard timeout (~50 KB/s). */
 const TIMEOUT_BYTES_PER_SEC = 50_000;
@@ -92,6 +96,15 @@ function dispatchProgress(event: SdCacheProgressEvent): void {
   for (const listener of listeners) listener(event);
 }
 
+/** Used by media asset pool to notify LED bridges of download completion. */
+export function emitSdCacheProgress(event: Omit<SdCacheProgressEvent, 'type'> & { type?: string }): void {
+  dispatchProgress({
+    ...event,
+    type: PROGRESS_TYPE,
+    status: event.status,
+  });
+}
+
 function ensureProgressBridge(): BrightSignMessagePort | null {
   const port = getSharedMessagePort();
   if (!port || progressBridgeInstalled) return port;
@@ -133,6 +146,49 @@ export function clearSdCached(mediaVersionIds: string[]): void {
   for (const id of mediaVersionIds) delete map[id];
   writeReadyMap(map);
   clearSdDownloadConfirmed(mediaVersionIds);
+  clearMediaPoolPathMarks(mediaVersionIds);
+}
+
+function readMediaPoolPathMap(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(MEDIA_POOL_PATHS_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeMediaPoolPathMap(map: Record<string, string>): void {
+  localStorage.setItem(MEDIA_POOL_PATHS_KEY, JSON.stringify(map));
+}
+
+export function markMediaPoolPath(mediaVersionId: string, sdPath: string): void {
+  const map = readMediaPoolPathMap();
+  map[mediaVersionId] = sdPath;
+  writeMediaPoolPathMap(map);
+}
+
+export function getMediaPoolPath(mediaVersionId: string): string | null {
+  const path = readMediaPoolPathMap()[mediaVersionId];
+  return path && path.length > 0 ? path : null;
+}
+
+export function clearMediaPoolPathMarks(mediaVersionIds?: string[]): void {
+  if (!mediaVersionIds || mediaVersionIds.length === 0) {
+    localStorage.removeItem(MEDIA_POOL_PATHS_KEY);
+    return;
+  }
+  const map = readMediaPoolPathMap();
+  for (const id of mediaVersionIds) delete map[id];
+  writeMediaPoolPathMap(map);
+}
+
+function poolPathToFileUrl(sdPath: string): string {
+  if (sdPath.startsWith('file://')) return sdPath;
+  if (sdPath.startsWith('SD:/') || sdPath.startsWith('sd:/')) {
+    return `file:///${sdPath.replace(/^sd:/i, 'SD:')}`;
+  }
+  return sdPath;
 }
 
 function readConfirmedSet(): Set<string> {
@@ -170,6 +226,7 @@ export function getConfirmedCachedMediaVersionIds(): string[] {
 export function clearAllSdCachedMarks(): void {
   localStorage.removeItem(READY_KEY);
   localStorage.removeItem(CONFIRMED_KEY);
+  clearMediaPoolPathMarks();
 }
 
 export function getSdCachedUrl(mediaVersionId: string): string | null {
@@ -649,6 +706,8 @@ async function downloadMediaChunkToSd(
       console.warn('[Perform6] SD cache download stalled — cancelling for retry', {
         pending: pending.size,
         stallMs: DOWNLOAD_STALL_MS,
+        lastProgressBytes,
+        urls: pendingUrls,
       });
       requestSdCacheCancel(pendingUrls);
       failPendingItems(
@@ -698,7 +757,10 @@ async function downloadMediaChunkToSd(
               ? Number(item.fileSize)
               : null;
         const cachePath = event.destPath ?? sdCachePathForItem(item);
-        touchProgress(fileBytes);
+        // Begin the watchdog only once BrightSign has acknowledged the
+        // transfer. A queued request may wait briefly before it actually starts.
+        lastProgressAt = Date.now();
+        lastProgressBytes = fileBytes;
         updateDownloadUiFromBatch(batchItems, succeededSoFar, item, {
           manifest: options?.manifest ?? null,
           fileBytesDownloaded: fileBytes,
@@ -1048,12 +1110,15 @@ export async function downloadMediaItemsToSd(
 
 /**
  * Local playback URL only when we have confirmed the file on SD.
+ * Prefers BrightSign media asset-pool path; falls back to perform6-cache.
  * Returns null while downloading — callers must not fall back to HTTPS on device.
  */
 export function resolveSdPlaybackUrl(
   mediaVersionId: string,
   _fallbackFileUrl?: string | null,
 ): string | null {
+  const poolPath = getMediaPoolPath(mediaVersionId);
+  if (poolPath) return poolPathToFileUrl(poolPath);
   const cachedUrl = getSdCachedUrl(mediaVersionId);
   if (cachedUrl) return sdCacheFileUrl(cachedUrl);
   return null;

@@ -81,6 +81,7 @@ export function readAutorunIdentityFromUrl(): {
   model?: string;
   firmwareVersion?: string;
   macAddress?: string;
+  ipAddress?: string;
 } {
   if (typeof window === 'undefined') return {};
 
@@ -99,17 +100,19 @@ export function readAutorunIdentityFromUrl(): {
     const firmwareVersion = get('bs_fw') || undefined;
     const macRaw = get('bs_mac');
     const macAddress = macRaw ? formatMacAddress(macRaw) : undefined;
+    const ipAddress = get('bs_ip') || undefined;
 
-    if (serialNumber || model || firmwareVersion || macAddress) {
+    if (serialNumber || model || firmwareVersion || macAddress || ipAddress) {
       console.info('[Perform6] Identity from autorun URL', {
         serialNumber,
         model,
         firmwareVersion,
         macAddress,
+        ipAddress,
       });
     }
 
-    return { serialNumber, model, firmwareVersion, macAddress };
+    return { serialNumber, model, firmwareVersion, macAddress, ipAddress };
   } catch (e) {
     console.warn('[Perform6] Failed to parse autorun identity URL', e);
     return {};
@@ -287,7 +290,7 @@ export function readBrightSignDeviceInfo(
     deviceName: overrides.deviceName ?? `Perform6 ${model}`,
     firmwareVersion,
     macAddress,
-    ipAddress: overrides.ipAddress || '',
+    ipAddress: overrides.ipAddress || fromUrl.ipAddress || '',
     hardwareProfile,
     deploymentType,
     clusterMember,

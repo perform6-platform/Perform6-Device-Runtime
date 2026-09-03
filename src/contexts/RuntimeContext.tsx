@@ -24,13 +24,24 @@ import {
   clearCachedMediaVersionIds,
   applyOtaUpdate,
 } from '../services';
-import { clearAllSdCachedMarks, isSdBulkDownloadInProgress } from '../services/sdCacheBridge';
+import { clearAllSdCachedMarks } from '../services/sdCacheBridge';
+import { cancelMediaDownloads, isMediaDownloadInProgress } from '../services/mediaDownloadGate';
 import { sendPlaybackTelemetry } from '../services/playbackTelemetryApi';
 import { flushDeviceLogs } from '../services/deviceLogsApi';
 import { registerDeviceRemoteControlHooks } from '../services/deviceRemoteControl';
 import type { RemoteSyncNowOptions } from '../services/deviceRemoteControl';
 import { cancelOtaInstall } from '../services/otaApply';
 import { processRemoteCommands } from '../services/remoteCommandBridge';
+import { probeBrightSignAssetPool } from '../services/assetPoolProbe';
+import {
+  getSdStoragePresence,
+  initSdStoragePresence,
+  subscribeSdStoragePresence,
+} from '../services/sdStoragePresence';
+import {
+  loadPlaybackManifestCache,
+  savePlaybackManifestCache,
+} from '../services/playbackManifestCache';
 import {
   consumeSyncOnBoot,
   isMediaSyncPaused,
@@ -105,7 +116,9 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   const activeDeviceInfo = useRef<DeviceInfo | null>(null);
 
   const credentialFetchStarted = useRef(false);
-  const syncRunningRef = useRef(false);
+  /** Separate locks — media asset pool must not block OTA and vice versa. */
+  const mediaSyncRunningRef = useRef(false);
+  const otaSyncRunningRef = useRef(false);
   const [hdPairingHistory, setHdPairingHistory] = useState<HdPairingSessionEntry[]>(() =>
     loadHdPairingSession().entries,
   );
@@ -159,6 +172,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     const force = options.force === true;
     const skipOta = options.skipOta === true;
     const interrupt = options.interrupt === true;
+    const cancelOtaOnInterrupt = options.cancelOta !== false;
+    const cancelMediaOnInterrupt = options.cancelMedia !== false;
 
     const auth = getCredentials();
     const info = activeDeviceInfo.current ?? deviceInfo;
@@ -207,28 +222,52 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     }
 
     if (interrupt) {
-      cancelOtaInstall();
+      if (cancelOtaOnInterrupt) cancelOtaInstall();
+      if (cancelMediaOnInterrupt) cancelMediaDownloads();
     }
 
-    if (!interrupt && (syncRunningRef.current || isSdBulkDownloadInProgress())) {
+    const mediaBusy =
+      mediaSyncRunningRef.current || (!interrupt && isMediaDownloadInProgress());
+    const otaBusy = otaSyncRunningRef.current;
+    const wantMedia = force || !isMediaSyncPaused();
+    const wantOta = !skipOta && !isOtaPaused();
+
+    // If media pipeline is busy, still allow an OTA-only pass (and reverse).
+    if (mediaBusy && otaBusy && !interrupt) {
       pushDebugLog({
         category: 'sync',
-        message: 'Sync skipped — download or sync already in progress',
+        message: 'Sync skipped — media and OTA both already in progress',
       });
       return;
     }
 
-    if (interrupt && syncRunningRef.current) {
+    if (mediaBusy && !wantOta && !interrupt) {
       pushDebugLog({
         category: 'sync',
-        message: 'Remote sync — cancelled stuck OTA; in-flight sync continues with media',
+        message: 'Sync skipped — media download already in progress',
       });
       return;
     }
 
-    syncRunningRef.current = true;
+    if (otaBusy && !wantMedia && !interrupt) {
+      pushDebugLog({
+        category: 'sync',
+        message: 'Sync skipped — OTA already in progress',
+      });
+      return;
+    }
+
+    const runMedia = wantMedia && (!mediaBusy || interrupt);
+    const runOta = wantOta && (!otaBusy || interrupt);
+
+    if (runMedia) mediaSyncRunningRef.current = true;
+    if (runOta) otaSyncRunningRef.current = true;
     setSyncState({ inProgress: true, error: null, runtimePhase: 'syncing' });
-    pushDebugLog({ category: 'sync', message: 'POST /sync/check started' });
+    pushDebugLog({
+      category: 'sync',
+      message: 'POST /sync/check started',
+      data: { runMedia, runOta },
+    });
 
     try {
       const result = await runSyncEngine(
@@ -247,16 +286,24 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         info.hardwareProfile,
         {
           onManifest: (earlyManifest) => {
-            if (earlyManifest) setPlaybackManifest(earlyManifest);
+            if (earlyManifest) {
+              setPlaybackManifest(earlyManifest);
+              savePlaybackManifestCache(earlyManifest);
+            }
           },
         },
-        { forceMediaSync: force, skipOta },
+        {
+          forceMediaSync: force,
+          skipOta: !runOta || skipOta,
+          skipMedia: !runMedia,
+        },
       );
 
       if (result.success) {
-        // Media already landed in SD:/perform6-cache inside runSyncEngine.
+        // Media landed in asset pool (or legacy perform6-cache) inside runSyncEngine.
         if (result.manifest) {
           setPlaybackManifest(result.manifest);
+          savePlaybackManifestCache(result.manifest);
           setSyncState({
             lastCheckAt: new Date().toISOString(),
             lastSyncAt: new Date().toISOString(),
@@ -325,7 +372,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       setConnectionStatus('offline');
       pushDebugLog({ category: 'sync', message: result.error ?? 'Sync failed' });
     } finally {
-      syncRunningRef.current = false;
+      if (runMedia) mediaSyncRunningRef.current = false;
+      if (runOta) otaSyncRunningRef.current = false;
     }
   }, [
     applyMockManifest,
@@ -891,6 +939,19 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isDeviceReady() || !deviceInfo) return;
+    const cached = loadPlaybackManifestCache();
+    if (cached) {
+      setPlaybackManifest(cached);
+      pushDebugLog({
+        category: 'playback',
+        message: 'Restored offline playback manifest from cache',
+        data: { screens: cached.screens.length },
+      });
+    }
+  }, [deviceInfo, hasCredentials, pushDebugLog, setPlaybackManifest]);
+
+  useEffect(() => {
+    if (!isDeviceReady() || !deviceInfo) return;
     void runSyncNow();
     const id = window.setInterval(() => void runSyncNow(), runtimeConfig.syncIntervalMs);
     return () => window.clearInterval(id);
@@ -921,18 +982,32 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       const auth = getCredentials();
       if (!auth) return;
       const isBoot = bootHeartbeatPending;
+      const assetPool = probeBrightSignAssetPool();
+      const sd = getSdStoragePresence();
       const payload = {
         firmwareVersion: deviceInfo?.firmwareVersion,
-        ...(isBoot
-          ? {
-              metadata: {
+        metadata: {
+          ...(isBoot
+            ? {
                 bootEvent: true,
                 bootAt: new Date().toISOString(),
                 hardwareProfile: profile,
                 runtimeVersion: version,
-              },
-            }
-          : {}),
+                assetPool,
+              }
+            : {}),
+          ...(deviceInfo?.ipAddress
+            ? { ipAddress: deviceInfo.ipAddress, lanIpAddress: deviceInfo.ipAddress }
+            : {}),
+          ...(sd.sdPresent != null
+            ? {
+                sdPresent: sd.sdPresent,
+                sdEvent: sd.sdEvent,
+                sdEventAt: sd.sdEventAt,
+                sdMount: sd.sdMount,
+              }
+            : {}),
+        },
       };
       void sendDeviceHeartbeat(auth, payload)
         .then((result) => {
@@ -954,8 +1029,14 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     };
 
     tick();
+    const unsubSd = subscribeSdStoragePresence(() => {
+      tick();
+    });
     const id = window.setInterval(tick, runtimeConfig.heartbeatIntervalMs);
-    return () => window.clearInterval(id);
+    return () => {
+      window.clearInterval(id);
+      unsubSd();
+    };
   }, [deviceInfo, hasCredentials, pushDebugLog, setHeartbeat]);
 
   // Lightweight playhead flush for admin live preview (~8s; avoids heartbeat_logs bloat).

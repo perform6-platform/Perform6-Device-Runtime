@@ -6,6 +6,11 @@ import { apiFetchData } from './api';
 import { flushDeviceLogs } from './deviceLogsApi';
 import { reportOtaStatusSafe } from './otaStatusApi';
 import { compareRuntimeVersions } from './runtimeVersion';
+import {
+  cancelOtaAssetPoolFetch,
+  installOtaViaAssetPool,
+  isOtaAssetPoolAvailable,
+} from './otaAssetPool';
 
 const OTA_INSTALL_MESSAGE = 'led-ota-install';
 const OTA_AUTH_MESSAGE = 'led-ota-auth';
@@ -47,6 +52,7 @@ export function cancelOtaInstall(): boolean {
     port.PostBSMessage({ type: OTA_CANCEL_MESSAGE });
     console.info('[Perform6] OTA cancel sent to autorun');
   }
+  void cancelOtaAssetPoolFetch();
   for (const handler of [...otaAbortHandlers]) {
     try {
       handler();
@@ -61,6 +67,7 @@ export function cancelOtaInstall(): boolean {
 export interface OtaManifestFile {
   path: string;
   sizeBytes: number;
+  sha256?: string;
   url?: string;
 }
 
@@ -91,10 +98,6 @@ export interface OtaProgressEvent {
 /** Always download OTA files via authenticated API proxy (not direct R2 CDN). */
 function resolveOtaFileUrl(file: OtaManifestFile): string {
   return `${runtimeConfig.apiBaseUrl}/devices/me/ota-file?path=${encodeURIComponent(file.path)}`;
-}
-
-function needsDeviceAuth(_url: string): boolean {
-  return true;
 }
 
 function formatBytes(n: number | undefined): string {
@@ -180,12 +183,17 @@ function waitForOtaComplete(
       path?: string,
       bytesDownloaded?: number,
     ) => {
-      lastActivityMs = Date.now();
-      if (doneCount != null) lastDoneCount = doneCount;
+      let progressed = false;
+      if (doneCount != null && doneCount > lastDoneCount) {
+        lastDoneCount = doneCount;
+        progressed = true;
+      }
       if (path) lastPath = path;
       if (bytesDownloaded != null && bytesDownloaded >= 0) {
+        if (bytesDownloaded > lastBytesDownloaded) progressed = true;
         lastBytesDownloaded = bytesDownloaded;
       }
+      if (progressed) lastActivityMs = Date.now();
     };
 
     const flushLogsThrottled = async (force = false) => {
@@ -250,6 +258,9 @@ function waitForOtaComplete(
       });
 
       markActivity(doneCount, path, bytesDownloaded);
+      if (status === 'start' || status === 'done') {
+        lastActivityMs = Date.now();
+      }
 
       if (status === 'start' || status === 'done' || status === 'progress') {
         if (!reportedStart && status === 'start') reportedStart = true;
@@ -338,8 +349,8 @@ function waitForOtaComplete(
       finish({ ok: false, error });
     }, 90_000);
 
-    /** Fail fast when stuck on one file (e.g. 0/16 network hang on legacy autorun). */
-    const STALL_MS = 3 * 60_000;
+    /** Autorun averages min transfer rate over 15 minutes — outlast that window. */
+    const STALL_MS = 20 * 60_000;
     const stallWatchdog = window.setInterval(() => {
       if (settled || !reportedStart) return;
       if (Date.now() - lastActivityMs < STALL_MS) return;
@@ -440,17 +451,50 @@ export async function installOtaFromManifest(
     return { ok: false, error: 'BSMessagePort unavailable (simulator)' };
   }
 
-  // Always one file per autorun message — large pipe payloads never get acked on some players.
+  const packageTotal = manifest.packageFileCount ?? files.length;
+  const alreadyDone = manifest.completedCount ?? 0;
+  const targetVersion = manifest.version ?? '';
+
+  // Prefer BrightSign asset pool (SD:/perform6-ota-pool) — isolated from media.
+  if (isOtaAssetPoolAvailable()) {
+    console.info('[Perform6] OTA via asset pool', {
+      version: targetVersion,
+      files: files.length,
+      pool: 'SD:/perform6-ota-pool',
+    });
+    otaAbortHandlers.add(() => {
+      void cancelOtaAssetPoolFetch();
+    });
+    const poolResult = await installOtaViaAssetPool(auth, manifest, files);
+    if (poolResult.ok) {
+      reportOtaStatusSafe(auth, {
+        status: 'REBOOTING',
+        targetVersion,
+        doneCount: alreadyDone + files.length,
+        totalCount: packageTotal,
+        currentPath: poolResult.realizedPaths?.slice(-1)[0],
+        runtimeVersion: runtimeConfig.runtimeVersion,
+      });
+      console.info(
+        `[Perform6] OTA asset pool ok (${files.length} files) — rebooting`,
+      );
+      port.PostBSMessage({ type: OTA_REBOOT_MESSAGE });
+      return { ok: true };
+    }
+    console.warn(
+      '[Perform6] OTA asset pool failed — falling back to autorun HTTP',
+      poolResult.error,
+    );
+  }
+
+  // Fallback: one file per autorun message (legacy custom HTTP).
   const wave = files.slice(0, 1);
   const file = wave[0];
   const fileUrl = resolveOtaFileUrl(file);
   const filePath = file.path.replace(/^\/+/, '');
   const fileSize = String(file.sizeBytes ?? 0);
 
-  const packageTotal = manifest.packageFileCount ?? files.length;
-  const alreadyDone = manifest.completedCount ?? 0;
-
-  console.info('[Perform6] OTA install queue:', {
+  console.info('[Perform6] OTA install queue (autorun HTTP):', {
     version: manifest.version,
     profile: manifest.profile,
     staged: manifest.staged === true || wave.length < files.length,
@@ -463,8 +507,6 @@ export async function installOtaFromManifest(
       dest: `SD:/${f.path.replace(/^\/+/, '')}`,
     })),
   });
-
-  const targetVersion = manifest.version ?? '';
 
   // Tiny ping first — proves JS↔autorun path before auth/install.
   const pingWait = waitForOtaStatusDetail('pong', 8_000);
@@ -502,6 +544,7 @@ export async function installOtaFromManifest(
     fileUrl,
     filePath,
     fileSize,
+    fileSha256: file.sha256 ?? '',
     version: manifest.version ?? '',
     deviceId: auth.deviceId,
   });
