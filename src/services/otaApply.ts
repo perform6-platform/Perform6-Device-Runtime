@@ -5,10 +5,56 @@ import type { DeviceAuthContext } from '../shared/types/api';
 import { apiFetchData } from './api';
 import { flushDeviceLogs } from './deviceLogsApi';
 import { reportOtaStatusSafe } from './otaStatusApi';
+import { compareRuntimeVersions } from './runtimeVersion';
 
 const OTA_INSTALL_MESSAGE = 'led-ota-install';
 const OTA_PROGRESS_TYPE = 'led-ota-progress';
 const OTA_REBOOT_MESSAGE = 'led-ota-reboot';
+const OTA_CANCEL_MESSAGE = 'led-ota-cancel';
+
+/** After a failed OTA, skip automatic OTA for this long so sync/remote stay usable. */
+const OTA_FAIL_COOLDOWN_MS = 30 * 60_000;
+let lastOtaFailAtMs = 0;
+let lastOtaFailReason = '';
+
+export function markOtaFailed(reason?: string): void {
+  lastOtaFailAtMs = Date.now();
+  lastOtaFailReason = reason?.trim() || 'OTA failed';
+}
+
+export function clearOtaFailCooldown(): void {
+  lastOtaFailAtMs = 0;
+  lastOtaFailReason = '';
+}
+
+export function shouldSkipOtaAfterRecentFail(): boolean {
+  if (lastOtaFailAtMs <= 0) return false;
+  return Date.now() - lastOtaFailAtMs < OTA_FAIL_COOLDOWN_MS;
+}
+
+export function getLastOtaFailReason(): string {
+  return lastOtaFailReason;
+}
+
+/** Ask autorun to abort any in-flight OTA transfer so cache/sync can proceed. */
+const otaAbortHandlers = new Set<() => void>();
+
+export function cancelOtaInstall(): boolean {
+  const port = getSharedMessagePort();
+  if (port) {
+    port.PostBSMessage({ type: OTA_CANCEL_MESSAGE });
+    console.info('[Perform6] OTA cancel sent to autorun');
+  }
+  for (const handler of [...otaAbortHandlers]) {
+    try {
+      handler();
+    } catch {
+      /* ignore */
+    }
+  }
+  otaAbortHandlers.clear();
+  return Boolean(port);
+}
 
 export interface OtaManifestFile {
   path: string;
@@ -109,6 +155,7 @@ function waitForOtaComplete(
     let lastPath: string | undefined;
     let lastActivityMs = Date.now();
     let lastBytesDownloaded = -1;
+    const failedFiles: string[] = [];
 
     let lastOtaStatusMs = 0;
     const OTA_STATUS_INTERVAL_MS = 3000;
@@ -150,13 +197,27 @@ function waitForOtaComplete(
     const finish = (result: { ok: boolean; error?: string }) => {
       if (settled) return;
       settled = true;
+      otaAbortHandlers.delete(onAbort);
       window.clearTimeout(timer);
       window.clearTimeout(startWatchdog);
       window.clearInterval(stallWatchdog);
       unsub();
+      if (!result.ok) {
+        // Avoid re-entrancy: only tell autorun; handlers already cleared.
+        const port = getSharedMessagePort();
+        if (port) port.PostBSMessage({ type: OTA_CANCEL_MESSAGE });
+        markOtaFailed(result.error);
+      } else {
+        clearOtaFailCooldown();
+      }
       void flushLogsThrottled(true);
       resolve(result);
     };
+
+    const onAbort = () => {
+      finish({ ok: false, error: 'OTA cancelled' });
+    };
+    otaAbortHandlers.add(onAbort);
 
     const unsub = subscribeBsMessages((event) => {
       const data = event.data ?? {};
@@ -210,8 +271,14 @@ function waitForOtaComplete(
 
       if (status === 'failed') {
         const error = detail ?? path ?? 'OTA download failed';
+        failedFiles.push(path ? `${path}: ${error}` : error);
+        console.warn('[Perform6] OTA file failed — continuing remaining files', {
+          path,
+          error,
+          failedSoFar: failedFiles.length,
+        });
         reportOtaStatusSafe(auth, {
-          status: 'FAILED',
+          status: 'DOWNLOADING',
           targetVersion,
           doneCount,
           totalCount,
@@ -221,8 +288,22 @@ function waitForOtaComplete(
           error,
           runtimeVersion: runtimeConfig.runtimeVersion,
         });
-        finish({ ok: false, error });
+        // Do not abort the whole package on one file; autorun keeps draining the queue.
       } else if (status === 'complete') {
+        if (failedFiles.length > 0) {
+          const error = `OTA incomplete — ${failedFiles.length} file(s) failed: ${failedFiles.slice(0, 3).join('; ')}`;
+          console.warn('[Perform6] OTA finished with failures', { failedFiles });
+          reportOtaStatusSafe(auth, {
+            status: 'FAILED',
+            targetVersion,
+            doneCount: totalCount,
+            totalCount,
+            error,
+            runtimeVersion: runtimeConfig.runtimeVersion,
+          });
+          finish({ ok: false, error });
+          return;
+        }
         console.info(
           `[Perform6] OTA complete · ${totalCount ?? totalFiles} files · reboot pending`,
         );
@@ -378,6 +459,17 @@ export async function applyOtaUpdate(
       return { applied: false, version: manifest.version };
     }
 
+    const target = manifest.version ?? '';
+    if (
+      target &&
+      compareRuntimeVersions(runtimeConfig.runtimeVersion, target) >= 0
+    ) {
+      console.info(
+        `[Perform6] OTA skipped — device ${runtimeConfig.runtimeVersion} >= target ${target} (no downgrade)`,
+      );
+      return { applied: false, version: target };
+    }
+
     console.info(
       `[Perform6] OTA update ${runtimeConfig.runtimeVersion} → ${manifest.version} (${manifest.files?.length ?? 0} files)`,
     );
@@ -397,6 +489,7 @@ export async function applyOtaUpdate(
     }
     if (!install.ok) {
       console.warn('[Perform6] OTA install failed', install.error);
+      markOtaFailed(install.error);
       reportOtaStatusSafe(auth, {
         status: 'FAILED',
         targetVersion: manifest.version,
@@ -411,6 +504,8 @@ export async function applyOtaUpdate(
   } catch (error) {
     const message = error instanceof Error ? error.message : 'OTA failed';
     console.warn('[Perform6] OTA apply error', message);
+    markOtaFailed(message);
+    cancelOtaInstall();
     reportOtaStatusSafe(auth, {
       status: 'FAILED',
       error: message,

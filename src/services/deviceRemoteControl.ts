@@ -1,19 +1,29 @@
 import { getSharedMessagePort } from '../platform/bsMessagePort';
-import { clearLocalDeviceState } from './deviceLocalReset';
-import { clearCachedMediaVersionIds } from './manifest';
 import {
   clearAllSdCachedMarks,
   listSdCachedMediaVersionIds,
   requestSdCacheClearAll,
 } from './sdCacheBridge';
+import { clearCachedMediaVersionIds } from './manifest';
+import {
+  cancelOtaInstall,
+} from './otaApply';
 import type { DeviceRemoteCommand } from './remoteCommandBridge';
 
 const REBOOT_MESSAGE = 'led-ota-reboot';
 
-let runSyncNowHook: (() => Promise<void>) | null = null;
+export interface RemoteSyncNowOptions {
+  force?: boolean;
+  skipOta?: boolean;
+  /** Allow starting even if another sync/download looks busy (remote recovery). */
+  interrupt?: boolean;
+}
+
+let runSyncNowHook: ((options?: RemoteSyncNowOptions) => Promise<void>) | null =
+  null;
 
 export function registerDeviceRemoteControlHooks(hooks: {
-  runSyncNow: () => Promise<void>;
+  runSyncNow: (options?: RemoteSyncNowOptions) => Promise<void>;
 }): void {
   runSyncNowHook = hooks.runSyncNow;
 }
@@ -24,12 +34,15 @@ export function requestDeviceReboot(): boolean {
     console.warn('[Perform6] Remote reboot skipped — BSMessagePort missing');
     return false;
   }
+  // Cancel any stuck OTA so reboot is not blocked by a hung transfer.
+  cancelOtaInstall();
   port.PostBSMessage({ type: REBOOT_MESSAGE });
   console.info('[Perform6] Remote reboot requested');
   return true;
 }
 
 export async function clearSdCacheRemotely(): Promise<void> {
+  cancelOtaInstall();
   const mediaVersionIds = listSdCachedMediaVersionIds();
   requestSdCacheClearAll();
   clearAllSdCachedMarks();
@@ -44,12 +57,16 @@ export async function executeSystemRemoteCommand(
 ): Promise<boolean> {
   switch (command.action) {
     case 'REBOOT':
-      clearLocalDeviceState();
+      // Do NOT wipe credentials here — if reboot fails, heartbeat/remote must keep working.
       requestDeviceReboot();
       return true;
     case 'SYNC_NOW':
       if (runSyncNowHook) {
-        void runSyncNowHook();
+        void runSyncNowHook({
+          force: true,
+          skipOta: true,
+          interrupt: true,
+        });
       } else {
         console.warn('[Perform6] SYNC_NOW ignored — sync hook not registered');
       }
@@ -57,7 +74,11 @@ export async function executeSystemRemoteCommand(
     case 'CLEAR_SD_CACHE':
       await clearSdCacheRemotely();
       if (runSyncNowHook) {
-        void runSyncNowHook();
+        void runSyncNowHook({
+          force: true,
+          skipOta: true,
+          interrupt: true,
+        });
       }
       return true;
     default:

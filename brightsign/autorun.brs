@@ -1,12 +1,10 @@
-' Perform6 BrightSign autorun - multi-HDMI aware bootstrap
-' Profiles: XT2145 / XC4055 MULTI = React HtmlWidget on HDMI-1 + native roVideoPlayer on LEDs
-'           (BrightAuthor-style: one Chromium, hardware video on secondary outputs).
-'           HD226 = one HtmlWidget only.
+' Perform6 BrightSign autorun - thin boot + deferred SD workers
+' BOOT ONLY: identity, DWS, SetScreenModes, HtmlWidget Show, native LED idle/playback, reboot.
+' DEFERRED (after Show / when JS asks): cache prefetch, OTA install, perform6-ops clearCache.
+' Policy (pair, heartbeat, sync, OTA trigger) lives in React + API — not in this file.
+' Profiles: XT2145 / XC4055 = React on HDMI-1 + roVideoPlayer on LEDs; HD226 = one HtmlWidget.
 ' Reads perform6-display.txt: MULTI (default) | MULTI_NOFULLRES.
-' Reads perform6-ops.json: field ops (pause sync/OTA, one-shot cache clear, etc.).
-' XT/XC always use BrightAuthor-style MULTI (React on HDMI-1 + native video on LEDs).
-' SetScreenModes only when config differs (avoids reboot loop). Do NOT call SetMode.
-' Do NOT set trusted_iframes_enabled. Do NOT call roTouchScreen.Enable.
+' SetScreenModes only when config differs. Do NOT call SetMode / trusted_iframes / roTouchScreen.Enable.
 ' Media cache: SD:/perform6-cache only (no whole-SD EncryptStorage - breaks HtmlWidget).
 
 Sub SafePrint(msg as String)
@@ -465,7 +463,7 @@ Sub FinishCacheFailure(st as Object, worker as Object, url as String, name as St
       SetUrlRetryCount(worker, url, retries)
       LedLog("=== Perform6: cache retry " + IntToStr(retries) + " for " + url + " (" + errorText + ") ===")
       QueueInsertFront(worker.queue, url)
-      Sleep(retries * 5000)
+      ' Do not Sleep here - blocking the message port freezes playback / UI events.
       st.xferName = ""
       DrainPrefetchQueue(msgPort, states)
       return
@@ -623,6 +621,18 @@ Function CreatePrefetchWorker() as Object
   st.retryCounts = CreateObject("roAssociativeArray")
   return st
 End Function
+
+' After HtmlWidget.Show — attach cache/OTA workers so boot never blocks on SD downloads.
+Sub EnsureDeferredWorkers(states as Object, html as Object)
+  if type(FindPrefetchWorker(states)) <> "roAssociativeArray" then
+    states.Push(CreatePrefetchWorker())
+  end if
+  if type(FindOtaWorker(states)) <> "roAssociativeArray" then
+    states.Push(CreateOtaWorker())
+  end if
+  SetCacheNotifyHtml(states, html)
+  SetOtaNotifyHtml(states, html)
+End Sub
 
 Sub SetCacheNotifyHtml(states as Object, html as Object)
   worker = FindPrefetchWorker(states)
@@ -877,6 +887,20 @@ Sub CancelOtaTransfer(worker as Object)
   worker.xferExpected = 0
 End Sub
 
+Sub HandleLedOtaCancel(states as Object)
+  worker = FindOtaWorker(states)
+  if type(worker) <> "roAssociativeArray" then return
+  CancelOtaTransfer(worker)
+  if type(worker.queue) = "roArray" then
+    worker.queue = CreateObject("roArray", 0, true)
+  end if
+  worker.otaDone = 0
+  worker.otaTotal = 0
+  LedLog("=== Perform6: OTA cancelled by JS ===")
+  PostOtaProgress(states, "failed", "", "cancelled")
+  PostOtaProgress(states, "complete", "", "")
+End Sub
+
 Sub StartOtaDownload(worker as Object, item as Object, msgPort as Object, states as Object)
   if type(worker) <> "roAssociativeArray" then return
   if type(worker.xfer) = "roUrlTransfer" then return
@@ -975,6 +999,7 @@ Sub HandleLedOtaInstall(payload as Object, msgPort as Object, states as Object)
   if worker.otaTotal = 0 then
     LedLog("=== Perform6: OTA empty manifest (no fileUrls) ===")
     PostOtaProgress(states, "failed", "", "empty manifest")
+    PostOtaProgress(states, "complete", "", "")
     return
   end if
 
@@ -1092,6 +1117,32 @@ Sub RebootDeviceAfterOta()
   Sleep(5000)
 End Sub
 
+' One automatic recovery reboot after a fatal boot error; avoids silent blank forever.
+Function ShouldAutoRebootOnce(markerName as String) as Boolean
+  if FileExistsIn("SD:/", markerName) then
+    DeleteFile("SD:/" + markerName)
+    return false
+  end if
+  WriteAsciiFile("SD:/" + markerName, "1")
+  return true
+End Function
+
+Sub ClearBootFailMarker()
+  DeleteFile("SD:/perform6-boot-fail")
+End Sub
+
+Sub FatalHang(msg as String)
+  LedLog(msg)
+  SafePrint(msg)
+  if ShouldAutoRebootOnce("perform6-boot-fail") then
+    LedLog("=== Perform6: FATAL - auto reboot once ===")
+    RebootDeviceAfterOta()
+  end if
+  while true
+    Sleep(10000)
+  end while
+End Sub
+
 Function SplitPipeUrls(text as String) as Object
   out = CreateObject("roArray", 0, true)
   if Len(text) = 0 then return out
@@ -1164,12 +1215,13 @@ Sub StartCacheDownload(st as Object, url as String, msgPort as Object, states as
   name = CacheNameFor(url)
   dest = CacheDir() + "/" + name
   tmp = dest + ".part"
-  resumeAt = PartFileBytes(tmp)
   worker = FindPrefetchWorker(states)
   mediaId = LookupUrlMediaId(worker, url)
   expected = LookupUrlExpectedSize(worker, url)
+  ' Always start clean - no resume/Range (corrupt partials on some Series 5 builds).
+  DeleteFile(tmp)
+  resumeAt = 0
   bytesNeeded = expected
-  if bytesNeeded > 0 and resumeAt > 0 then bytesNeeded = bytesNeeded - resumeAt
   if bytesNeeded < 0 then bytesNeeded = 0
   if not HasSdSpaceForBytes(bytesNeeded) then
     LedLog("=== Perform6: cache skipped - SD card full for " + url + " ===")
@@ -1187,14 +1239,9 @@ Sub StartCacheDownload(st as Object, url as String, msgPort as Object, states as
   end if
   xfer.SetUrl(url)
   xfer.SetPort(msgPort)
-  xfer.EnableResume(true)
+  ' Fresh downloads only - resume/Range caused corrupt partials on some firmware.
+  xfer.EnableResume(false)
   xfer.SetMinimumTransferRate(256, 120)
-  if resumeAt > 0 then
-    xfer.AddHeader("Range", "bytes=" + IntToStr(resumeAt) + "-")
-    LedLog("=== Perform6: resume cache at " + IntToStr(resumeAt) + " " + url + " ===")
-  else
-    DeleteFile(tmp)
-  end if
 
   if xfer.AsyncGetToFile(tmp) then
     st.xfer = xfer
@@ -1372,6 +1419,14 @@ Sub HandleLedPrefetch(payload as Object, msgPort as Object, states as Object)
 End Sub
 
 Sub HandleLedCacheClearAll(states as Object)
+  otaWorker = FindOtaWorker(states)
+  if type(otaWorker) = "roAssociativeArray" then
+    CancelOtaTransfer(otaWorker)
+    if type(otaWorker.queue) = "roArray" then
+      otaWorker.queue = CreateObject("roArray", 0, true)
+    end if
+  end if
+
   worker = FindPrefetchWorker(states)
   if type(worker) = "roAssociativeArray" then
     if type(worker.xfer) = "roUrlTransfer" then
@@ -1987,7 +2042,7 @@ Sub LogDisplayIdentity(vm as Object, hdmiName as String)
 End Sub
 
 Function VideoModeMatches(actualMode as Dynamic, expectedMode as String) as Boolean
-  if type(actualMode) <> "roString" then
+  if type(actualMode) <> "roString" and type(actualMode) <> "String" then
     return false
   end if
 
@@ -2001,9 +2056,6 @@ Function VideoModeMatches(actualMode as Dynamic, expectedMode as String) as Bool
   if Instr(1, expected, ":preferred") > 0 and Instr(1, actual, ":preferred") = 0 then
     return false
   end if
-  if Instr(1, expected, ":fullres") > 0 and Instr(1, actual, ":fullres") = 0 then
-    return false
-  end if
 
   baseEnd = Instr(1, expected, ":")
   if baseEnd > 0 then
@@ -2011,7 +2063,23 @@ Function VideoModeMatches(actualMode as Dynamic, expectedMode as String) as Bool
   else
     expectedBase = expected
   end if
-  return Instr(1, actual, expectedBase) = 1
+  if Instr(1, actual, expectedBase) <> 1 then
+    return false
+  end if
+
+  ' Accept 1920x1080x60p with or without :fullres when bases match.
+  ' Strict :fullres-only matching caused endless SetScreenModes on some OS builds.
+  return true
+End Function
+
+Function AsIntCoord(value as Dynamic) as Integer
+  if type(value) = "roInt" or type(value) = "Integer" or type(value) = "Float" then
+    return Int(value)
+  end if
+  if type(value) = "roString" or type(value) = "String" then
+    if Len(value) > 0 then return Int(Val(value))
+  end if
+  return -999999
 End Function
 
 Function ScreenAlreadyMatches(entry as Object, videoMode as String, displayX as Integer, enabled as Boolean) as Boolean
@@ -2027,18 +2095,11 @@ Function ScreenAlreadyMatches(entry as Object, videoMode as String, displayX as 
   if not VideoModeMatches(entry.video_mode, videoMode) then
     return false
   end if
-  if type(entry.display_x) <> "roInt" and type(entry.display_x) <> "Integer" and type(entry.display_x) <> "Float" then
-    return false
-  end if
-  if Int(entry.display_x) <> displayX then
-    return false
-  end if
-  if type(entry.display_y) <> "roInt" and type(entry.display_y) <> "Integer" and type(entry.display_y) <> "Float" then
-    return false
-  end if
-  if Int(entry.display_y) <> 0 then
-    return false
-  end if
+  x = AsIntCoord(entry.display_x)
+  y = AsIntCoord(entry.display_y)
+  if x = -999999 then return false
+  if x <> displayX then return false
+  if y <> -999999 and y <> 0 then return false
   return true
 End Function
 
@@ -2188,24 +2249,23 @@ Sub Main()
 
   msgPort = CreateObject("roMessagePort")
   if type(msgPort) <> "roMessagePort" then
-    SafePrint("=== Perform6: FATAL no roMessagePort ===")
-    while true
-      Sleep(10000)
-    end while
+    FatalHang("=== Perform6: FATAL no roMessagePort ===")
   end if
 
   AttachStorageHotplug(msgPort)
 
-  ' Enable DWS before SetScreenModes so field logs still work if we wait for reboot.
+  ' Enable DWS before SetScreenModes so field logs still work during reboot.
   EnableDiagnosticWebServer()
 
   vm = CreateObject("roVideoMode")
   if type(vm) = "roVideoMode" then
     rebooting = ApplyMultiScreenModes(vm, profile, displayMode)
     if rebooting then
-      ' SetScreenModes triggers reboot - wait; do not create HtmlWidget yet.
-      SafePrint("=== Perform6: waiting for multi-screen reboot ===")
-      LedLog("=== Perform6: waiting for multi-screen reboot ===")
+      ' BrightAuthor-style: apply layout then ALWAYS reboot. Never sit in a blank wait
+      ' hoping the OS reboots on its own (OS 9.x often does not).
+      SafePrint("=== Perform6: SetScreenModes applied - forcing reboot ===")
+      LedLog("=== Perform6: SetScreenModes applied - forcing reboot ===")
+      RebootDeviceAfterOta()
       while true
         Sleep(10000)
       end while
@@ -2242,19 +2302,14 @@ Sub Main()
   ledState = invalid
   led2State = invalid
   led3State = invalid
-  ledStates.Push(CreatePrefetchWorker())
-  ledStates.Push(CreateOtaWorker())
-  ProcessOpsOnBoot(ledStates)
+  ' Cache/OTA workers created AFTER HtmlWidget.Show (EnsureDeferredWorkers).
 
   if profile = "XT2145" and multiOutput then
     SafePrint("=== Perform6: XT React HDMI-1 + native video HDMI-2 ===")
     touchRect = CreateObject("roRectangle", 0, 0, 1920, 1080)
     ledRect = CreateObject("roRectangle", 1920, 0, 1920, 1080)
     if type(touchRect) <> "roRectangle" or type(ledRect) <> "roRectangle" then
-      SafePrint("=== Perform6: FATAL no XT output rectangles ===")
-      while true
-        Sleep(10000)
-      end while
+      FatalHang("=== Perform6: FATAL no XT output rectangles ===")
     end if
 
     touchUrl = BuildAppUrl("file:///index.html", identity, profile, "touch")
@@ -2267,10 +2322,7 @@ Sub Main()
       htmlTouch = TryCreateHtmlWidget(touchRect, msgPort, touchUrl)
     end if
     if type(htmlTouch) <> "roHtmlWidget" then
-      SafePrint("=== Perform6: FATAL HDMI-1 touch HtmlWidget create failed ===")
-      while true
-        Sleep(10000)
-      end while
+      FatalHang("=== Perform6: FATAL HDMI-1 touch HtmlWidget create failed ===")
     end if
 
     EnableJsObjectsSafe(htmlTouch)
@@ -2278,8 +2330,9 @@ Sub Main()
     RoutePlayerAudio(htmlTouch, "none")
     SafePrint("=== Perform6: Show HDMI-1 touch HtmlWidget ===")
     htmlTouch.Show()
-    SetCacheNotifyHtml(ledStates, htmlTouch)
-    SetOtaNotifyHtml(ledStates, htmlTouch)
+    ClearBootFailMarker()
+    EnsureDeferredWorkers(ledStates, htmlTouch)
+    ProcessOpsOnBoot(ledStates)
 
     ' Let the first plane settle before enabling the second video port.
     Sleep(1500)
@@ -2299,10 +2352,7 @@ Sub Main()
     led2Rect = CreateObject("roRectangle", 1920, 0, 1920, 1080)
     led3Rect = CreateObject("roRectangle", 3840, 0, 1920, 1080)
     if type(primaryRect) <> "roRectangle" or type(led2Rect) <> "roRectangle" or type(led3Rect) <> "roRectangle" then
-      SafePrint("=== Perform6: FATAL no XC output rectangles ===")
-      while true
-        Sleep(10000)
-      end while
+      FatalHang("=== Perform6: FATAL no XC output rectangles ===")
     end if
 
     primaryUrl = BuildAppUrl("file:///index.html", identity, profile, "primary")
@@ -2315,10 +2365,7 @@ Sub Main()
       htmlPrimary = TryCreateHtmlWidget(primaryRect, msgPort, primaryUrl)
     end if
     if type(htmlPrimary) <> "roHtmlWidget" then
-      SafePrint("=== Perform6: FATAL HDMI-1 primary HtmlWidget create failed ===")
-      while true
-        Sleep(10000)
-      end while
+      FatalHang("=== Perform6: FATAL HDMI-1 primary HtmlWidget create failed ===")
     end if
 
     EnableJsObjectsSafe(htmlPrimary)
@@ -2326,8 +2373,9 @@ Sub Main()
     RoutePlayerAudio(htmlPrimary, "hdmi-1")
     SafePrint("=== Perform6: Show HDMI-1 primary HtmlWidget ===")
     htmlPrimary.Show()
-    SetCacheNotifyHtml(ledStates, htmlPrimary)
-    SetOtaNotifyHtml(ledStates, htmlPrimary)
+    ClearBootFailMarker()
+    EnsureDeferredWorkers(ledStates, htmlPrimary)
+    ProcessOpsOnBoot(ledStates)
 
     Sleep(1500)
     LedLog("=== Perform6: HDMI-2 native roVideoPlayer ===")
@@ -2357,10 +2405,7 @@ Sub Main()
     SafePrint("=== Perform6: canvas " + StrI(width) + "x" + StrI(height) + " ===")
     rect = CreateObject("roRectangle", 0, 0, width, height)
     if type(rect) <> "roRectangle" then
-      SafePrint("=== Perform6: FATAL no roRectangle ===")
-      while true
-        Sleep(10000)
-      end while
+      FatalHang("=== Perform6: FATAL no roRectangle ===")
     end if
 
     url = BuildAppUrl("file:///index.html", identity, profile, singleRole)
@@ -2372,10 +2417,7 @@ Sub Main()
       html = TryCreateHtmlWidget(rect, msgPort, url)
     end if
     if type(html) <> "roHtmlWidget" then
-      SafePrint("=== Perform6: FATAL HtmlWidget create failed on this firmware ===")
-      while true
-        Sleep(10000)
-      end while
+      FatalHang("=== Perform6: FATAL HtmlWidget create failed on this firmware ===")
     end if
 
     EnableJsObjectsSafe(html)
@@ -2383,8 +2425,9 @@ Sub Main()
     RoutePlayerAudio(html, "hdmi")
     SafePrint("=== Perform6: Show HtmlWidget ===")
     html.Show()
-    SetCacheNotifyHtml(ledStates, html)
-    SetOtaNotifyHtml(ledStates, html)
+    ClearBootFailMarker()
+    EnsureDeferredWorkers(ledStates, html)
+    ProcessOpsOnBoot(ledStates)
   end if
 
   ' DWS already enabled early (before SetScreenModes) for field recovery.
@@ -2451,6 +2494,8 @@ Sub Main()
               HandleLedLogTailRequest(payload, ledStates)
             else if msgType = "led-ota-install" then
               HandleLedOtaInstall(payload, msgPort, ledStates)
+            else if msgType = "led-ota-cancel" then
+              HandleLedOtaCancel(ledStates)
             else if msgType = "led-ota-reboot" then
               RebootDeviceAfterOta()
             else if msgType = "led-ops-reload" then

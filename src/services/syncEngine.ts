@@ -8,7 +8,7 @@ import {
 } from './manifest';
 import { downloadMediaBatchToSd, evictCachedMedia } from './media';
 import { checkOtaUpdate } from './ota';
-import { applyOtaUpdate } from './otaApply';
+import { applyOtaUpdate, getLastOtaFailReason, shouldSkipOtaAfterRecentFail } from './otaApply';
 import { flushDeviceLogs } from './deviceLogsApi';
 import {
   clearSdCached,
@@ -44,6 +44,8 @@ export interface SyncEngineHooks {
 export interface SyncEngineOptions {
   /** Bypass pauseMediaSync for a one-shot sync (syncOnBoot). */
   forceMediaSync?: boolean;
+  /** Skip OTA apply (remote SYNC_NOW / after recent OTA failure). */
+  skipOta?: boolean;
 }
 
 function p0MediaVersionIds(
@@ -118,7 +120,16 @@ export async function runSyncEngine(
     let otaApplied = false;
     let otaError: string | undefined;
 
-    if (
+    const skipOta =
+      options?.skipOta === true ||
+      shouldSkipOtaAfterRecentFail();
+
+    if (skipOta) {
+      const reason = options?.skipOta
+        ? 'skipOta requested'
+        : `recent OTA fail cooldown (${getLastOtaFailReason() || 'unknown'})`;
+      console.info(`[Perform6] OTA skipped before media — ${reason}`);
+    } else if (
       !isOtaPaused() &&
       (syncData.runtime?.updateAvailable || ota.updateAvailable)
     ) {

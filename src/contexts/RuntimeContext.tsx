@@ -26,7 +26,10 @@ import {
 } from '../services';
 import { clearAllSdCachedMarks, isSdBulkDownloadInProgress } from '../services/sdCacheBridge';
 import { sendPlaybackTelemetry } from '../services/playbackTelemetryApi';
+import { flushDeviceLogs } from '../services/deviceLogsApi';
 import { registerDeviceRemoteControlHooks } from '../services/deviceRemoteControl';
+import type { RemoteSyncNowOptions } from '../services/deviceRemoteControl';
+import { cancelOtaInstall } from '../services/otaApply';
 import { processRemoteCommands } from '../services/remoteCommandBridge';
 import {
   consumeSyncOnBoot,
@@ -63,7 +66,7 @@ interface RuntimeContextValue {
   isReady: boolean;
   needsCredentials: boolean;
   retryPairing: () => void;
-  runSyncNow: (force?: boolean) => Promise<void>;
+  runSyncNow: (forceOrOptions?: boolean | RemoteSyncNowOptions) => Promise<void>;
   beginSimulatorProfile: (options: BeginSimulatorProfileOptions) => Promise<void>;
   /** Simulator-only: clear current HD unit and POST /devices/pair as the next DEVICE_*. */
   pairNextHdDevice: (member?: ClusterMember) => Promise<void>;
@@ -148,14 +151,22 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     pushDebugLog({ category: 'playback', message: 'Mock manifest loaded', data: manifest });
   }, [deviceInfo, pushDebugLog, setPlaybackManifest, setSyncState]);
 
-  const runSyncNow = useCallback(async (force = false) => {
+  const runSyncNow = useCallback(async (forceOrOptions: boolean | RemoteSyncNowOptions = false) => {
+    const options: RemoteSyncNowOptions =
+      typeof forceOrOptions === 'object' && forceOrOptions != null
+        ? forceOrOptions
+        : { force: forceOrOptions === true };
+    const force = options.force === true;
+    const skipOta = options.skipOta === true;
+    const interrupt = options.interrupt === true;
+
     const auth = getCredentials();
     const info = activeDeviceInfo.current ?? deviceInfo;
     if (!auth || !info) return;
 
     await reloadPerform6Ops();
     if (!force && isMediaSyncPaused()) {
-      if (!isOtaPaused()) {
+      if (!isOtaPaused() && !skipOta) {
         pushDebugLog({
           category: 'sync',
           message: 'Media sync paused — running OTA check only',
@@ -195,10 +206,22 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (syncRunningRef.current || isSdBulkDownloadInProgress()) {
+    if (interrupt) {
+      cancelOtaInstall();
+    }
+
+    if (!interrupt && (syncRunningRef.current || isSdBulkDownloadInProgress())) {
       pushDebugLog({
         category: 'sync',
         message: 'Sync skipped — download or sync already in progress',
+      });
+      return;
+    }
+
+    if (interrupt && syncRunningRef.current) {
+      pushDebugLog({
+        category: 'sync',
+        message: 'Remote sync — cancelled stuck OTA; in-flight sync continues with media',
       });
       return;
     }
@@ -227,7 +250,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
             if (earlyManifest) setPlaybackManifest(earlyManifest);
           },
         },
-        { forceMediaSync: force },
+        { forceMediaSync: force, skipOta },
       );
 
       if (result.success) {
@@ -887,13 +910,40 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isDeviceReady()) return;
 
+    let bootHeartbeatPending = true;
+    const profile = deviceInfo?.hardwareProfile ?? runtimeConfig.hardwareProfile;
+    const version = runtimeConfig.runtimeVersion;
+    console.info(
+      `[Perform6] Autorun UI ready · profile=${profile} · v${version}`,
+    );
+
     const tick = () => {
       const auth = getCredentials();
       if (!auth) return;
-      void sendDeviceHeartbeat(auth, { firmwareVersion: deviceInfo?.firmwareVersion })
+      const isBoot = bootHeartbeatPending;
+      const payload = {
+        firmwareVersion: deviceInfo?.firmwareVersion,
+        ...(isBoot
+          ? {
+              metadata: {
+                bootEvent: true,
+                bootAt: new Date().toISOString(),
+                hardwareProfile: profile,
+                runtimeVersion: version,
+              },
+            }
+          : {}),
+      };
+      void sendDeviceHeartbeat(auth, payload)
         .then((result) => {
           setHeartbeat({ at: new Date().toISOString(), ok: true });
           pushDebugLog({ category: 'heartbeat', message: 'POST /devices/me/heartbeat OK' });
+          if (isBoot) {
+            bootHeartbeatPending = false;
+            void flushDeviceLogs(auth).catch(() => {
+              /* best-effort boot log upload */
+            });
+          }
           if (result.remoteCommands?.length) {
             void processRemoteCommands(result.remoteCommands);
           }
