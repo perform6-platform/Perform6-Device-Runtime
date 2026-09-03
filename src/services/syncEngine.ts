@@ -8,7 +8,7 @@ import {
 } from './manifest';
 import { downloadMediaBatchToSd, evictCachedMedia } from './media';
 import { checkOtaUpdate } from './ota';
-import { applyOtaUpdate, getLastOtaFailReason, shouldSkipOtaAfterRecentFail } from './otaApply';
+import { applyOtaUpdate, cancelOtaInstall, getLastOtaFailReason, shouldSkipOtaAfterRecentFail } from './otaApply';
 import { flushDeviceLogs } from './deviceLogsApi';
 import {
   clearSdCached,
@@ -129,6 +129,8 @@ export async function runSyncEngine(
         ? 'skipOta requested'
         : `recent OTA fail cooldown (${getLastOtaFailReason() || 'unknown'})`;
       console.info(`[Perform6] OTA skipped before media — ${reason}`);
+      // Ensure any leftover OTA transfer cannot starve media.
+      cancelOtaInstall();
     } else if (
       !isOtaPaused() &&
       (syncData.runtime?.updateAvailable || ota.updateAvailable)
@@ -153,10 +155,19 @@ export async function runSyncEngine(
       if (applied.error) {
         otaError = applied.error;
         console.warn(
-          '[Perform6] OTA failed before media — continuing with video sync',
+          '[Perform6] OTA failed — isolating media sync (cancel OTA, then videos)',
           applied.error,
         );
       }
+      // Always cancel before media so OTA HTTP cannot compete with cache downloads.
+      cancelOtaInstall();
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 1000));
+    } else {
+      cancelOtaInstall();
+    }
+
+    if (otaError) {
+      console.info('[Perform6] Proceeding with media download after OTA failure');
     }
 
     const onAirIds = p0MediaVersionIds(manifest, profile);

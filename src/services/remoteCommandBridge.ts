@@ -1,3 +1,4 @@
+import { getCredentials } from './credentialStore';
 import { executeSystemRemoteCommand } from './deviceRemoteControl';
 
 export type RemoteCommandAction =
@@ -8,12 +9,23 @@ export type RemoteCommandAction =
   | 'SELECT_TOUCH_SLOT'
   | 'REBOOT'
   | 'SYNC_NOW'
-  | 'CLEAR_SD_CACHE';
+  | 'CLEAR_SD_CACHE'
+  | 'SD_LIST'
+  | 'SD_READ'
+  | 'SD_WRITE'
+  | 'SD_DELETE';
 
 export interface DeviceRemoteCommand {
   id: string;
   action: RemoteCommandAction;
   slot?: string;
+  path?: string;
+  content?: string;
+  encoding?: 'utf8' | 'base64' | string;
+  /** Clear OTA fail cooldown and allow OTA on this sync (ota-retry). */
+  forceOta?: boolean;
+  /** Skip OTA; media-only sync. */
+  skipOta?: boolean;
   createdAt: string;
 }
 
@@ -38,6 +50,24 @@ export async function processRemoteCommands(commands: DeviceRemoteCommand[]): Pr
       if (!handled) uiCommands.push(command);
     } catch (error) {
       console.error('[Perform6] Remote system command failed', command.action, error);
+      if (
+        command.action === 'SD_LIST' ||
+        command.action === 'SD_READ' ||
+        command.action === 'SD_WRITE' ||
+        command.action === 'SD_DELETE'
+      ) {
+        const auth = getCredentials();
+        if (auth) {
+          const { reportSdFsResultSafe } = await import('./sdFsResultApi');
+          reportSdFsResultSafe(auth, {
+            commandId: command.id,
+            action: command.action,
+            ok: false,
+            path: command.path ?? '',
+            error: error instanceof Error ? error.message : 'remote FS failed',
+          });
+        }
+      }
     }
   }
 

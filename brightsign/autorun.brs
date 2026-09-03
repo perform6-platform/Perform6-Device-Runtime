@@ -197,12 +197,24 @@ Function PayloadString(payload as Object, key as String) as String
     value = payload.requestId
   else if key = "content" then
     value = payload.content
+  else if key = "path" then
+    value = payload.path
+  else if key = "encoding" then
+    value = payload.encoding
+  else if key = "fileUrl" then
+    value = payload.fileUrl
+  else if key = "filePath" then
+    value = payload.filePath
+  else if key = "fileSize" then
+    value = payload.fileSize
   else if key = "mediaVersionId" then
     value = payload.mediaVersionId
   else if key = "mediaTitle" then
     value = payload.mediaTitle
   else if key = "screenKey" then
     value = payload.screenKey
+  else
+    value = payload.Lookup(key)
   end if
   if type(value) = "roString" or type(value) = "String" then
     return value
@@ -256,6 +268,13 @@ Function PayloadInt(payload as Object, key as String, fallback as Integer) as In
     value = payload.restartNonce
   else if key = "volumePercent" then
     value = payload.volumePercent
+  else if key = "chunkIndex" then
+    value = payload.chunkIndex
+  else if key = "chunkTotal" then
+    value = payload.chunkTotal
+  else
+    ' Generic lookup for other numeric payload keys
+    value = payload.Lookup(key)
   end if
 
   if type(value) = "roInt" or type(value) = "Integer" or type(value) = "Float" then
@@ -623,13 +642,36 @@ Function CreatePrefetchWorker() as Object
 End Function
 
 ' After HtmlWidget.Show — attach cache/OTA workers so boot never blocks on SD downloads.
+Sub RememberP6Html(html as Object)
+  if type(html) <> "roHtmlWidget" then return
+  g = GetGlobalAA()
+  g.p6Html = html
+End Sub
+
+Function ResolveP6Html(states as Object, worker as Object) as Object
+  if type(worker) = "roAssociativeArray" then
+    if type(worker.notifyHtml) = "roHtmlWidget" then return worker.notifyHtml
+  end if
+  g = GetGlobalAA()
+  if type(g.p6Html) = "roHtmlWidget" then return g.p6Html
+  pref = FindPrefetchWorker(states)
+  if type(pref) = "roAssociativeArray" then
+    if type(pref.notifyHtml) = "roHtmlWidget" then return pref.notifyHtml
+  end if
+  return invalid
+End Function
+
+Sub EnsureOtaWorker(states as Object)
+  if type(FindOtaWorker(states)) = "roAssociativeArray" then return
+  states.Push(CreateOtaWorker())
+End Sub
+
 Sub EnsureDeferredWorkers(states as Object, html as Object)
+  RememberP6Html(html)
   if type(FindPrefetchWorker(states)) <> "roAssociativeArray" then
     states.Push(CreatePrefetchWorker())
   end if
-  if type(FindOtaWorker(states)) <> "roAssociativeArray" then
-    states.Push(CreateOtaWorker())
-  end if
+  EnsureOtaWorker(states)
   SetCacheNotifyHtml(states, html)
   SetOtaNotifyHtml(states, html)
 End Sub
@@ -751,6 +793,132 @@ Sub HandleLedLogTailRequest(payload as Object, states as Object)
   PostLedLogTail(html, PayloadString(payload, "requestId"), tail)
 End Sub
 
+' --- Mini-DWS: thin SD list/read/write/delete (message handlers only; never on boot) ---
+
+Function NormalizeSdPath(raw as String) as String
+  path = raw
+  if type(path) <> "roString" and type(path) <> "String" then path = ""
+  while Len(path) > 0 and Left(path, 1) = " "
+    path = Mid(path, 2)
+  end while
+  if Len(path) = 0 then return "SD:/"
+  if Instr(1, path, "..") > 0 then return ""
+  upper = UCase(path)
+  if Left(upper, 3) <> "SD:" then
+    if Left(path, 1) = "/" then return "SD:" + path
+    return "SD:/" + path
+  end if
+  if Len(path) = 3 then return "SD:/"
+  if Mid(path, 4, 1) <> "/" then return "SD:/" + Mid(path, 4)
+  return path
+End Function
+
+Sub PostLedFsResult(states as Object, requestId as String, action as String, ok as Boolean, path as String, entriesText as String, content as String, errorText as String)
+  html = ResolveP6Html(states, invalid)
+  if type(html) <> "roHtmlWidget" then return
+  msg = CreateObject("roAssociativeArray")
+  msg.type = "led-fs-result"
+  msg.requestId = requestId
+  msg.action = action
+  if ok then msg.ok = "1" else msg.ok = "0"
+  msg.path = path
+  msg.entries = entriesText
+  msg.content = content
+  msg.encoding = "utf8"
+  msg.error = errorText
+  msg.sizeBytes = Len(content)
+  html.PostJSMessage(msg)
+End Sub
+
+Sub HandleLedFsList(payload as Object, states as Object)
+  requestId = PayloadString(payload, "requestId")
+  path = NormalizeSdPath(PayloadString(payload, "path"))
+  if Len(path) = 0 then
+    PostLedFsResult(states, requestId, "SD_LIST", false, "", "", "", "invalid path")
+    return
+  end if
+  dir = path
+  if Right(dir, 1) <> "/" then dir = dir + "/"
+  files = MatchFiles(dir, "*")
+  entriesText = ""
+  count = 0
+  if type(files) = "roList" or type(files) = "roArray" then
+    for each name in files
+      if count >= 200 then exit for
+      full = dir + name
+      kind = "file"
+      fs = CreateObject("roFileSystem")
+      if type(fs) = "roFileSystem" then
+        stat = fs.Stat(full)
+        if type(stat) = "roAssociativeArray" then
+          if type(stat.type) = "roString" or type(stat.type) = "String" then
+            if Instr(1, LCase(stat.type), "dir") > 0 then kind = "dir"
+          end if
+        end if
+      end if
+      size = 0
+      if kind = "file" then size = PartFileBytes(full)
+      line = name + "|" + IntToStr(size) + "|" + kind
+      if Len(entriesText) > 0 then entriesText = entriesText + Chr(10)
+      entriesText = entriesText + line
+      count = count + 1
+    end for
+  end if
+  LedLog("=== Perform6: FS list " + path + " n=" + IntToStr(count) + " ===")
+  PostLedFsResult(states, requestId, "SD_LIST", true, path, entriesText, "", "")
+End Sub
+
+Sub HandleLedFsRead(payload as Object, states as Object)
+  requestId = PayloadString(payload, "requestId")
+  path = NormalizeSdPath(PayloadString(payload, "path"))
+  if Len(path) = 0 or path = "SD:/" then
+    PostLedFsResult(states, requestId, "SD_READ", false, path, "", "", "invalid path")
+    return
+  end if
+  text = ReadAsciiFile(path)
+  if type(text) <> "roString" and type(text) <> "String" then text = ""
+  if Len(text) = 0 and PartFileBytes(path) <= 0 then
+    PostLedFsResult(states, requestId, "SD_READ", false, path, "", "", "not found or empty")
+    return
+  end if
+  if Len(text) > 32000 then text = Left(text, 32000)
+  PostLedFsResult(states, requestId, "SD_READ", true, path, "", text, "")
+End Sub
+
+Sub HandleLedFsWrite(payload as Object, states as Object)
+  requestId = PayloadString(payload, "requestId")
+  path = NormalizeSdPath(PayloadString(payload, "path"))
+  content = PayloadString(payload, "content")
+  if Len(path) = 0 or path = "SD:/" or path = "SD:" then
+    PostLedFsResult(states, requestId, "SD_WRITE", false, path, "", "", "invalid path")
+    return
+  end if
+  if Len(content) = 0 then
+    PostLedFsResult(states, requestId, "SD_WRITE", false, path, "", "", "empty content")
+    return
+  end if
+  if Len(content) > 32000 then
+    PostLedFsResult(states, requestId, "SD_WRITE", false, path, "", "", "too large (max 32KB) — use OTA for big files")
+    return
+  end if
+  WriteAsciiFile(path, content)
+  LedLog("=== Perform6: FS write " + path + " ===")
+  PostLedFsResult(states, requestId, "SD_WRITE", true, path, "", "", "")
+End Sub
+
+Sub HandleLedFsDelete(payload as Object, states as Object)
+  requestId = PayloadString(payload, "requestId")
+  path = NormalizeSdPath(PayloadString(payload, "path"))
+  if Len(path) = 0 or path = "SD:/" or path = "SD:" then
+    PostLedFsResult(states, requestId, "SD_DELETE", false, path, "", "", "invalid path")
+    return
+  end if
+  DeleteFile(path)
+  DeleteFile(path + ".part")
+  LedLog("=== Perform6: FS delete " + path + " ===")
+  PostLedFsResult(states, requestId, "SD_DELETE", true, path, "", "", "")
+End Sub
+
 Function CreateOtaWorker() as Object
   st = CreateObject("roAssociativeArray")
   st.key = "ota"
@@ -786,8 +954,12 @@ Sub SetOtaNotifyHtml(states as Object, html as Object)
 End Sub
 
 Sub PostOtaProgressBytes(states as Object, status as String, path as String, detail as String, bytesDownloaded as Integer, bytesTotal as Integer)
+  EnsureOtaWorker(states)
   worker = FindOtaWorker(states)
-  if type(worker) <> "roAssociativeArray" then return
+  if type(worker) <> "roAssociativeArray" then
+    LedLog("=== Perform6: OTA progress dropped (no worker) " + status + " ===")
+    return
+  end if
 
   fileNum = worker.otaDone + 1
   if status = "done" or status = "failed" then fileNum = worker.otaDone
@@ -803,8 +975,12 @@ Sub PostOtaProgressBytes(states as Object, status as String, path as String, det
   if Len(detail) > 0 then logMsg = logMsg + " " + detail
   LedLog("=== Perform6: " + logMsg + " ===")
 
-  html = worker.notifyHtml
-  if type(html) <> "roHtmlWidget" then return
+  html = ResolveP6Html(states, worker)
+  if type(html) <> "roHtmlWidget" then
+    LedLog("=== Perform6: OTA JS notify skipped (no HtmlWidget) ===")
+    return
+  end if
+  worker.notifyHtml = html
 
   msg = CreateObject("roAssociativeArray")
   msg.type = "led-ota-progress"
@@ -979,19 +1155,64 @@ Sub DrainOtaQueue(msgPort as Object, states as Object)
   LedLog("=== Perform6: OTA install complete ===")
 End Sub
 
-Sub HandleLedOtaInstall(payload as Object, msgPort as Object, states as Object)
+Sub HandleLedOtaAuth(payload as Object, states as Object)
+  EnsureOtaWorker(states)
   worker = FindOtaWorker(states)
   if type(worker) <> "roAssociativeArray" then return
+  worker.authBearer = PayloadString(payload, "authBearer")
+  worker.deviceId = PayloadString(payload, "deviceId")
+  LedLog("=== Perform6: OTA auth received ===")
+  PostOtaProgress(states, "start", "", "auth-ok")
+End Sub
+
+Sub HandleLedOtaPing(states as Object)
+  EnsureOtaWorker(states)
+  PostOtaProgress(states, "start", "", "pong")
+End Sub
+
+Sub HandleLedOtaInstall(payload as Object, msgPort as Object, states as Object)
+  ' Never silent-return — JS 90s watchdog depends on an immediate start ack.
+  EnsureOtaWorker(states)
+  worker = FindOtaWorker(states)
+  html = ResolveP6Html(states, worker)
+  if type(worker) = "roAssociativeArray" and type(html) = "roHtmlWidget" then
+    worker.notifyHtml = html
+  end if
+  PostOtaProgressBytes(states, "start", "", "ack", 0, 0)
+
+  if type(worker) <> "roAssociativeArray" then
+    LedLog("=== Perform6: OTA FATAL no worker after ensure ===")
+    PostOtaProgress(states, "failed", "", "no ota worker")
+    PostOtaProgress(states, "complete", "", "")
+    return
+  end if
+
   if type(worker.xfer) = "roUrlTransfer" then
     LedLog("=== Perform6: OTA cancel prior transfer (new install) ===")
     CancelOtaTransfer(worker)
   end if
 
-  urls = SplitPipeUrls(PayloadString(payload, "fileUrls"))
-  paths = SplitPipeUrls(PayloadString(payload, "filePaths"))
-  sizes = SplitPipeUrls(PayloadString(payload, "fileSizes"))
-  worker.authBearer = PayloadString(payload, "authBearer")
-  worker.deviceId = PayloadString(payload, "deviceId")
+  ' Prefer singular keys (small BSMessagePort payloads); fall back to pipe lists.
+  singleUrl = PayloadString(payload, "fileUrl")
+  singlePath = PayloadString(payload, "filePath")
+  singleSize = PayloadString(payload, "fileSize")
+  if Len(singleUrl) > 0 then
+    urls = CreateObject("roArray", 1, true)
+    paths = CreateObject("roArray", 1, true)
+    sizes = CreateObject("roArray", 1, true)
+    urls.Push(singleUrl)
+    paths.Push(singlePath)
+    sizes.Push(singleSize)
+  else
+    urls = SplitPipeUrls(PayloadString(payload, "fileUrls"))
+    paths = SplitPipeUrls(PayloadString(payload, "filePaths"))
+    sizes = SplitPipeUrls(PayloadString(payload, "fileSizes"))
+  end if
+
+  auth = PayloadString(payload, "authBearer")
+  if Len(auth) > 0 then worker.authBearer = auth
+  did = PayloadString(payload, "deviceId")
+  if Len(did) > 0 then worker.deviceId = did
   otaVersion = PayloadString(payload, "version")
   worker.queue = CreateObject("roArray", 0, true)
   worker.otaDone = 0
@@ -1019,15 +1240,7 @@ Sub HandleLedOtaInstall(payload as Object, msgPort as Object, states as Object)
   end while
 
   LedLog("=== Perform6: OTA queue v" + otaVersion + " total=" + IntToStr(worker.otaTotal) + " files ===")
-  ' Acknowledge immediately so JS does not time out waiting for the first byte.
-  PostOtaProgressBytes(states, "start", "", "queued v" + otaVersion, 0, 0)
-  i = 0
-  while i < paths.Count()
-    sizeText = "0"
-    if i < sizes.Count() then sizeText = sizes[i]
-    LedLog("=== Perform6: OTA manifest[" + IntToStr(i + 1) + "/" + IntToStr(paths.Count()) + "] " + paths[i] + " (" + sizeText + " bytes) ===")
-    i = i + 1
-  end while
+  PostOtaProgressBytes(states, "start", PayloadString(payload, "filePath"), "queued v" + otaVersion, 0, 0)
   DrainOtaQueue(msgPort, states)
 End Sub
 
@@ -1466,6 +1679,63 @@ Sub HandleLedCacheEvict(payload as Object, states as Object)
       LedLog("=== Perform6: evict " + name + " ===")
     end if
   end for
+End Sub
+
+' Cancel active/queued cache downloads (JS stall/timeout). Thin — no Sleep.
+Sub HandleLedCacheCancel(payload as Object, msgPort as Object, states as Object)
+  worker = FindPrefetchWorker(states)
+  if type(worker) <> "roAssociativeArray" then return
+
+  urls = SplitPipeUrls(PayloadString(payload, "urls"))
+  cancelAll = (urls.Count() = 0)
+
+  if type(worker.xfer) = "roUrlTransfer" then
+    activeUrl = worker.xferUrl
+    shouldCancel = cancelAll
+    if not shouldCancel then
+      for each u in urls
+        if u = activeUrl then shouldCancel = true
+      end for
+    end if
+    if shouldCancel then
+      tmp = worker.xferTmp
+      name = worker.xferName
+      mediaId = LookupUrlMediaId(worker, activeUrl)
+      worker.xfer.AsyncCancel()
+      worker.xfer = invalid
+      worker.xferUrl = ""
+      worker.xferTmp = ""
+      worker.xferDest = ""
+      worker.xferName = ""
+      if Len(tmp) > 0 then DeleteFile(tmp)
+      worker.prefetchDone = worker.prefetchDone + 1
+      PostCacheProgress(states, "failed", activeUrl, name, mediaId, "cancelled", "", 0, 0)
+      ClearUrlRetryCount(worker, activeUrl)
+      LedLog("=== Perform6: cache cancel active " + activeUrl + " ===")
+    end if
+  end if
+
+  if type(worker.queue) = "roArray" and worker.queue.Count() > 0 then
+    nextQ = CreateObject("roArray", 0, true)
+    for each qUrl in worker.queue
+      drop = cancelAll
+      if not drop then
+        for each u in urls
+          if u = qUrl then drop = true
+        end for
+      end if
+      if drop then
+        DeleteFile(CacheDir() + "/" + CacheNameFor(qUrl) + ".part")
+        LedLog("=== Perform6: cache cancel queued " + qUrl + " ===")
+      else
+        nextQ.Push(qUrl)
+      end if
+    end for
+    worker.queue = nextQ
+  end if
+
+  RecalcPrefetchTotals(worker)
+  DrainPrefetchQueue(msgPort, states)
 End Sub
 
 Function FindStateForUrlEvent(states as Object, ev as Object) as Object
@@ -2488,10 +2758,24 @@ Sub Main()
               HandleLedKeepSet(payload, ledStates)
             else if msgType = "led-cache-evict" then
               HandleLedCacheEvict(payload, ledStates)
+            else if msgType = "led-cache-cancel" then
+              HandleLedCacheCancel(payload, msgPort, ledStates)
             else if msgType = "led-cache-clear-all" then
               HandleLedCacheClearAll(ledStates)
             else if msgType = "led-log-tail-request" then
               HandleLedLogTailRequest(payload, ledStates)
+            else if msgType = "led-fs-list" then
+              HandleLedFsList(payload, ledStates)
+            else if msgType = "led-fs-read" then
+              HandleLedFsRead(payload, ledStates)
+            else if msgType = "led-fs-write" then
+              HandleLedFsWrite(payload, ledStates)
+            else if msgType = "led-fs-delete" then
+              HandleLedFsDelete(payload, ledStates)
+            else if msgType = "led-ota-ping" then
+              HandleLedOtaPing(ledStates)
+            else if msgType = "led-ota-auth" then
+              HandleLedOtaAuth(payload, ledStates)
             else if msgType = "led-ota-install" then
               HandleLedOtaInstall(payload, msgPort, ledStates)
             else if msgType = "led-ota-cancel" then

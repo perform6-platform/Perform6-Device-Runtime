@@ -8,12 +8,14 @@ import { reportOtaStatusSafe } from './otaStatusApi';
 import { compareRuntimeVersions } from './runtimeVersion';
 
 const OTA_INSTALL_MESSAGE = 'led-ota-install';
+const OTA_AUTH_MESSAGE = 'led-ota-auth';
+const OTA_PING_MESSAGE = 'led-ota-ping';
 const OTA_PROGRESS_TYPE = 'led-ota-progress';
 const OTA_REBOOT_MESSAGE = 'led-ota-reboot';
 const OTA_CANCEL_MESSAGE = 'led-ota-cancel';
 
-/** After a failed OTA, skip automatic OTA for this long so sync/remote stay usable. */
-const OTA_FAIL_COOLDOWN_MS = 30 * 60_000;
+/** After a failed OTA, skip automatic OTA so media sync can recover without competing HTTP. */
+const OTA_FAIL_COOLDOWN_MS = 3 * 60_000;
 let lastOtaFailAtMs = 0;
 let lastOtaFailReason = '';
 
@@ -67,6 +69,9 @@ export interface OtaManifestResponse {
   version?: string;
   profile?: string;
   files?: OtaManifestFile[];
+  packageFileCount?: number;
+  completedCount?: number;
+  staged?: boolean;
 }
 
 export type OtaProgressStatus = 'start' | 'progress' | 'done' | 'failed' | 'complete';
@@ -312,6 +317,7 @@ function waitForOtaComplete(
           targetVersion,
           doneCount: totalCount,
           totalCount,
+          currentPath: lastPath,
           runtimeVersion: runtimeConfig.runtimeVersion,
         });
         finish({ ok: true });
@@ -382,11 +388,49 @@ function waitForOtaComplete(
   });
 }
 
+function waitForOtaStatusDetail(
+  wantDetail: string,
+  timeoutMs = 8_000,
+): Promise<boolean> {
+  const port = getSharedMessagePort();
+  if (!port) return Promise.resolve(false);
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      unsub();
+      resolve(ok);
+    };
+    const unsub = subscribeBsMessages((event) => {
+      const data = event.data ?? {};
+      if (String(data.type ?? '') !== OTA_PROGRESS_TYPE) return;
+      if (String(data.status ?? '') !== 'start') return;
+      const detail = String(data.error ?? '');
+      if (detail === wantDetail || detail.startsWith(wantDetail)) {
+        finish(true);
+      }
+    });
+    const timer = window.setTimeout(() => finish(false), timeoutMs);
+  });
+}
+
 export async function installOtaFromManifest(
   auth: DeviceAuthContext,
   manifest: OtaManifestResponse,
 ): Promise<{ ok: boolean; error?: string }> {
-  const files = manifest.files ?? [];
+  const files = [...(manifest.files ?? [])].sort((a, b) => {
+    const rank = (path: string) => {
+      const p = path.replace(/^\/+/, '').toLowerCase();
+      if (p === 'autorun.brs') return 0;
+      if (p === 'index.html') return 1;
+      if (p.startsWith('assets/')) return 3;
+      return 2;
+    };
+    return rank(a.path) - rank(b.path) || a.path.localeCompare(b.path);
+  });
   if (!manifest.updateAvailable || files.length === 0) {
     return { ok: false, error: 'No OTA files in manifest' };
   }
@@ -396,16 +440,23 @@ export async function installOtaFromManifest(
     return { ok: false, error: 'BSMessagePort unavailable (simulator)' };
   }
 
-  const urls = files.map((file) => resolveOtaFileUrl(file));
-  const paths = files.map((file) => file.path);
-  const sizes = files.map((file) => String(file.sizeBytes ?? 0));
-  const authNeeded = urls.some(needsDeviceAuth);
+  // Always one file per autorun message — large pipe payloads never get acked on some players.
+  const wave = files.slice(0, 1);
+  const file = wave[0];
+  const fileUrl = resolveOtaFileUrl(file);
+  const filePath = file.path.replace(/^\/+/, '');
+  const fileSize = String(file.sizeBytes ?? 0);
+
+  const packageTotal = manifest.packageFileCount ?? files.length;
+  const alreadyDone = manifest.completedCount ?? 0;
 
   console.info('[Perform6] OTA install queue:', {
     version: manifest.version,
     profile: manifest.profile,
-    fileCount: files.length,
-    files: files.map((f, i) => ({
+    staged: manifest.staged === true || wave.length < files.length,
+    waveFileCount: wave.length,
+    packageProgress: `${alreadyDone}/${packageTotal}`,
+    files: wave.map((f, i) => ({
       index: i + 1,
       path: f.path,
       sizeBytes: f.sizeBytes,
@@ -414,34 +465,73 @@ export async function installOtaFromManifest(
   });
 
   const targetVersion = manifest.version ?? '';
-  const installPromise = waitForOtaComplete(auth, targetVersion, files.length);
+
+  // Tiny ping first — proves JS↔autorun path before auth/install.
+  const pingWait = waitForOtaStatusDetail('pong', 8_000);
+  port.PostBSMessage({ type: OTA_PING_MESSAGE });
+  const pingOk = await pingWait;
+  if (!pingOk) {
+    console.warn('[Perform6] OTA bridge ping failed — autorun not answering');
+  } else {
+    console.info('[Perform6] OTA bridge ping ok');
+  }
+
+  // Auth in a separate message so install payload stays small (JWT can be huge).
+  const authWait = waitForOtaStatusDetail('auth-ok', 8_000);
+  port.PostBSMessage({
+    type: OTA_AUTH_MESSAGE,
+    authBearer: auth.apiToken,
+    deviceId: auth.deviceId,
+  });
+  const authOk = await authWait;
+  if (!authOk) {
+    console.warn('[Perform6] OTA auth ack missing — continuing with install anyway');
+  }
+
+  const installPromise = waitForOtaComplete(auth, targetVersion, wave.length);
 
   console.info('[Perform6] OTA sending led-ota-install to autorun', {
     version: targetVersion,
-    fileCount: files.length,
+    fileCount: 1,
+    path: filePath,
   });
 
+  // Singular keys only — no pipe lists, no authBearer on this message.
   port.PostBSMessage({
     type: OTA_INSTALL_MESSAGE,
-    fileUrls: urls.join('|'),
-    filePaths: paths.join('|'),
-    fileSizes: sizes.join('|'),
-    authBearer: authNeeded ? auth.apiToken : '',
-    deviceId: authNeeded ? auth.deviceId : '',
+    fileUrl,
+    filePath,
+    fileSize,
     version: manifest.version ?? '',
+    deviceId: auth.deviceId,
   });
 
   const result = await installPromise;
   if (!result.ok) return result;
 
-  console.info('[Perform6] OTA sending reboot command to autorun');
+  reportOtaStatusSafe(auth, {
+    status: 'REBOOTING',
+    targetVersion,
+    doneCount: alreadyDone + wave.length,
+    totalCount: packageTotal,
+    currentPath: filePath,
+    runtimeVersion: runtimeConfig.runtimeVersion,
+  });
+
+  console.info(
+    `[Perform6] OTA wave ok (${filePath}) — rebooting so next wave / new autorun can load`,
+  );
   port.PostBSMessage({ type: OTA_REBOOT_MESSAGE });
   return { ok: true };
 }
 
 export async function applyOtaUpdate(
   auth: DeviceAuthContext,
+  options?: { clearFailCooldown?: boolean },
 ): Promise<{ applied: boolean; version?: string; error?: string }> {
+  if (options?.clearFailCooldown) {
+    clearOtaFailCooldown();
+  }
   if (isOtaPaused()) {
     console.info('[Perform6] OTA skipped — pauseOta in perform6-ops.json');
     return { applied: false, error: 'OTA paused via perform6-ops.json' };
@@ -490,6 +580,7 @@ export async function applyOtaUpdate(
     if (!install.ok) {
       console.warn('[Perform6] OTA install failed', install.error);
       markOtaFailed(install.error);
+      cancelOtaInstall();
       reportOtaStatusSafe(auth, {
         status: 'FAILED',
         targetVersion: manifest.version,

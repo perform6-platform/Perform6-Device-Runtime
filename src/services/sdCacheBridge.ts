@@ -13,6 +13,7 @@ import { cacheNameFor, sdCacheFileUrl } from './sdCacheName';
 const PREFETCH_MESSAGE = 'led-cache-prefetch';
 const KEEP_MESSAGE = 'led-cache-keep';
 const EVICT_MESSAGE = 'led-cache-evict';
+const CANCEL_MESSAGE = 'led-cache-cancel';
 const PROGRESS_TYPE = 'led-cache-progress';
 const READY_KEY = 'perform6-sd-cache-ready';
 const CONFIRMED_KEY = 'perform6-sd-cache-confirmed';
@@ -35,8 +36,12 @@ export const KEEP_CHUNK_SIZE = 12;
 
 const MAX_DOWNLOAD_RETRIES = 3;
 const RETRY_DELAYS_MS = [5_000, 15_000, 30_000];
-/** Fail a stuck file and continue the batch if no byte progress for this long. */
-const DOWNLOAD_STALL_MS = 3 * 60_000;
+/** Zero byte growth this long → cancel transfer then retry (not silent skip). */
+const DOWNLOAD_STALL_MS = 120_000;
+const MIN_FILE_TIMEOUT_MS = 5 * 60_000;
+const MAX_FILE_TIMEOUT_MS = 45 * 60_000;
+/** Assumed floor throughput for hard timeout (~50 KB/s). */
+const TIMEOUT_BYTES_PER_SEC = 50_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -359,6 +364,31 @@ export function requestSdCacheEvict(fileUrls: string[]): boolean {
   return true;
 }
 
+/** Cancel active/queued SD cache transfers (stall / hard timeout). */
+export function requestSdCacheCancel(fileUrls?: string[]): boolean {
+  const port = getPort();
+  if (!port) return false;
+  const urls = fileUrls
+    ? [
+        ...new Set(
+          fileUrls
+            .map((u) => resolveMediaFileUrl(u))
+            .filter((u) => u.startsWith('http')),
+        ),
+      ]
+    : [];
+  port.PostBSMessage({
+    type: CANCEL_MESSAGE,
+    role: prefetchRole(),
+    urls: urls.join('|'),
+    count: String(urls.length),
+  });
+  console.info('[Perform6] SD cache cancel requested', {
+    count: urls.length || 'all-active',
+  });
+  return true;
+}
+
 /** Delete all files under SD:/perform6-cache and reset the prefetch queue. */
 export function requestSdCacheClearAll(): boolean {
   const port = getPort();
@@ -416,10 +446,17 @@ function describeCacheError(error?: string): string {
   if (lower.includes('sd card full')) {
     return 'SD card is full — free space and sync again';
   }
-  if (lower.includes('network error') || lower.includes('couldn') || lower.includes('timed out')) {
+  if (lower.includes('stalled') || lower.includes('cancelled for retry')) {
+    return 'Download stalled — will retry';
+  }
+  if (lower.includes('timed out') || lower.includes('timeout')) {
+    return 'Download timed out — will retry';
+  }
+  if (lower.includes('network error') || lower.includes('couldn')) {
     return 'Network error — check connection';
   }
   if (lower.includes('size mismatch')) return 'Incomplete download — retrying';
+  if (lower.includes('cancelled')) return 'Download cancelled — will retry';
   return error;
 }
 
@@ -430,6 +467,26 @@ function isPermanentCacheError(error?: string): boolean {
   if (lower.includes('sd card full')) return true;
   if (lower.includes('401 unauthorized')) return true;
   return false;
+}
+
+function isRetryableCacheError(error?: string): boolean {
+  if (!error) return true;
+  if (isPermanentCacheError(error)) return false;
+  return true;
+}
+
+function fileHardTimeoutMs(item: SyncMediaItem): number {
+  const bytes = item.fileSize != null ? Number(item.fileSize) : 0;
+  if (Number.isFinite(bytes) && bytes > 0) {
+    const bySize = Math.ceil(bytes / TIMEOUT_BYTES_PER_SEC) * 1000;
+    return Math.min(MAX_FILE_TIMEOUT_MS, Math.max(MIN_FILE_TIMEOUT_MS, bySize));
+  }
+  return 15 * 60_000;
+}
+
+function chunkTimeoutMs(items: SyncMediaItem[]): number {
+  const sum = items.reduce((total, item) => total + fileHardTimeoutMs(item), 0);
+  return Math.max(MIN_FILE_TIMEOUT_MS, sum);
 }
 
 function sdCachePathForItem(item: SyncMediaItem): string {
@@ -516,19 +573,6 @@ function updateDownloadUiFromBatch(
   });
 }
 
-function chunkTimeoutMs(items: SyncMediaItem[]): number {
-  const perFileMs = items.map((item) => {
-    const bytes = item.fileSize != null ? Number(item.fileSize) : 0;
-    if (bytes > 0) {
-      // ~400 KB/s effective + 10 min floor per large file.
-      return Math.max(600_000, Math.ceil(bytes / 400_000) * 1000);
-    }
-    return 900_000;
-  });
-  const sum = perFileMs.reduce((a, b) => a + b, 0);
-  return Math.max(300_000, sum);
-}
-
 async function downloadMediaChunkToSd(
   items: SyncMediaItem[],
   onProgress?: (progress: SdDownloadProgress) => void | Promise<void>,
@@ -574,18 +618,26 @@ async function downloadMediaChunkToSd(
     let completeRetried = false;
     const timeout = window.setTimeout(() => {
       if (settled) return;
+      const pendingUrls = [...pending.values()].map((item) => item.fileUrl);
+      requestSdCacheCancel(pendingUrls);
       settled = true;
       window.clearInterval(stallInterval);
       unsubscribe();
-      failPendingItems(pending, failed, failureReasons, 'Download timed out');
+      failPendingItems(
+        pending,
+        failed,
+        failureReasons,
+        'Download timed out — cancelled for retry',
+      );
       setDownloadUiState({
-        phase: 'downloading',
-        statusMessage: 'Some downloads timed out — continuing with others',
+        phase: 'retrying',
+        statusMessage: 'Download timed out — cancelling and retrying',
         retryInSeconds: null,
       });
-      console.warn('[Perform6] SD cache chunk timed out', {
-        pending: pending.size,
+      console.warn('[Perform6] SD cache chunk timed out — cancelled', {
+        pending: pendingUrls.length,
         chunkSize: items.length,
+        timeoutMs: chunkTimeoutMs(items),
       });
       resolve();
     }, chunkTimeoutMs(items));
@@ -593,15 +645,23 @@ async function downloadMediaChunkToSd(
     const stallInterval = window.setInterval(() => {
       if (settled || pending.size === 0) return;
       if (Date.now() - lastProgressAt < DOWNLOAD_STALL_MS) return;
-      console.warn('[Perform6] SD cache download stalled — skipping file(s)', {
+      const pendingUrls = [...pending.values()].map((item) => item.fileUrl);
+      console.warn('[Perform6] SD cache download stalled — cancelling for retry', {
         pending: pending.size,
+        stallMs: DOWNLOAD_STALL_MS,
       });
+      requestSdCacheCancel(pendingUrls);
       failPendingItems(
         pending,
         failed,
         failureReasons,
-        'Download stalled — skipped to continue batch',
+        'Download stalled — cancelled for retry',
       );
+      setDownloadUiState({
+        phase: 'retrying',
+        statusMessage: 'Download stalled — cancelling and retrying',
+        retryInSeconds: null,
+      });
       finish();
     }, 15_000);
 
@@ -785,11 +845,13 @@ async function downloadMediaChunkToSd(
               );
               return;
             }
+            const stillPendingUrls = [...pending.values()].map((i) => i.fileUrl);
+            requestSdCacheCancel(stillPendingUrls);
             failPendingItems(
               pending,
               failed,
               failureReasons,
-              'Download incomplete — skipped to continue batch',
+              'Download incomplete — cancelled for retry',
             );
             finish();
           });
@@ -899,12 +961,17 @@ export async function downloadMediaItemsToSd(
       let retries = 0;
       while (result.failed.length > 0 && retries < MAX_DOWNLOAD_RETRIES) {
         const delayMs = RETRY_DELAYS_MS[retries] ?? 30_000;
+        const attempt = retries + 1;
         const retryItems = chunk.filter(
           (item) =>
             result.failed.includes(item.mediaVersionId) &&
-            !isPermanentCacheError(result.failureReasons[item.mediaVersionId]),
+            isRetryableCacheError(result.failureReasons[item.mediaVersionId]),
         );
         if (retryItems.length === 0) break;
+
+        for (const item of retryItems) {
+          delete failureReasons[item.mediaVersionId];
+        }
 
         for (let sec = Math.ceil(delayMs / 1000); sec > 0; sec -= 1) {
           setDownloadUiState({
@@ -914,7 +981,7 @@ export async function downloadMediaItemsToSd(
               retryItems[0].mediaVersionId,
             ),
             retryInSeconds: sec,
-            statusMessage: 'Connection lost — retrying automatically',
+            statusMessage: `Retry ${attempt}/${MAX_DOWNLOAD_RETRIES} after stall or timeout`,
           });
           await sleep(1000);
         }
@@ -928,12 +995,27 @@ export async function downloadMediaItemsToSd(
         });
         succeeded.push(...result.succeeded.filter((id) => !succeeded.includes(id)));
         downloaded.push(...result.downloaded.filter((id) => !downloaded.includes(id)));
-        for (const id of result.succeeded) succeededSoFar.add(id);
+        for (const id of result.succeeded) {
+          succeededSoFar.add(id);
+          delete failureReasons[id];
+        }
         Object.assign(failureReasons, result.failureReasons);
         retries += 1;
       }
 
       failed.push(...result.failed.filter((id) => !succeeded.includes(id)));
+      for (const id of result.failed) {
+        if (succeeded.includes(id)) continue;
+        const reason = failureReasons[id] ?? '';
+        if (
+          reason.includes('cancelled for retry') ||
+          reason.includes('stalled') ||
+          reason.toLowerCase().includes('timed out')
+        ) {
+          failureReasons[id] =
+            `Download failed after ${MAX_DOWNLOAD_RETRIES} retries — check network or use Sync Now`;
+        }
+      }
     }
   } finally {
     bulkDownloadInProgress = false;
