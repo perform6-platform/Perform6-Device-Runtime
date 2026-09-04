@@ -34,11 +34,13 @@ export async function sendDeviceHeartbeat(
           }
         : undefined),
     metadata: {
-      bridgeUp: bridge.up,
+      bridgeUp: bridge.bridgeState === 'up',
       bridgeHealthy: bridge.healthy,
+      bridgeState: bridge.bridgeState,
       bridgeProtocol: bridge.protocolVersion,
       autorunRelease: bridge.autorunRelease,
       bridgeMissStreak: bridge.missStreak,
+      bridgeHeavyLoad: bridge.heavyLoad,
       ...(payload.metadata ?? {}),
     },
   };
@@ -50,7 +52,7 @@ export async function sendDeviceHeartbeat(
     body: JSON.stringify(body),
   });
 
-  if (peekDeviceLogCount() > 20) {
+  if (peekDeviceLogCount() > 0) {
     void flushDeviceLogs(auth).catch(() => {
       /* best-effort */
     });

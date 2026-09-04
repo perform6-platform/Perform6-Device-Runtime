@@ -1743,12 +1743,102 @@ Function ShouldBridgeHealReboot() as Boolean
   return true
 End Function
 
+Function ShouldAllowHtmlRecycle(force as Boolean) as Boolean
+  recycleCooldownSec = 900
+  now = NowEpochSeconds()
+  if force = true then
+    stamp = "1"
+    if now > 0 then stamp = IntToStr(now)
+    WriteAsciiFile("SD:/perform6-bridge-recycle", stamp)
+    return true
+  end if
+  if FileExistsIn("SD:/", "perform6-bridge-recycle") then
+    raw = ReadAsciiFile("SD:/perform6-bridge-recycle")
+    prev = Val(raw)
+    if now > 0 and prev > 0 and (now - prev) >= recycleCooldownSec then
+      DeleteFile("SD:/perform6-bridge-recycle")
+    else
+      return false
+    end if
+  end if
+  stamp = "1"
+  if now > 0 then stamp = IntToStr(now)
+  WriteAsciiFile("SD:/perform6-bridge-recycle", stamp)
+  return true
+End Function
+
 Sub ClearBridgeHealMarker()
   if FileExistsIn("SD:/", "perform6-bridge-heal") then
     DeleteFile("SD:/perform6-bridge-heal")
     LedLog("=== Perform6: bridge heal marker cleared (round-trip ok) ===")
   end if
 End Sub
+
+Sub RememberAppUrl(kind as String, appUrl as String)
+  if Len(appUrl) = 0 then return
+  g = GetGlobalAA()
+  if kind = "touch" then
+    g.appUrlTouch = appUrl
+  else if kind = "primary" then
+    g.appUrlPrimary = appUrl
+  else
+    g.appUrlSingle = appUrl
+  end if
+End Sub
+
+Function HasActiveTransfer(states as Object) as Boolean
+  if type(states) <> "roArray" then return false
+  for each st in states
+    if type(st) = "roAssociativeArray" then
+      if type(st.xfer) = "roUrlTransfer" then return true
+    end if
+  end for
+  return false
+End Function
+
+Function RecycleHtmlWidget(states as Object, reason as String, force as Boolean) as Boolean
+  if ShouldAllowHtmlRecycle(force) = false then
+    LedLog("=== Perform6: html recycle refused (cooldown) — " + reason + " ===")
+    return false
+  end if
+  g = GetGlobalAA()
+  html = ResolveBridgeHtml(states)
+  appUrl = ""
+  if type(g.appUrlTouch) = "roString" or type(g.appUrlTouch) = "String" then
+    if type(g.htmlTouch) = "roHtmlWidget" then
+      html = g.htmlTouch
+      appUrl = g.appUrlTouch
+    end if
+  end if
+  if Len(appUrl) = 0 then
+    if type(g.appUrlPrimary) = "roString" or type(g.appUrlPrimary) = "String" then
+      if type(g.htmlPrimary) = "roHtmlWidget" then
+        html = g.htmlPrimary
+        appUrl = g.appUrlPrimary
+      end if
+    end if
+  end if
+  if Len(appUrl) = 0 then
+    if type(g.appUrlSingle) = "roString" or type(g.appUrlSingle) = "String" then
+      if type(g.html) = "roHtmlWidget" then
+        html = g.html
+        appUrl = g.appUrlSingle
+      end if
+    end if
+  end if
+  if type(html) <> "roHtmlWidget" or Len(appUrl) = 0 then
+    LedLog("=== Perform6: html recycle failed — no widget/url — " + reason + " ===")
+    return false
+  end if
+  ack = CreateObject("roAssociativeArray")
+  ack.AddReplace("type", "led-bridge-recycle-ack")
+  ack.reason = reason
+  PostJsMessage(html, ack)
+  LedLog("=== Perform6: html soft recycle SetUrl — " + reason + " ===")
+  FlushLedLog()
+  html.SetUrl(appUrl)
+  return true
+End Function
 
 Sub InitBridgeWatch()
   g = GetGlobalAA()
@@ -1770,7 +1860,7 @@ Sub NoteBridgeActivity()
   if type(g.bridgeLastSpan) = "roTimespan" then g.bridgeLastSpan.Mark()
 End Sub
 
-Sub MaybeBridgeWatchdogHeal()
+Sub MaybeBridgeWatchdogHeal(states as Object)
   g = GetGlobalAA()
   silenceMs = 0
   bootMs = 0
@@ -1792,6 +1882,10 @@ Sub MaybeBridgeWatchdogHeal()
   end if
 
   if needHeal = false then return
+  if RecycleHtmlWidget(states, "watchdog:" + reason, false) = true then
+    if type(g.bridgeLastSpan) = "roTimespan" then g.bridgeLastSpan.Mark()
+    return
+  end if
   if ShouldBridgeHealReboot() = false then
     refuseAge = 0
     if type(g.healRefuseLogSpan) = "roTimespan" then refuseAge = g.healRefuseLogSpan.TotalMilliseconds()
@@ -1820,7 +1914,8 @@ Sub HandleLedBridgePing(states as Object)
   msg = CreateObject("roAssociativeArray")
   msg.AddReplace("type", "led-bridge-pong")
   msg.AddReplace("protocolVersion", "2")
-  msg.AddReplace("features", "ota-ping,ota-reboot,cache-cancel,bridge-heal,fs,playback-ack")
+  msg.AddReplace("features", "ota-ping,ota-reboot,cache-cancel,bridge-heal,bridge-recycle,fs,playback-ack")
+  if HasActiveTransfer(states) then msg.busy = "1" else msg.busy = "0"
   PostJsMessage(html, msg)
   LedLog("=== Perform6: led-bridge-pong ===")
 End Sub
@@ -1839,8 +1934,8 @@ Sub HandleLedHello(payload as Object, states as Object)
   msg = CreateObject("roAssociativeArray")
   msg.AddReplace("type", "led-hello-ack")
   msg.AddReplace("protocolVersion", "2")
-  msg.AddReplace("features", "ota-ping,ota-reboot,cache-cancel,bridge-heal,fs,playback-ack")
-  msg.AddReplace("autorunRelease", "1.0.86")
+  msg.AddReplace("features", "ota-ping,ota-reboot,cache-cancel,bridge-heal,bridge-recycle,fs,playback-ack")
+  msg.AddReplace("autorunRelease", "1.0.88")
   PostJsMessage(html, msg)
   if Len(jsVersion) > 0 then
     LedLog("=== Perform6: led-hello-ack protocol=2 js=" + jsVersion + " ===")
@@ -1859,13 +1954,31 @@ Sub PostBridgeTick(states as Object)
   msg = CreateObject("roAssociativeArray")
   msg.AddReplace("type", "led-bridge-tick")
   msg.AddReplace("protocolVersion", "2")
+  if HasActiveTransfer(states) then msg.busy = "1" else msg.busy = "0"
   PostJsMessage(html, msg)
+End Sub
+
+Sub HandleLedBridgeRecycle(payload as Object, states as Object)
+  NoteBridgeActivity()
+  reason = PayloadString(payload, "reason")
+  if Len(reason) = 0 then reason = "js requested"
+  force = false
+  if PayloadString(payload, "force") = "1" then force = true
+  RecycleHtmlWidget(states, reason, force)
 End Sub
 
 Sub HandleLedBridgeHeal(payload as Object)
   NoteBridgeActivity()
   reason = PayloadString(payload, "reason")
   if Len(reason) = 0 then reason = "js requested"
+  force = PayloadString(payload, "force")
+  if force = "1" then
+    if FileExistsIn("SD:/", "perform6-bridge-heal") then DeleteFile("SD:/perform6-bridge-heal")
+    LedLog("=== Perform6: bridge heal FORCE reboot — " + reason + " ===")
+    FlushLedLog()
+    RebootDeviceAfterOta()
+    return
+  end if
   if ShouldBridgeHealReboot() = false then
     LedLog("=== Perform6: bridge heal refused (marker) — " + reason + " ===")
     return
@@ -3332,6 +3445,7 @@ Sub Main()
     htmlTouch.Show()
     gTouch = GetGlobalAA()
     gTouch.htmlTouch = htmlTouch
+    RememberAppUrl("touch", touchUrl)
     ClearBootFailMarker()
     EnsureDeferredWorkers(ledStates, htmlTouch)
     ProcessOpsOnBoot(ledStates)
@@ -3376,6 +3490,7 @@ Sub Main()
     htmlPrimary.Show()
     gPrimary = GetGlobalAA()
     gPrimary.htmlPrimary = htmlPrimary
+    RememberAppUrl("primary", primaryUrl)
     ClearBootFailMarker()
     EnsureDeferredWorkers(ledStates, htmlPrimary)
     ProcessOpsOnBoot(ledStates)
@@ -3430,6 +3545,7 @@ Sub Main()
     html.Show()
     gSingle = GetGlobalAA()
     gSingle.html = html
+    RememberAppUrl("single", url)
     ClearBootFailMarker()
     EnsureDeferredWorkers(ledStates, html)
     ProcessOpsOnBoot(ledStates)
@@ -3485,7 +3601,7 @@ Sub Main()
       end if
     else if type(ev) = "roTimerEvent" then
       HandleDownloadProgressTick(msgPort, ledStates)
-      MaybeBridgeWatchdogHeal()
+      MaybeBridgeWatchdogHeal(ledStates)
       PostBridgeTick(ledStates)
       if type(progressTimer) = "roTimer" then
         progressTimer.SetElapsed(15, 0)
@@ -3555,6 +3671,8 @@ Sub Main()
               HandleLedBridgeHealthy()
             else if msgType = "led-bridge-heal" then
               HandleLedBridgeHeal(payload)
+            else if msgType = "led-bridge-recycle-html" then
+              HandleLedBridgeRecycle(payload, ledStates)
             else if msgType = "led-cache-prefetch" then
               HandleLedPrefetch(payload, msgPort, ledStates)
             else if msgType = "led-cache-keep" then

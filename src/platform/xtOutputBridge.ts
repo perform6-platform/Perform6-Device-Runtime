@@ -2,6 +2,7 @@ import { runtimeConfig } from '../config/runtime';
 import { getSharedMessagePort, subscribeBsMessages } from './bsMessagePort';
 import { isLocalPlaybackSrc } from '../services/playbackSrc';
 import { BridgeMsg } from '../services/bridgeProtocol';
+import { requestBridgeHtmlRecycle } from '../services/bridgeKeepalive';
 import { subscribeSdCacheProgress } from '../services/sdCacheBridge';
 import { useRuntimeStore } from '../stores/runtimeStore';
 
@@ -10,6 +11,7 @@ let ignoreLedEndedUntil = 0;
 let awaitingAck = false;
 let ackTimer: number | null = null;
 let lastPostedNonce = '';
+let ackRetryUsed = false;
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
@@ -37,6 +39,7 @@ function postTouchPlayback(port: BrightSignMessagePort, isRetry = false): void {
   const src = nativePlayableSrc(state.displayVideoSrc, meta?.fallbackSrc);
   const restartNonce = String(state.displayRestartNonce);
   lastPostedNonce = restartNonce;
+  if (!isRetry) ackRetryUsed = false;
   port.PostBSMessage({
     type: BridgeMsg.XT_PLAYBACK,
     role: 'touch',
@@ -61,17 +64,31 @@ function postTouchPlayback(port: BrightSignMessagePort, isRetry = false): void {
     clearAckWait();
     return;
   }
-  if (awaitingAck && !isRetry) return;
+  if (isRetry) return;
+  if (awaitingAck) return;
   awaitingAck = true;
   if (ackTimer != null) window.clearTimeout(ackTimer);
   ackTimer = window.setTimeout(() => {
     awaitingAck = false;
     ackTimer = null;
+    if (ackRetryUsed) {
+      console.warn('[Perform6] XT playback ack failed after retry — requesting html recycle');
+      requestBridgeHtmlRecycle('playback-ack-timeout');
+      return;
+    }
+    ackRetryUsed = true;
     console.warn('[Perform6] XT playback ack timeout — retrying once', {
       src,
       restartNonce,
     });
     postTouchPlayback(port, true);
+    awaitingAck = true;
+    ackTimer = window.setTimeout(() => {
+      awaitingAck = false;
+      ackTimer = null;
+      console.warn('[Perform6] XT playback ack failed after retry — requesting html recycle');
+      requestBridgeHtmlRecycle('playback-ack-timeout');
+    }, 3_000);
   }, 3_000);
 }
 
@@ -103,6 +120,7 @@ export function initXtOutputBridge(): void {
       const nonce = asString(event.data.restartNonce);
       if (!nonce || nonce === lastPostedNonce) {
         clearAckWait();
+        ackRetryUsed = false;
       }
       const ok = asString(event.data.ok) !== '0';
       if (!ok) {

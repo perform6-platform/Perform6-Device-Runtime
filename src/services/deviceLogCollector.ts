@@ -8,9 +8,16 @@ export interface BufferedDeviceLog {
   loggedAt: string;
 }
 
-const MAX_BUFFER = 800;
+const MAX_BUFFER = 1200;
 const buffer: BufferedDeviceLog[] = [];
 let installed = false;
+let urgentFlushHandler: (() => void) | null = null;
+
+function shouldSkipMessage(message: string): boolean {
+  if (!message) return true;
+  if (message.length > 8000) return false;
+  return false;
+}
 
 function pushLog(level: DeviceLogLevel, args: unknown[]): void {
   const message = args
@@ -26,14 +33,7 @@ function pushLog(level: DeviceLogLevel, args: unknown[]): void {
     .join(' ')
     .trim();
 
-  if (!message) return;
-  if (
-    !message.includes('[Perform6]') &&
-    !message.includes('=== Perform6:') &&
-    !message.includes('BSPLAY:')
-  ) {
-    return;
-  }
+  if (shouldSkipMessage(message)) return;
 
   buffer.push({
     level,
@@ -42,6 +42,14 @@ function pushLog(level: DeviceLogLevel, args: unknown[]): void {
     loggedAt: new Date().toISOString(),
   });
   if (buffer.length > MAX_BUFFER) buffer.shift();
+
+  if (level === 'WARN' || level === 'ERROR') {
+    urgentFlushHandler?.();
+  }
+}
+
+export function setDeviceLogUrgentFlushHandler(handler: (() => void) | null): void {
+  urgentFlushHandler = handler;
 }
 
 export function installDeviceLogCollector(): void {

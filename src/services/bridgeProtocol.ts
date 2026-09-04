@@ -9,6 +9,8 @@ export const BridgeMsg = {
   TICK: 'led-bridge-tick',
   HEALTHY: 'led-bridge-healthy',
   HEAL: 'led-bridge-heal',
+  RECYCLE: 'led-bridge-recycle-html',
+  RECYCLE_ACK: 'led-bridge-recycle-ack',
   XT_PLAYBACK: 'xt-playback',
   XT_PLAYBACK_ACK: 'xt-playback-ack',
   XT_LED_READY: 'xt-led-ready',

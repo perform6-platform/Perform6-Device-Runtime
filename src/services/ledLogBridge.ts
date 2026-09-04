@@ -55,21 +55,29 @@ async function fetchAutorunLogTailViaBridge(timeoutMs: number): Promise<string> 
   });
 }
 
-export async function fetchAutorunLogTail(timeoutMs = 4_000): Promise<string> {
+export async function fetchAutorunLogTail(
+  timeoutMs = 4_000,
+  options?: { quiet?: boolean },
+): Promise<string> {
+  const quiet = options?.quiet === true;
   const viaNode = readAutorunLogViaNode();
   if (viaNode.trim()) {
-    console.info('[Perform6] Autorun log tail via Node', {
-      chars: viaNode.length,
-    });
+    if (!quiet) {
+      console.info('[Perform6] Autorun log tail via Node', {
+        chars: viaNode.length,
+      });
+    }
     return viaNode;
   }
   const viaBridge = await fetchAutorunLogTailViaBridge(timeoutMs);
-  if (viaBridge.trim()) {
-    console.info('[Perform6] Autorun log tail via bridge', {
-      chars: viaBridge.length,
-    });
-  } else {
-    console.warn('[Perform6] Autorun log tail empty (Node+bridge)');
+  if (!quiet) {
+    if (viaBridge.trim()) {
+      console.info('[Perform6] Autorun log tail via bridge', {
+        chars: viaBridge.length,
+      });
+    } else {
+      console.warn('[Perform6] Autorun log tail empty (Node+bridge)');
+    }
   }
   return viaBridge;
 }

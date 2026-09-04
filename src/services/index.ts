@@ -16,6 +16,7 @@ export * from './otaAssetPool';
 export * from './otaStatusApi';
 export * from './deviceLogsApi';
 export * from './deviceLogCollector';
+export * from './deviceLogUploader';
 export * from './offlineCache';
 export * from './runtime';
 export * from './credentialStore';

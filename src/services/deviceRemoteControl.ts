@@ -211,6 +211,16 @@ export async function executeSystemRemoteCommand(
       }
       return true;
     }
+    case 'BRIDGE_RECYCLE': {
+      const { requestBridgeHtmlRecycle } = await import('./bridgeKeepalive');
+      requestBridgeHtmlRecycle('admin remote', true);
+      return true;
+    }
+    case 'FORCE_BRIDGE_HEAL': {
+      const { requestBridgeForceHeal } = await import('./bridgeKeepalive');
+      requestBridgeForceHeal('admin remote');
+      return true;
+    }
     default:
       return false;
   }

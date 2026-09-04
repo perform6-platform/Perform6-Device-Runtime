@@ -9,9 +9,11 @@ import { ErrorBoundary } from './components/status';
 import { initXtOutputBridge } from './platform/xtOutputBridge';
 import { initXcOutputBridge } from './platform/xcOutputBridge';
 import { installDeviceLogCollector } from './services/deviceLogCollector';
+import { startDeviceLogUploader } from './services/deviceLogUploader';
 import { initSdStoragePresence } from './services/sdStoragePresence';
 
 installDeviceLogCollector();
+startDeviceLogUploader();
 initSdStoragePresence();
 
 /** Older BrightSign Chromium builds may lack rAF. */
