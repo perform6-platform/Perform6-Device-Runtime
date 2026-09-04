@@ -8,7 +8,7 @@ export interface BufferedDeviceLog {
   loggedAt: string;
 }
 
-const MAX_BUFFER = 400;
+const MAX_BUFFER = 800;
 const buffer: BufferedDeviceLog[] = [];
 let installed = false;
 
@@ -26,7 +26,14 @@ function pushLog(level: DeviceLogLevel, args: unknown[]): void {
     .join(' ')
     .trim();
 
-  if (!message.includes('[Perform6]')) return;
+  if (!message) return;
+  if (
+    !message.includes('[Perform6]') &&
+    !message.includes('=== Perform6:') &&
+    !message.includes('BSPLAY:')
+  ) {
+    return;
+  }
 
   buffer.push({
     level,
@@ -37,7 +44,6 @@ function pushLog(level: DeviceLogLevel, args: unknown[]): void {
   if (buffer.length > MAX_BUFFER) buffer.shift();
 }
 
-/** Capture `[Perform6]` console lines for remote upload. */
 export function installDeviceLogCollector(): void {
   if (installed || typeof console === 'undefined') return;
   installed = true;
@@ -69,8 +75,7 @@ export function installDeviceLogCollector(): void {
 
 export function drainDeviceLogs(): BufferedDeviceLog[] {
   if (buffer.length === 0) return [];
-  const copy = buffer.splice(0, buffer.length);
-  return copy;
+  return buffer.splice(0, buffer.length);
 }
 
 export function peekDeviceLogCount(): number {

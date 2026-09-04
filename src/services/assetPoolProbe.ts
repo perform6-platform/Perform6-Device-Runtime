@@ -1,7 +1,7 @@
 /**
  * Probe BrightSign asset-pool modules once at boot.
- * Media uses SD:/perform6-media-pool; OTA uses SD:/perform6-ota-pool
- * (see mediaAssetPool.ts / otaAssetPool.ts). Clear-cache never wipes OTA pool.
+ * Media uses /storage/sd/perform6-media-pool; OTA uses /storage/sd/perform6-ota-pool.
+ * Clear-cache never wipes OTA pool.
  */
 export type AssetPoolProbeResult = {
   assetpool: boolean;

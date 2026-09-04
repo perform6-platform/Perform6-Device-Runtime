@@ -16,29 +16,20 @@ function autorunTailToEntries(tail: string): DeviceLogUploadEntry[] {
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
-    .slice(-120)
+    .slice(-200)
     .map((message) => ({
-      level: message.includes('ERROR') || message.includes('FAILED') ? 'ERROR' : 'INFO',
+      level:
+        message.includes('ERROR') || message.includes('FAILED')
+          ? 'ERROR'
+          : message.includes('unparsed') || message.includes('ping — no')
+            ? 'WARN'
+            : 'INFO',
       source: 'AUTORUN' as const,
       message: message.slice(0, 8000),
     }));
 }
 
-export async function uploadDeviceLogs(
-  auth: DeviceAuthContext,
-  entries: DeviceLogUploadEntry[],
-): Promise<void> {
-  if (entries.length === 0) return;
-  await apiFetchData<{ accepted: number }>('/devices/me/logs', {
-    method: 'POST',
-    token: auth.apiToken,
-    deviceId: auth.deviceId,
-    body: JSON.stringify({ entries: entries.slice(0, 200) }),
-  });
-}
-
-/** Flush JS console buffer + autorun log tail to the API. */
-export async function flushDeviceLogs(auth: DeviceAuthContext): Promise<number> {
+async function collectLogEntries(): Promise<DeviceLogUploadEntry[]> {
   const jsEntries = drainDeviceLogs().map((entry) => ({
     level: entry.level,
     source: entry.source,
@@ -50,13 +41,54 @@ export async function flushDeviceLogs(auth: DeviceAuthContext): Promise<number> 
   try {
     const tail = await fetchAutorunLogTail();
     autorunEntries = autorunTailToEntries(tail);
-  } catch {
-    /* best-effort */
+  } catch (error) {
+    console.warn('[Perform6] Autorun log collect failed', error);
   }
 
-  const entries = [...jsEntries, ...autorunEntries].slice(0, 200);
+  const merged = [...jsEntries, ...autorunEntries];
+  console.info('[Perform6] Log upload batch', {
+    js: jsEntries.length,
+    autorun: autorunEntries.length,
+    total: merged.length,
+  });
+  return merged.slice(0, 400);
+}
+
+export async function uploadDeviceLogs(
+  auth: DeviceAuthContext,
+  entries: DeviceLogUploadEntry[],
+): Promise<void> {
+  if (entries.length === 0) return;
+  await apiFetchData<{ accepted: number }>('/devices/me/logs', {
+    method: 'POST',
+    token: auth.apiToken,
+    deviceId: auth.deviceId,
+    body: JSON.stringify({ entries: entries.slice(0, 400) }),
+  });
+}
+
+export async function flushDeviceLogs(auth: DeviceAuthContext): Promise<number> {
+  const entries = await collectLogEntries();
+  if (entries.length === 0) return 0;
+  await uploadDeviceLogs(auth, entries);
+  return entries.length;
+}
+
+export async function flushPairingLogs(
+  pairingId: string,
+  serialNumber: string,
+): Promise<number> {
+  if (!pairingId.trim() || !serialNumber.trim()) return 0;
+  const entries = await collectLogEntries();
   if (entries.length === 0) return 0;
 
-  await uploadDeviceLogs(auth, entries);
+  await apiFetchData<{ accepted: number }>('/devices/pairings/logs', {
+    method: 'POST',
+    body: JSON.stringify({
+      pairingId,
+      serialNumber,
+      entries: entries.slice(0, 400),
+    }),
+  });
   return entries.length;
 }

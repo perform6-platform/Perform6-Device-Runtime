@@ -1,7 +1,7 @@
 ' Perform6 BrightSign autorun - thin boot + deferred SD workers
 ' BOOT ONLY: identity, DWS, SetScreenModes, HtmlWidget Show, native LED idle/playback, reboot.
 ' DEFERRED (after Show / when JS asks): cache prefetch (legacy fallback), OTA install, clearCache.
-' MEDIA (preferred): JS @brightsign/assetpool → SD:/perform6-media-pool (isolated from OTA).
+' MEDIA (preferred): JS @brightsign/assetpool → sd/perform6-media-pool; fallback SD:/perform6-cache.
 ' OTA (preferred): JS @brightsign/assetpool → SD:/perform6-ota-pool → copy to SD:/{path}; HTTP worker = fallback.
 ' Clear-cache wipes only perform6-cache + perform6-media-pool — NEVER perform6-ota-pool or package files.
 ' Policy (pair, heartbeat, sync, OTA trigger) lives in React + API — not in this file.
@@ -95,13 +95,12 @@ Sub PostStorageHotplug(states as Object, attached as Boolean, path as String)
     state = "detached"
   end if
   LedLog("=== Perform6: storage " + state + " " + path + " ===")
-  html = ResolveP6Html(states, invalid)
-  if type(html) <> "roHtmlWidget" then return
+  html = ResolveBridgeHtml(states)
   msg = CreateObject("roAssociativeArray")
-  msg.type = "led-storage"
+  msg.AddReplace("type", "led-storage")
   msg.state = state
   msg.path = path
-  html.PostJSMessage(msg)
+  PostJsMessage(html, msg)
 End Sub
 
 Sub HandleStorageHotplug(ev as Object, states as Object, attached as Boolean)
@@ -232,6 +231,70 @@ Function TryCreateVideoPlayer(rect as Object, msgPort as Object, userTag as Inte
   return vp
 End Function
 
+Function AsBrString(value as Object) as String
+  if type(value) = "roString" or type(value) = "String" then return value
+  return ""
+End Function
+
+Function EventLookup(data as Object, key as String) as Object
+  if type(data) <> "roAssociativeArray" then return invalid
+  return data.Lookup(key)
+End Function
+
+Function CoerceMessagePayload(raw as Object) as Object
+  if type(raw) = "roAssociativeArray" then return raw
+  text = AsBrString(raw)
+  if Len(text) = 0 then return invalid
+  if Left(text, 1) <> "{" then return invalid
+  parsed = ParseJSON(text)
+  if type(parsed) = "roAssociativeArray" then return parsed
+  return invalid
+End Function
+
+Function ExtractJsPayload(data as Object) as Object
+  if type(data) <> "roAssociativeArray" then return invalid
+  nested = CoerceMessagePayload(EventLookup(data, "message"))
+  if type(nested) <> "roAssociativeArray" then
+    nested = CoerceMessagePayload(data.message)
+  end if
+  if type(nested) = "roAssociativeArray" then return nested
+  if Len(PayloadString(data, "type")) > 0 then return data
+  return invalid
+End Function
+
+Function HtmlWidgetEventReason(data as Object) as String
+  reason = AsBrString(EventLookup(data, "reason"))
+  if Len(reason) = 0 then reason = AsBrString(data.reason)
+  return reason
+End Function
+
+Function ResolveBridgeHtml(states as Object) as Object
+  html = ResolveP6Html(states, invalid)
+  if type(html) = "roHtmlWidget" then return html
+  g = GetGlobalAA()
+  if type(g.p6Html) = "roHtmlWidget" then return g.p6Html
+  if type(g.htmlTouch) = "roHtmlWidget" then return g.htmlTouch
+  if type(g.htmlPrimary) = "roHtmlWidget" then return g.htmlPrimary
+  if type(g.html) = "roHtmlWidget" then return g.html
+  return invalid
+End Function
+
+Sub PostJsToWidget(html as Object, msg as Object)
+  if type(html) <> "roHtmlWidget" then return
+  if type(msg) <> "roAssociativeArray" then return
+  html.PostJSMessage(msg)
+End Sub
+
+Sub PostJsMessage(html as Object, msg as Object)
+  if type(msg) <> "roAssociativeArray" then return
+  PostJsToWidget(html, msg)
+  g = GetGlobalAA()
+  if type(g.p6Html) = "roHtmlWidget" then PostJsToWidget(g.p6Html, msg)
+  if type(g.htmlTouch) = "roHtmlWidget" then PostJsToWidget(g.htmlTouch, msg)
+  if type(g.htmlPrimary) = "roHtmlWidget" then PostJsToWidget(g.htmlPrimary, msg)
+  if type(g.html) = "roHtmlWidget" then PostJsToWidget(g.html, msg)
+End Sub
+
 Function PayloadString(payload as Object, key as String) as String
   if type(payload) <> "roAssociativeArray" then
     return ""
@@ -242,7 +305,7 @@ Function PayloadString(payload as Object, key as String) as String
   else if key = "fallbackSrc" then
     value = payload.fallbackSrc
   else if key = "type" then
-    value = payload.type
+    value = payload.Lookup("type")
   else if key = "role" then
     value = payload.role
   else if key = "target" then
@@ -293,13 +356,15 @@ Function PayloadString(payload as Object, key as String) as String
     value = payload.mediaTitle
   else if key = "screenKey" then
     value = payload.screenKey
+  else if key = "reason" then
+    value = payload.Lookup("reason")
+    if type(value) = "Invalid" then value = payload.reason
   else
     value = payload.Lookup(key)
   end if
   if type(value) = "roString" or type(value) = "String" then
     return value
   end if
-  ' BSMessagePort may deliver numbers; coerce so OTA sizes / counts still parse.
   if type(value) = "roInt" or type(value) = "Integer" or type(value) = "Float" then
     s = StrI(Int(value))
     while Len(s) > 0 and Left(s, 1) = " "
@@ -310,8 +375,6 @@ Function PayloadString(payload as Object, key as String) as String
   return ""
 End Function
 
-' BSMessagePort may deliver JS booleans/numbers as strings, so every control
-' value has to be accepted in both forms or Pause/Restart/Volume silently no-op.
 Function PayloadBool(payload as Object, key as String, fallback as Boolean) as Boolean
   if type(payload) <> "roAssociativeArray" then
     return fallback
@@ -562,12 +625,13 @@ Function HexHashesMatch(a as String, b as String) as Boolean
   return LCase(a) = LCase(b)
 End Function
 
-' BrightSign docs: for large Internet transfers, average the min rate over 15+ minutes.
+' Abort zombie transfers sooner so the prefetch/OTA queue cannot sit blocked.
+' (Large VOD on gym Wi-Fi needs a longer average window than tiny assets.)
 Sub ConfigureDownloadTransfer(xfer as Object, msgPort as Object, url as String, userKey as String)
   xfer.SetUrl(url)
   xfer.SetPort(msgPort)
   xfer.SetUserData(userKey)
-  xfer.SetMinimumTransferRate(1024, 900)
+  xfer.SetMinimumTransferRate(512, 300)
 End Sub
 
 ' Docs-compliant downloads (do NOT mix resume_file with a hash-only pipe):
@@ -878,6 +942,10 @@ End Sub
 
 Sub EnsureDeferredWorkers(states as Object, html as Object)
   RememberP6Html(html)
+  ' AssetPool + autorun cache both need these folders on SD before first fetch.
+  CreateDirectory(CacheDir())
+  CreateDirectory(MediaPoolDir())
+  LedLog("=== Perform6: media dirs ready " + CacheDir() + " + " + MediaPoolDir() + " ===")
   if type(FindPrefetchWorker(states)) <> "roAssociativeArray" then
     states.Push(CreatePrefetchWorker())
   end if
@@ -936,21 +1004,26 @@ Sub PostCacheProgress(states as Object, status as String, url as String, name as
   if type(worker) <> "roAssociativeArray" then return
   RecalcPrefetchTotals(worker)
   html = worker.notifyHtml
-  if type(html) <> "roHtmlWidget" then return
+  if type(html) <> "roHtmlWidget" then html = ResolveP6Html(states, worker)
+  if type(html) <> "roHtmlWidget" then
+    LedLog("=== Perform6: cache progress dropped (no html) status=" + status + " ===")
+    return
+  end if
+  worker.notifyHtml = html
 
   msg = CreateObject("roAssociativeArray")
-  msg.type = "led-cache-progress"
+  msg.AddReplace("type", "led-cache-progress")
   msg.status = status
   msg.url = url
   msg.name = name
   msg.mediaVersionId = mediaVersionId
   msg.error = errorText
   msg.destPath = destPath
-  msg.bytesDownloaded = bytesDownloaded
-  msg.bytesTotal = bytesTotal
+  msg.bytesDownloaded = IntToStr(bytesDownloaded)
+  msg.bytesTotal = IntToStr(bytesTotal)
   msg.doneCount = worker.prefetchDone
   msg.totalCount = worker.prefetchTotal
-  html.PostJSMessage(msg)
+  PostJsMessage(html, msg)
 End Sub
 
 ' One clock for the whole autorun - a fresh roTimespan is always ~0ms and
@@ -989,17 +1062,15 @@ End Function
 Sub PostLedLogTail(html as Object, requestId as String, text as String)
   if type(html) <> "roHtmlWidget" then return
   msg = CreateObject("roAssociativeArray")
-  msg.type = "led-log-tail"
-  msg.requestId = requestId
-  msg.text = text
-  html.PostJSMessage(msg)
+  msg.AddReplace("type", "led-log-tail")
+  msg.AddReplace("requestId", requestId)
+  msg.AddReplace("text", text)
+  PostJsMessage(html, msg)
 End Sub
 
 Sub HandleLedLogTailRequest(payload as Object, states as Object)
   FlushLedLog()
-  worker = FindPrefetchWorker(states)
-  html = invalid
-  if type(worker) = "roAssociativeArray" then html = worker.notifyHtml
+  html = ResolveBridgeHtml(states)
   tail = ReadLogTail("SD:/perform6-led.log", 48000)
   PostLedLogTail(html, PayloadString(payload, "requestId"), tail)
 End Sub
@@ -1025,10 +1096,9 @@ Function NormalizeSdPath(raw as String) as String
 End Function
 
 Sub PostLedFsResult(states as Object, requestId as String, action as String, ok as Boolean, path as String, entriesText as String, content as String, errorText as String)
-  html = ResolveP6Html(states, invalid)
-  if type(html) <> "roHtmlWidget" then return
+  html = ResolveBridgeHtml(states)
   msg = CreateObject("roAssociativeArray")
-  msg.type = "led-fs-result"
+  msg.AddReplace("type", "led-fs-result")
   msg.requestId = requestId
   msg.action = action
   if ok then msg.ok = "1" else msg.ok = "0"
@@ -1038,8 +1108,66 @@ Sub PostLedFsResult(states as Object, requestId as String, action as String, ok 
   msg.encoding = "utf8"
   msg.error = errorText
   msg.sizeBytes = Len(content)
-  html.PostJSMessage(msg)
+  PostJsMessage(html, msg)
 End Sub
+
+' SD capacity for Admin heartbeat (free / size / used in megabytes).
+Sub HandleLedStorageInfo(states as Object)
+  html = ResolveBridgeHtml(states)
+
+  freeMb = 0
+  sizeMb = 0
+  si = CreateObject("roStorageInfo", "SD:/")
+  if type(si) = "roStorageInfo" then
+    freeVal = si.GetFreeInMegabytes()
+    if type(freeVal) = "roInteger" or type(freeVal) = "Integer" then freeMb = freeVal
+    ' GetSizeInMegabytes exists on modern BOS; ignore if missing.
+    sizeVal = si.GetSizeInMegabytes()
+    if type(sizeVal) = "roInteger" or type(sizeVal) = "Integer" then sizeMb = sizeVal
+  end if
+
+  usedMb = 0
+  if sizeMb > freeMb then usedMb = sizeMb - freeMb
+
+  msg = CreateObject("roAssociativeArray")
+  msg.AddReplace("type", "led-storage-info-result")
+  msg.freeMb = IntToStr(freeMb)
+  msg.capacityMb = IntToStr(sizeMb)
+  msg.usedMb = IntToStr(usedMb)
+  PostJsMessage(html, msg)
+  LedLog("=== Perform6: storage info freeMb=" + IntToStr(freeMb) + " sizeMb=" + IntToStr(sizeMb) + " ===")
+End Sub
+
+' BrightSign docs: ListDir(path) returns directory entries (files + folders).
+' MatchFiles is a fallback for older behavior / pattern filters.
+Function ListSdDirectoryNames(dir as String) as Object
+  names = ListDir(dir)
+  if type(names) = "roList" or type(names) = "roArray" then
+    if names.Count() > 0 then return names
+  end if
+  ' Some firmwares prefer no trailing slash.
+  trimmed = dir
+  if Right(trimmed, 1) = "/" and Len(trimmed) > 4 then
+    trimmed = Left(trimmed, Len(trimmed) - 1)
+    names = ListDir(trimmed)
+    if type(names) = "roList" or type(names) = "roArray" then
+      if names.Count() > 0 then return names
+    end if
+  end if
+  matched = MatchFiles(dir, "*")
+  if type(matched) = "roList" or type(matched) = "roArray" then return matched
+  return CreateObject("roArray", 0, true)
+End Function
+
+Function SdPathIsDirectory(path as String) as Boolean
+  listing = ListDir(path)
+  if type(listing) = "roList" or type(listing) = "roArray" then return true
+  if Right(path, 1) <> "/" then
+    listing = ListDir(path + "/")
+    if type(listing) = "roList" or type(listing) = "roArray" then return true
+  end if
+  return false
+End Function
 
 Sub HandleLedFsList(payload as Object, states as Object)
   requestId = PayloadString(payload, "requestId")
@@ -1050,29 +1178,23 @@ Sub HandleLedFsList(payload as Object, states as Object)
   end if
   dir = path
   if Right(dir, 1) <> "/" then dir = dir + "/"
-  files = MatchFiles(dir, "*")
+  files = ListSdDirectoryNames(dir)
   entriesText = ""
   count = 0
   if type(files) = "roList" or type(files) = "roArray" then
     for each name in files
       if count >= 200 then exit for
-      full = dir + name
-      kind = "file"
-      fs = CreateObject("roFileSystem")
-      if type(fs) = "roFileSystem" then
-        stat = fs.Stat(full)
-        if type(stat) = "roAssociativeArray" then
-          if type(stat.type) = "roString" or type(stat.type) = "String" then
-            if Instr(1, LCase(stat.type), "dir") > 0 then kind = "dir"
-          end if
-        end if
+      if Len(name) > 0 and Left(name, 1) <> "." then
+        full = dir + name
+        kind = "file"
+        if SdPathIsDirectory(full) then kind = "dir"
+        size = 0
+        if kind = "file" then size = PartFileBytes(full)
+        line = name + "|" + IntToStr(size) + "|" + kind
+        if Len(entriesText) > 0 then entriesText = entriesText + Chr(10)
+        entriesText = entriesText + line
+        count = count + 1
       end if
-      size = 0
-      if kind = "file" then size = PartFileBytes(full)
-      line = name + "|" + IntToStr(size) + "|" + kind
-      if Len(entriesText) > 0 then entriesText = entriesText + Chr(10)
-      entriesText = entriesText + line
-      count = count + 1
     end for
   end if
   LedLog("=== Perform6: FS list " + path + " n=" + IntToStr(count) + " ===")
@@ -1203,7 +1325,7 @@ Sub PostOtaProgressBytes(states as Object, status as String, path as String, det
   worker.notifyHtml = html
 
   msg = CreateObject("roAssociativeArray")
-  msg.type = "led-ota-progress"
+  msg.AddReplace("type", "led-ota-progress")
   msg.status = status
   msg.path = path
   msg.error = detail
@@ -1212,7 +1334,7 @@ Sub PostOtaProgressBytes(states as Object, status as String, path as String, det
   msg.fileIndex = IntToStr(fileNum)
   if bytesDownloaded >= 0 then msg.bytesDownloaded = IntToStr(bytesDownloaded)
   if bytesTotal > 0 then msg.bytesTotal = IntToStr(bytesTotal)
-  html.PostJSMessage(msg)
+  PostJsMessage(html, msg)
 End Sub
 
 Sub PostOtaProgress(states as Object, status as String, path as String, detail as String)
@@ -1592,6 +1714,167 @@ Sub RebootDeviceAfterOta()
   Sleep(5000)
 End Sub
 
+' Bridge heal marker: auto-reboot while stuck; refuse until cooldown expires
+' or JS proves round-trip (led-bridge-healthy). Prevents reboot-loops.
+Function NowEpochSeconds() as Integer
+  dt = CreateObject("roDateTime")
+  if type(dt) <> "roDateTime" then return 0
+  secs = dt.ToSecondsSinceEpoch()
+  if type(secs) = "roInteger" or type(secs) = "Integer" then return secs
+  return 0
+End Function
+
+Function ShouldBridgeHealReboot() as Boolean
+  healCooldownSec = 21600
+  now = NowEpochSeconds()
+  if FileExistsIn("SD:/", "perform6-bridge-heal") then
+    raw = ReadAsciiFile("SD:/perform6-bridge-heal")
+    prev = Val(raw)
+    if now > 0 and prev > 0 and (now - prev) >= healCooldownSec then
+      DeleteFile("SD:/perform6-bridge-heal")
+      LedLog("=== Perform6: bridge heal marker expired (" + IntToStr(healCooldownSec) + "s) ===")
+    else
+      return false
+    end if
+  end if
+  stamp = "1"
+  if now > 0 then stamp = IntToStr(now)
+  WriteAsciiFile("SD:/perform6-bridge-heal", stamp)
+  return true
+End Function
+
+Sub ClearBridgeHealMarker()
+  if FileExistsIn("SD:/", "perform6-bridge-heal") then
+    DeleteFile("SD:/perform6-bridge-heal")
+    LedLog("=== Perform6: bridge heal marker cleared (round-trip ok) ===")
+  end if
+End Sub
+
+Sub InitBridgeWatch()
+  g = GetGlobalAA()
+  g.bridgeEverSeen = false
+  g.bridgeLastSpan = CreateObject("roTimespan")
+  g.bridgeBootSpan = CreateObject("roTimespan")
+  g.healRefuseLogSpan = CreateObject("roTimespan")
+  if type(g.bridgeLastSpan) = "roTimespan" then g.bridgeLastSpan.Mark()
+  if type(g.bridgeBootSpan) = "roTimespan" then g.bridgeBootSpan.Mark()
+  if type(g.healRefuseLogSpan) = "roTimespan" then g.healRefuseLogSpan.Mark()
+End Sub
+
+Sub NoteBridgeActivity()
+  g = GetGlobalAA()
+  g.bridgeEverSeen = true
+  if type(g.bridgeLastSpan) <> "roTimespan" then
+    g.bridgeLastSpan = CreateObject("roTimespan")
+  end if
+  if type(g.bridgeLastSpan) = "roTimespan" then g.bridgeLastSpan.Mark()
+End Sub
+
+Sub MaybeBridgeWatchdogHeal()
+  g = GetGlobalAA()
+  silenceMs = 0
+  bootMs = 0
+  if type(g.bridgeLastSpan) = "roTimespan" then silenceMs = g.bridgeLastSpan.TotalMilliseconds()
+  if type(g.bridgeBootSpan) = "roTimespan" then bootMs = g.bridgeBootSpan.TotalMilliseconds()
+
+  needHeal = false
+  reason = ""
+  if g.bridgeEverSeen = true then
+    if silenceMs > 240000 then
+      needHeal = true
+      reason = "js silent " + IntToStr(silenceMs) + "ms"
+    end if
+  else
+    if bootMs > 600000 then
+      needHeal = true
+      reason = "no js messages " + IntToStr(bootMs) + "ms after boot"
+    end if
+  end if
+
+  if needHeal = false then return
+  if ShouldBridgeHealReboot() = false then
+    refuseAge = 0
+    if type(g.healRefuseLogSpan) = "roTimespan" then refuseAge = g.healRefuseLogSpan.TotalMilliseconds()
+    if refuseAge > 300000 or type(g.healRefuseLogSpan) <> "roTimespan" then
+      LedLog("=== Perform6: bridge heal waiting cooldown — " + reason + " ===")
+      if type(g.healRefuseLogSpan) <> "roTimespan" then g.healRefuseLogSpan = CreateObject("roTimespan")
+      if type(g.healRefuseLogSpan) = "roTimespan" then g.healRefuseLogSpan.Mark()
+    end if
+    return
+  end if
+  LedLog("=== Perform6: bridge watchdog heal — " + reason + " ===")
+  FlushLedLog()
+  RebootDeviceAfterOta()
+End Sub
+
+Sub HandleLedBridgePing(states as Object)
+  NoteBridgeActivity()
+  html = ResolveBridgeHtml(states)
+  if type(html) <> "roHtmlWidget" then
+    g = GetGlobalAA()
+    if type(g.htmlTouch) <> "roHtmlWidget" and type(g.htmlPrimary) <> "roHtmlWidget" and type(g.html) <> "roHtmlWidget" and type(g.p6Html) <> "roHtmlWidget" then
+      LedLog("=== Perform6: bridge ping — no HtmlWidget for pong ===")
+      return
+    end if
+  end if
+  msg = CreateObject("roAssociativeArray")
+  msg.AddReplace("type", "led-bridge-pong")
+  msg.AddReplace("protocolVersion", "2")
+  msg.AddReplace("features", "ota-ping,ota-reboot,cache-cancel,bridge-heal,fs,playback-ack")
+  PostJsMessage(html, msg)
+  LedLog("=== Perform6: led-bridge-pong ===")
+End Sub
+
+Sub HandleLedHello(payload as Object, states as Object)
+  NoteBridgeActivity()
+  html = ResolveBridgeHtml(states)
+  if type(html) <> "roHtmlWidget" then
+    g = GetGlobalAA()
+    if type(g.htmlTouch) <> "roHtmlWidget" and type(g.htmlPrimary) <> "roHtmlWidget" and type(g.html) <> "roHtmlWidget" and type(g.p6Html) <> "roHtmlWidget" then
+      LedLog("=== Perform6: led-hello — no HtmlWidget for ack ===")
+      return
+    end if
+  end if
+  jsVersion = PayloadString(payload, "runtimeVersion")
+  msg = CreateObject("roAssociativeArray")
+  msg.AddReplace("type", "led-hello-ack")
+  msg.AddReplace("protocolVersion", "2")
+  msg.AddReplace("features", "ota-ping,ota-reboot,cache-cancel,bridge-heal,fs,playback-ack")
+  msg.AddReplace("autorunRelease", "1.0.86")
+  PostJsMessage(html, msg)
+  if Len(jsVersion) > 0 then
+    LedLog("=== Perform6: led-hello-ack protocol=2 js=" + jsVersion + " ===")
+  else
+    LedLog("=== Perform6: led-hello-ack protocol=2 ===")
+  end if
+End Sub
+
+Sub HandleLedBridgeHealthy()
+  NoteBridgeActivity()
+  ClearBridgeHealMarker()
+End Sub
+
+Sub PostBridgeTick(states as Object)
+  html = ResolveBridgeHtml(states)
+  msg = CreateObject("roAssociativeArray")
+  msg.AddReplace("type", "led-bridge-tick")
+  msg.AddReplace("protocolVersion", "2")
+  PostJsMessage(html, msg)
+End Sub
+
+Sub HandleLedBridgeHeal(payload as Object)
+  NoteBridgeActivity()
+  reason = PayloadString(payload, "reason")
+  if Len(reason) = 0 then reason = "js requested"
+  if ShouldBridgeHealReboot() = false then
+    LedLog("=== Perform6: bridge heal refused (marker) — " + reason + " ===")
+    return
+  end if
+  LedLog("=== Perform6: bridge heal reboot — " + reason + " ===")
+  FlushLedLog()
+  RebootDeviceAfterOta()
+End Sub
+
 ' One automatic recovery reboot after a fatal boot error; avoids silent blank forever.
 Function ShouldAutoRebootOnce(markerName as String) as Boolean
   if FileExistsIn("SD:/", markerName) then
@@ -1754,7 +2037,8 @@ Sub DrainPrefetchQueue(msgPort as Object, states as Object)
   if type(worker.xfer) = "roUrlTransfer" then return
   if type(worker.queue) <> "roArray" then return
 
-  while worker.queue.Count() > 0
+  skipped = 0
+  while worker.queue.Count() > 0 and skipped < 4
     url = worker.queue[0]
     worker.queue.Delete(0)
     name = CacheNameFor(url)
@@ -1768,13 +2052,16 @@ Sub DrainPrefetchQueue(msgPort as Object, states as Object)
       skipDest = CacheDir() + "/" + name
       skipExpected = LookupUrlExpectedSize(worker, url)
       PostCacheProgress(states, "skip", url, name, mediaId, "", skipDest, PartFileBytes(skipDest), skipExpected)
+      skipped = skipped + 1
     else
       StartCacheDownload(worker, url, msgPort, states)
       return
     end if
   end while
 
-  ScheduleDeferredCacheComplete(states)
+  if worker.queue.Count() = 0 then
+    ScheduleDeferredCacheComplete(states)
+  end if
 End Sub
 
 Function QueueHasUrl(queue as Object, url as String) as Boolean
@@ -1949,12 +2236,14 @@ Sub HandleLedCacheEvict(payload as Object, states as Object)
 End Sub
 
 ' Cancel active/queued cache downloads (JS stall/timeout). Thin — no Sleep.
+' keepPart=true preserves .part so the next attempt can Range-resume.
 Sub HandleLedCacheCancel(payload as Object, msgPort as Object, states as Object)
   worker = FindPrefetchWorker(states)
   if type(worker) <> "roAssociativeArray" then return
 
   urls = SplitPipeUrls(PayloadString(payload, "urls"))
   cancelAll = (urls.Count() = 0)
+  keepPart = (PayloadString(payload, "keepPart") = "true")
 
   if type(worker.xfer) = "roUrlTransfer" then
     activeUrl = worker.xferUrl
@@ -1968,17 +2257,19 @@ Sub HandleLedCacheCancel(payload as Object, msgPort as Object, states as Object)
       tmp = worker.xferTmp
       name = worker.xferName
       mediaId = LookupUrlMediaId(worker, activeUrl)
+      partialBytes = PartFileBytes(tmp)
+      expected = LookupUrlExpectedSize(worker, activeUrl)
       worker.xfer.AsyncCancel()
       worker.xfer = invalid
       worker.xferUrl = ""
       worker.xferTmp = ""
       worker.xferDest = ""
       worker.xferName = ""
-      if Len(tmp) > 0 then DeleteFile(tmp)
+      if keepPart <> true and Len(tmp) > 0 then DeleteFile(tmp)
       worker.prefetchDone = worker.prefetchDone + 1
-      PostCacheProgress(states, "failed", activeUrl, name, mediaId, "cancelled", "", 0, 0)
+      PostCacheProgress(states, "failed", activeUrl, name, mediaId, "cancelled", "", partialBytes, expected)
       ClearUrlRetryCount(worker, activeUrl)
-      LedLog("=== Perform6: cache cancel active " + activeUrl + " ===")
+      LedLog("=== Perform6: cache cancel active keepPart=" + PayloadString(payload, "keepPart") + " " + activeUrl + " ===")
     end if
   end if
 
@@ -1992,7 +2283,9 @@ Sub HandleLedCacheCancel(payload as Object, msgPort as Object, states as Object)
         end for
       end if
       if drop then
-        DeleteFile(CacheDir() + "/" + CacheNameFor(qUrl) + ".part")
+        if keepPart <> true then
+          DeleteFile(CacheDir() + "/" + CacheNameFor(qUrl) + ".part")
+        end if
         LedLog("=== Perform6: cache cancel queued " + qUrl + " ===")
       else
         nextQ.Push(qUrl)
@@ -2017,7 +2310,7 @@ Function FindStateForUrlEvent(states as Object, ev as Object) as Object
   return invalid
 End Function
 
-Sub HandleDownloadProgressTick(states as Object)
+Sub HandleDownloadProgressTick(msgPort as Object, states as Object)
   for each st in states
     if type(st) = "roAssociativeArray" then
       if type(st.xfer) = "roUrlTransfer" then
@@ -2038,6 +2331,9 @@ Sub HandleDownloadProgressTick(states as Object)
       end if
     end if
   end for
+  if type(msgPort) = "roMessagePort" then
+    DrainPrefetchQueue(msgPort, states)
+  end if
 End Sub
 
 Sub HandleCacheEvent(st as Object, ev as Object, msgPort as Object, states as Object)
@@ -2206,7 +2502,10 @@ End Sub
 
 Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, states as Object)
   if type(st) <> "roAssociativeArray" then return
-  if type(st.vp) <> "roVideoPlayer" then return
+  if type(st.vp) <> "roVideoPlayer" then
+    PostPlaybackAck(states, st, payload, false, "no video player")
+    return
+  end if
 
   src = PayloadString(payload, "src")
   fallbackSrc = PayloadString(payload, "fallbackSrc")
@@ -2214,8 +2513,8 @@ Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, stat
     src = fallbackSrc
   end if
   if not IsPlayableNativeSrc(src) then
-    ' Nothing playable yet - hold the current frame instead of going black.
     LedLog("=== Perform6: LED " + st.key + " no playable src ===")
+    PostPlaybackAck(states, st, payload, false, "no playable src")
     return
   end if
 
@@ -2226,17 +2525,15 @@ Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, stat
   st.nonce = restartNonce
   st.wantUrl = src
 
-  ' Same clip, no restart requested: transport-only update, no reload.
   if src = st.playingUrl and not forceRestart then
     st.vp.SetLoopMode(st.loopMode)
     ApplyLedVolume(st, payload)
     ApplyLedPauseState(st)
+    PostPlaybackAck(states, st, payload, true, "transport")
     return
   end if
 
   if forceRestart and src = st.playingUrl then
-    ' Restart must rewind: reloading the same file is the only reliable seek.
-    ' StopClear fires MediaEnded - suppress it briefly so Full Program stays open.
     LedLog("=== Perform6: LED " + st.key + " restart ===")
     st.ignoreEnded = true
     st.ignoreEndedSpan = CreateObject("roTimespan")
@@ -2248,6 +2545,26 @@ Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, stat
   PlayNativeSrc(st, src, msgPort, states)
   ApplyLedVolume(st, payload)
   ApplyLedPauseState(st)
+  ok = false
+  if Len(st.playingUrl) > 0 then ok = true
+  detail = "play"
+  if ok = false then detail = "play failed"
+  PostPlaybackAck(states, st, payload, ok, detail)
+End Sub
+
+Sub PostPlaybackAck(states as Object, st as Object, payload as Object, ok as Boolean, detail as String)
+  html = ResolveBridgeHtml(states)
+  msg = CreateObject("roAssociativeArray")
+  profileHint = PayloadString(payload, "type")
+  ackType = "xt-playback-ack"
+  if profileHint = "xc-playback" then ackType = "xc-playback-ack"
+  msg.AddReplace("type", ackType)
+  if ok then msg.ok = "1" else msg.ok = "0"
+  msg.role = st.key
+  msg.src = st.playingUrl
+  msg.detail = detail
+  msg.restartNonce = IntToStr(PayloadInt(payload, "restartNonce", 0))
+  PostJsMessage(html, msg)
 End Sub
 
 ' Packaged led-idle.png (or optional led-idle.mp4 override) loops on the LED
@@ -2295,9 +2612,9 @@ Sub PostLedReady(html as Object, msgType as String, role as String)
     return
   end if
   ready = CreateObject("roAssociativeArray")
-  ready.type = msgType
-  ready.role = role
-  html.PostJSMessage(ready)
+  ready.AddReplace("type", msgType)
+  ready.AddReplace("role", role)
+  PostJsMessage(html, ready)
 End Sub
 
 ' Local DWS (docs): SetupDWS writes registry; BOS 9.1+ LDWS is off by default.
@@ -2604,10 +2921,10 @@ Sub HandleLedOpsReload(payload as Object, states as Object)
   if type(worker) = "roAssociativeArray" then html = worker.notifyHtml
   content = ReadRawFile(OpsFilePath())
   msg = CreateObject("roAssociativeArray")
-  msg.type = "led-ops-config"
+  msg.AddReplace("type", "led-ops-config")
   msg.requestId = PayloadString(payload, "requestId")
   msg.content = content
-  if type(html) = "roHtmlWidget" then html.PostJSMessage(msg)
+  PostJsMessage(html, msg)
 End Sub
 
 Sub HandleLedOpsWrite(payload as Object)
@@ -3010,10 +3327,11 @@ Sub Main()
     end if
 
     EnableJsObjectsSafe(htmlTouch)
-    ' XT HDMI-1 is a touch UI only. All programme audio belongs to HDMI-2.
     RoutePlayerAudio(htmlTouch, "none")
     SafePrint("=== Perform6: Show HDMI-1 touch HtmlWidget ===")
     htmlTouch.Show()
+    gTouch = GetGlobalAA()
+    gTouch.htmlTouch = htmlTouch
     ClearBootFailMarker()
     EnsureDeferredWorkers(ledStates, htmlTouch)
     ProcessOpsOnBoot(ledStates)
@@ -3053,10 +3371,11 @@ Sub Main()
     end if
 
     EnableJsObjectsSafe(htmlPrimary)
-    ' XC HDMI-1 is also a programme display, so its HTML video owns HDMI-1 audio.
     RoutePlayerAudio(htmlPrimary, "hdmi-1")
     SafePrint("=== Perform6: Show HDMI-1 primary HtmlWidget ===")
     htmlPrimary.Show()
+    gPrimary = GetGlobalAA()
+    gPrimary.htmlPrimary = htmlPrimary
     ClearBootFailMarker()
     EnsureDeferredWorkers(ledStates, htmlPrimary)
     ProcessOpsOnBoot(ledStates)
@@ -3109,6 +3428,8 @@ Sub Main()
     RoutePlayerAudio(html, "hdmi")
     SafePrint("=== Perform6: Show HtmlWidget ===")
     html.Show()
+    gSingle = GetGlobalAA()
+    gSingle.html = html
     ClearBootFailMarker()
     EnsureDeferredWorkers(ledStates, html)
     ProcessOpsOnBoot(ledStates)
@@ -3118,6 +3439,9 @@ Sub Main()
   PostStorageHotplug(ledStates, true, "SD:")
 
   ' DWS already enabled early (before SetScreenModes) for field recovery.
+
+  InitBridgeWatch()
+  LedLog("=== Perform6: bridge watchdog armed (silence 4m / no-js 10m) ===")
 
   progressTimer = CreateObject("roTimer")
   if type(progressTimer) = "roTimer" then
@@ -3153,14 +3477,16 @@ Sub Main()
         end if
         if not skipEnded then
           ended = CreateObject("roAssociativeArray")
-          ended.type = "xt-led-ended"
+          ended.AddReplace("type", "xt-led-ended")
           ended.role = "led"
-          htmlTouch.PostJSMessage(ended)
+          PostJsMessage(htmlTouch, ended)
           LedLog("=== Perform6: native LED media ended ===")
         end if
       end if
     else if type(ev) = "roTimerEvent" then
-      HandleDownloadProgressTick(ledStates)
+      HandleDownloadProgressTick(msgPort, ledStates)
+      MaybeBridgeWatchdogHeal()
+      PostBridgeTick(ledStates)
       if type(progressTimer) = "roTimer" then
         progressTimer.SetElapsed(15, 0)
         progressTimer.Start()
@@ -3177,77 +3503,14 @@ Sub Main()
     else if type(ev) = "roHtmlWidgetEvent" then
       data = ev.GetData()
       if type(data) = "roAssociativeArray" then
-        reason = ""
-        if type(data.reason) = "roString" then
-          reason = data.reason
-        end if
-        if reason = "message" then
-          payload = data.message
-          if type(payload) = "roAssociativeArray" then
-            msgType = PayloadString(payload, "type")
-            sender = PayloadString(payload, "role")
-            target = PayloadString(payload, "target")
-            if msgType = "led-cache-prefetch" then
-              HandleLedPrefetch(payload, msgPort, ledStates)
-            else if msgType = "led-cache-keep" then
-              HandleLedKeepSet(payload, ledStates)
-            else if msgType = "led-cache-evict" then
-              HandleLedCacheEvict(payload, ledStates)
-            else if msgType = "led-cache-cancel" then
-              HandleLedCacheCancel(payload, msgPort, ledStates)
-            else if msgType = "led-cache-clear-all" then
-              HandleLedCacheClearAll(ledStates)
-            else if msgType = "led-log-tail-request" then
-              HandleLedLogTailRequest(payload, ledStates)
-            else if msgType = "led-fs-list" then
-              HandleLedFsList(payload, ledStates)
-            else if msgType = "led-fs-read" then
-              HandleLedFsRead(payload, ledStates)
-            else if msgType = "led-fs-write" then
-              HandleLedFsWrite(payload, ledStates)
-            else if msgType = "led-fs-delete" then
-              HandleLedFsDelete(payload, ledStates)
-            else if msgType = "led-ota-ping" then
-              HandleLedOtaPing(ledStates)
-            else if msgType = "led-ota-auth" then
-              HandleLedOtaAuth(payload, ledStates)
-            else if msgType = "led-ota-install" then
-              HandleLedOtaInstall(payload, msgPort, ledStates)
-            else if msgType = "led-ota-cancel" then
-              HandleLedOtaCancel(ledStates)
-            else if msgType = "led-ota-reboot" then
-              RebootDeviceAfterOta()
-            else if msgType = "led-ops-reload" then
-              HandleLedOpsReload(payload, ledStates)
-            else if msgType = "led-ops-write" then
-              HandleLedOpsWrite(payload)
-            else if msgType = "xt-playback" or msgType = "xc-playback" then
-              pausedText = "play"
-              if PayloadBool(payload, "paused", false) then pausedText = "paused"
-              LedLog("=== Perform6: msg " + msgType + " from " + sender + " target " + target + " " + pausedText + " vol " + IntToStr(PayloadInt(payload, "volumePercent", 100)) + " nonce " + IntToStr(PayloadInt(payload, "restartNonce", 0)) + " src " + PayloadString(payload, "src") + " ===")
-            end if
-            if profile = "XT2145" then
-              if sender = "touch" and msgType = "xt-playback" then
-                ApplyNativePlayback(ledState, payload, msgPort, ledStates)
-              end if
-            else if profile = "XC4055" then
-              if sender = "primary" and msgType = "xc-playback" then
-                if target = "led2" then
-                  ApplyNativePlayback(led2State, payload, msgPort, ledStates)
-                else if target = "led3" then
-                  ApplyNativePlayback(led3State, payload, msgPort, ledStates)
-                end if
-              end if
-            end if
-          end if
-        else if reason = "load-error" then
-          msg = ""
-          if type(data.message) = "roString" then
-            msg = data.message
-          end if
+        reason = HtmlWidgetEventReason(data)
+        if reason = "load-error" then
+          msg = AsBrString(EventLookup(data, "message"))
+          if Len(msg) = 0 then msg = AsBrString(data.message)
           SafePrint("=== Perform6: HTML load-error: " + msg + " ===")
-          failedUrl = ""
-          if type(data.url) = "roString" then failedUrl = data.url
+          LedLog("=== Perform6: HTML load-error: " + msg + " ===")
+          failedUrl = AsBrString(EventLookup(data, "url"))
+          if Len(failedUrl) = 0 then failedUrl = AsBrString(data.url)
           if profile = "XT2145" then
             if Instr(1, failedUrl, "bs_output=touch") > 0 and touchFallbackTried = false and type(htmlTouch) = "roHtmlWidget" then
               touchFallbackTried = true
@@ -3269,6 +3532,88 @@ Sub Main()
           end if
         else if reason = "load-finished" then
           SafePrint("=== Perform6: HTML load-finished ===")
+          LedLog("=== Perform6: HTML load-finished ===")
+        else if reason = "message" or Len(reason) = 0 then
+          payload = ExtractJsPayload(data)
+          if type(payload) <> "roAssociativeArray" then
+            LedLog("=== Perform6: JS message unparsed reason=" + reason + " ===")
+          else
+            msgType = PayloadString(payload, "type")
+            sender = PayloadString(payload, "role")
+            target = PayloadString(payload, "target")
+            NoteBridgeActivity()
+            if Len(msgType) = 0 then
+              LedLog("=== Perform6: JS message empty type ===")
+            else
+              LedLog("=== Perform6: JS→autorun " + msgType + " ===")
+            end if
+            if msgType = "led-hello" then
+              HandleLedHello(payload, ledStates)
+            else if msgType = "led-bridge-ping" then
+              HandleLedBridgePing(ledStates)
+            else if msgType = "led-bridge-healthy" then
+              HandleLedBridgeHealthy()
+            else if msgType = "led-bridge-heal" then
+              HandleLedBridgeHeal(payload)
+            else if msgType = "led-cache-prefetch" then
+              HandleLedPrefetch(payload, msgPort, ledStates)
+            else if msgType = "led-cache-keep" then
+              HandleLedKeepSet(payload, ledStates)
+            else if msgType = "led-cache-evict" then
+              HandleLedCacheEvict(payload, ledStates)
+            else if msgType = "led-cache-cancel" then
+              HandleLedCacheCancel(payload, msgPort, ledStates)
+            else if msgType = "led-cache-clear-all" then
+              HandleLedCacheClearAll(ledStates)
+            else if msgType = "led-log-tail-request" then
+              HandleLedLogTailRequest(payload, ledStates)
+            else if msgType = "led-fs-list" then
+              HandleLedFsList(payload, ledStates)
+            else if msgType = "led-fs-read" then
+              HandleLedFsRead(payload, ledStates)
+            else if msgType = "led-fs-write" then
+              HandleLedFsWrite(payload, ledStates)
+            else if msgType = "led-fs-delete" then
+              HandleLedFsDelete(payload, ledStates)
+            else if msgType = "led-storage-info" then
+              HandleLedStorageInfo(ledStates)
+            else if msgType = "led-ota-ping" then
+              HandleLedOtaPing(ledStates)
+            else if msgType = "led-ota-auth" then
+              HandleLedOtaAuth(payload, ledStates)
+            else if msgType = "led-ota-install" then
+              HandleLedOtaInstall(payload, msgPort, ledStates)
+            else if msgType = "led-ota-cancel" then
+              HandleLedOtaCancel(ledStates)
+            else if msgType = "led-ota-reboot" then
+              RebootDeviceAfterOta()
+            else if msgType = "led-ops-reload" then
+              HandleLedOpsReload(payload, ledStates)
+            else if msgType = "led-ops-write" then
+              HandleLedOpsWrite(payload)
+            else if msgType = "xt-playback" or msgType = "xc-playback" then
+              pausedText = "play"
+              if PayloadBool(payload, "paused", false) then pausedText = "paused"
+              LedLog("=== Perform6: msg " + msgType + " from " + sender + " target " + target + " " + pausedText + " vol " + IntToStr(PayloadInt(payload, "volumePercent", 100)) + " nonce " + IntToStr(PayloadInt(payload, "restartNonce", 0)) + " src " + PayloadString(payload, "src") + " ===")
+            else if Len(msgType) > 0 then
+              LedLog("=== Perform6: JS unhandled type " + msgType + " ===")
+            end if
+            if profile = "XT2145" then
+              if sender = "touch" and msgType = "xt-playback" then
+                ApplyNativePlayback(ledState, payload, msgPort, ledStates)
+              end if
+            else if profile = "XC4055" then
+              if sender = "primary" and msgType = "xc-playback" then
+                if target = "led2" then
+                  ApplyNativePlayback(led2State, payload, msgPort, ledStates)
+                else if target = "led3" then
+                  ApplyNativePlayback(led3State, payload, msgPort, ledStates)
+                end if
+              end if
+            end if
+          end if
+        else if Len(reason) > 0 then
+          LedLog("=== Perform6: HtmlWidgetEvent reason=" + reason + " ===")
         end if
       end if
     else if type(ev) = "roStorageAttached" then

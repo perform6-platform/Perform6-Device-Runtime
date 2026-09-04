@@ -25,19 +25,27 @@ import {
   applyOtaUpdate,
 } from '../services';
 import { clearAllSdCachedMarks } from '../services/sdCacheBridge';
-import { cancelMediaDownloads, isMediaDownloadInProgress } from '../services/mediaDownloadGate';
+import { cancelMediaDownloads, isMediaDownloadInProgress, forceClearMediaDownloadLocks } from '../services/mediaDownloadGate';
 import { sendPlaybackTelemetry } from '../services/playbackTelemetryApi';
-import { flushDeviceLogs } from '../services/deviceLogsApi';
+import { flushDeviceLogs, flushPairingLogs } from '../services/deviceLogsApi';
 import { registerDeviceRemoteControlHooks } from '../services/deviceRemoteControl';
 import type { RemoteSyncNowOptions } from '../services/deviceRemoteControl';
 import { cancelOtaInstall } from '../services/otaApply';
 import { processRemoteCommands } from '../services/remoteCommandBridge';
+import { startBridgeKeepalive } from '../services/bridgeKeepalive';
 import { probeBrightSignAssetPool } from '../services/assetPoolProbe';
 import {
+  handleDeviceRevoked,
+  isDeviceAuthFailure,
+  isDeviceDisabledCredentialError,
+} from '../services/deviceAuthRevoke';
+import { clearLocalDeviceState } from '../services/deviceLocalReset';
+import { ApiError } from '../services/api';
+import {
   getSdStoragePresence,
-  initSdStoragePresence,
   subscribeSdStoragePresence,
 } from '../services/sdStoragePresence';
+import { getSdStorageForHeartbeat } from '../services/sdStorageInfo';
 import {
   loadPlaybackManifestCache,
   savePlaybackManifestCache,
@@ -45,11 +53,9 @@ import {
 import {
   consumeSyncOnBoot,
   isMediaSyncPaused,
-  isOtaPaused,
   reloadPerform6Ops,
   startPerform6OpsPolling,
 } from '../services/perform6Ops';
-import { ApiError } from '../services/api';
 import type { ClusterMember, DeviceInfo, DeviceRegistrationStatus } from '../shared/types';
 import type { MockDeviceOptions } from '../shared/mockDevice';
 import { isDeviceReady, useDeviceStore } from '../stores/deviceStore';
@@ -95,6 +101,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   const { deviceInfo, refreshDeviceInfo } = useDeviceContext();
 
   const pairingCode = useDeviceStore((s) => s.pairingCode);
+  const pairingId = useDeviceStore((s) => s.pairingId);
   const registrationStatus = useDeviceStore((s) => s.registrationStatus);
   const hasCredentials = useDeviceStore((s) => s.hasCredentials);
   const setPairing = useDeviceStore((s) => s.setPairing);
@@ -119,6 +126,11 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   /** Separate locks — media asset pool must not block OTA and vice versa. */
   const mediaSyncRunningRef = useRef(false);
   const otaSyncRunningRef = useRef(false);
+  const mediaSyncStartedAtRef = useRef(0);
+  const otaSyncStartedAtRef = useRef(0);
+  /** Media may be multi-GB (up to ~8GB) — do not self-interrupt mid-file. */
+  const MEDIA_SYNC_LOCK_MAX_MS = 8 * 60 * 60_000;
+  const OTA_SYNC_LOCK_MAX_MS = 60 * 60_000;
   const [hdPairingHistory, setHdPairingHistory] = useState<HdPairingSessionEntry[]>(() =>
     loadHdPairingSession().entries,
   );
@@ -170,7 +182,9 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         ? forceOrOptions
         : { force: forceOrOptions === true };
     const force = options.force === true;
-    const skipOta = options.skipOta === true;
+    // OTA only when Admin explicitly forceOta — never auto on interval / Sync Now.
+    const forceOta = options.forceOta === true;
+    const skipOta = !forceOta || options.skipOta === true;
     const interrupt = options.interrupt === true;
     const cancelOtaOnInterrupt = options.cancelOta !== false;
     const cancelMediaOnInterrupt = options.cancelMedia !== false;
@@ -181,14 +195,18 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
 
     await reloadPerform6Ops();
     if (!force && isMediaSyncPaused()) {
-      if (!isOtaPaused() && !skipOta) {
+      // Admin Install OTA still runs while media sync is paused.
+      if (forceOta && !skipOta) {
         pushDebugLog({
           category: 'sync',
-          message: 'Media sync paused — running OTA check only',
+          message: 'Media sync paused — running admin Install OTA only',
         });
         setSyncState({ inProgress: true, error: null, runtimePhase: 'syncing' });
         try {
-          const applied = await applyOtaUpdate(auth);
+          const applied = await applyOtaUpdate(auth, {
+            allowWhenPaused: true,
+            clearFailCooldown: true,
+          });
           pushDebugLog({
             category: 'sync',
             message: applied.applied
@@ -224,13 +242,43 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     if (interrupt) {
       if (cancelOtaOnInterrupt) cancelOtaInstall();
       if (cancelMediaOnInterrupt) cancelMediaDownloads();
+      forceClearMediaDownloadLocks('remote interrupt');
+      mediaSyncRunningRef.current = false;
+      otaSyncRunningRef.current = false;
+      mediaSyncStartedAtRef.current = 0;
+      otaSyncStartedAtRef.current = 0;
+    }
+
+    // Absolute max-age: never leave periodic sync blocked for hours.
+    if (
+      mediaSyncRunningRef.current &&
+      mediaSyncStartedAtRef.current > 0 &&
+      Date.now() - mediaSyncStartedAtRef.current > MEDIA_SYNC_LOCK_MAX_MS
+    ) {
+      console.warn('[Perform6] Media sync lock expired — self-interrupt');
+      forceClearMediaDownloadLocks('media sync lock max-age');
+      cancelMediaDownloads();
+      mediaSyncRunningRef.current = false;
+      mediaSyncStartedAtRef.current = 0;
+    }
+    if (
+      otaSyncRunningRef.current &&
+      otaSyncStartedAtRef.current > 0 &&
+      Date.now() - otaSyncStartedAtRef.current > OTA_SYNC_LOCK_MAX_MS
+    ) {
+      console.warn('[Perform6] OTA sync lock expired — self-interrupt');
+      cancelOtaInstall();
+      otaSyncRunningRef.current = false;
+      otaSyncStartedAtRef.current = 0;
     }
 
     const mediaBusy =
       mediaSyncRunningRef.current || (!interrupt && isMediaDownloadInProgress());
     const otaBusy = otaSyncRunningRef.current;
-    const wantMedia = force || !isMediaSyncPaused();
-    const wantOta = !skipOta && !isOtaPaused();
+    // Admin Install OTA = OTA-only pass (big-company: never mix with media).
+    const wantMedia = forceOta ? false : force || !isMediaSyncPaused();
+    // OTA never runs on interval / Sync Now — admin Install (forceOta) only.
+    const wantOta = forceOta && !skipOta;
 
     // If media pipeline is busy, still allow an OTA-only pass (and reverse).
     if (mediaBusy && otaBusy && !interrupt) {
@@ -260,8 +308,14 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     const runMedia = wantMedia && (!mediaBusy || interrupt);
     const runOta = wantOta && (!otaBusy || interrupt);
 
-    if (runMedia) mediaSyncRunningRef.current = true;
-    if (runOta) otaSyncRunningRef.current = true;
+    if (runMedia) {
+      mediaSyncRunningRef.current = true;
+      mediaSyncStartedAtRef.current = Date.now();
+    }
+    if (runOta) {
+      otaSyncRunningRef.current = true;
+      otaSyncStartedAtRef.current = Date.now();
+    }
     setSyncState({ inProgress: true, error: null, runtimePhase: 'syncing' });
     pushDebugLog({
       category: 'sync',
@@ -295,6 +349,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         {
           forceMediaSync: force,
           skipOta: !runOta || skipOta,
+          forceOta: forceOta && runOta,
           skipMedia: !runMedia,
         },
       );
@@ -372,8 +427,14 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       setConnectionStatus('offline');
       pushDebugLog({ category: 'sync', message: result.error ?? 'Sync failed' });
     } finally {
-      if (runMedia) mediaSyncRunningRef.current = false;
-      if (runOta) otaSyncRunningRef.current = false;
+      if (runMedia) {
+        mediaSyncRunningRef.current = false;
+        mediaSyncStartedAtRef.current = 0;
+      }
+      if (runOta) {
+        otaSyncRunningRef.current = false;
+        otaSyncStartedAtRef.current = 0;
+      }
     }
   }, [
     applyMockManifest,
@@ -642,18 +703,38 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    const errText = result.error ?? 'Credentials not ready';
+    if (isDeviceDisabledCredentialError(errText)) {
+      console.warn('[Perform6] Credentials blocked — device disabled; re-pairing', errText);
+      pushDebugLog({
+        category: 'pairing',
+        message: `Disabled device credentials blocked — re-pair: ${errText}`,
+      });
+      clearLocalDeviceState();
+      credentialFetchStarted.current = false;
+      pairingStarted.current = false;
+      setRegistrationStatus('idle');
+      setSyncState({
+        credentialsFetching: false,
+        credentialsError: 'Device disabled — starting fresh pairing…',
+        runtimePhase: 'waiting_claim',
+      });
+      void executePairing(info);
+      return;
+    }
+
     setSyncState({
       credentialsFetching: false,
       credentialsError: result.notReady
         ? 'Waiting for admin registration to complete…'
-        : (result.error ?? 'Credential fetch failed'),
+        : errText,
       runtimePhase: 'waiting_credentials',
     });
     pushDebugLog({
       category: 'pairing',
-      message: result.error ?? 'Credentials not ready',
+      message: errText,
     });
-  }, [deviceInfo, pushDebugLog, runSyncNow, setSyncState]);
+  }, [deviceInfo, executePairing, pushDebugLog, runSyncNow, setRegistrationStatus, setSyncState]);
 
   const resolveCredentials = useCallback(
     async (deviceId: string) => {
@@ -901,6 +982,35 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     setSyncState,
   ]);
 
+  // Pre-register: stream logs while ONLINE / waiting (no device token yet).
+  useEffect(() => {
+    if (runtimeConfig.isSimulator) return;
+    if (isDeviceReady() || hasCredentials) return;
+    if (!pairingId) return;
+    if (
+      registrationStatus !== 'waiting_for_registration' &&
+      registrationStatus !== 'paired' &&
+      registrationStatus !== 'registered'
+    ) {
+      return;
+    }
+
+    const tick = () => {
+      if (isDeviceReady()) return;
+      const info = activeDeviceInfo.current ?? deviceInfo;
+      const serial = info?.serialNumber?.trim();
+      const pid = useDeviceStore.getState().pairingId;
+      if (!serial || !pid) return;
+      void flushPairingLogs(pid, serial).catch(() => {
+        /* best-effort until API/migration is live */
+      });
+    };
+
+    tick();
+    const id = window.setInterval(tick, Math.max(runtimeConfig.pairingPollMs * 2, 10_000));
+    return () => window.clearInterval(id);
+  }, [deviceInfo, hasCredentials, pairingId, registrationStatus]);
+
   // Auto-fetch credentials when admin registration completes
   useEffect(() => {
     if (hasCredentials || registrationStatus !== 'registered') {
@@ -970,6 +1080,11 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isDeviceReady()) return;
+    startBridgeKeepalive();
+  }, [deviceInfo, hasCredentials]);
+
+  useEffect(() => {
+    if (!isDeviceReady()) return;
 
     let bootHeartbeatPending = true;
     const profile = deviceInfo?.hardwareProfile ?? runtimeConfig.hardwareProfile;
@@ -984,48 +1099,56 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       const isBoot = bootHeartbeatPending;
       const assetPool = probeBrightSignAssetPool();
       const sd = getSdStoragePresence();
-      const payload = {
-        firmwareVersion: deviceInfo?.firmwareVersion,
-        metadata: {
-          ...(isBoot
-            ? {
-                bootEvent: true,
-                bootAt: new Date().toISOString(),
-                hardwareProfile: profile,
-                runtimeVersion: version,
-                assetPool,
-              }
-            : {}),
-          ...(deviceInfo?.ipAddress
-            ? { ipAddress: deviceInfo.ipAddress, lanIpAddress: deviceInfo.ipAddress }
-            : {}),
-          ...(sd.sdPresent != null
-            ? {
-                sdPresent: sd.sdPresent,
-                sdEvent: sd.sdEvent,
-                sdEventAt: sd.sdEventAt,
-                sdMount: sd.sdMount,
-              }
-            : {}),
-        },
-      };
-      void sendDeviceHeartbeat(auth, payload)
-        .then((result) => {
-          setHeartbeat({ at: new Date().toISOString(), ok: true });
-          pushDebugLog({ category: 'heartbeat', message: 'POST /devices/me/heartbeat OK' });
-          if (isBoot) {
-            bootHeartbeatPending = false;
-            void flushDeviceLogs(auth).catch(() => {
-              /* best-effort boot log upload */
-            });
-          }
-          if (result.remoteCommands?.length) {
-            void processRemoteCommands(result.remoteCommands);
-          }
-        })
-        .catch(() => {
-          setHeartbeat({ at: new Date().toISOString(), ok: false });
-        });
+      void getSdStorageForHeartbeat().then((storage) => {
+        const payload = {
+          firmwareVersion: deviceInfo?.firmwareVersion,
+          ...storage,
+          metadata: {
+            ...(isBoot
+              ? {
+                  bootEvent: true,
+                  bootAt: new Date().toISOString(),
+                  hardwareProfile: profile,
+                  runtimeVersion: version,
+                  assetPool,
+                }
+              : {}),
+            ...(deviceInfo?.ipAddress
+              ? { ipAddress: deviceInfo.ipAddress, lanIpAddress: deviceInfo.ipAddress }
+              : {}),
+            ...(sd.sdPresent != null
+              ? {
+                  sdPresent: sd.sdPresent,
+                  sdEvent: sd.sdEvent,
+                  sdEventAt: sd.sdEventAt,
+                  sdMount: sd.sdMount,
+                }
+              : {}),
+          },
+        };
+        void sendDeviceHeartbeat(auth, payload)
+          .then((result) => {
+            setHeartbeat({ at: new Date().toISOString(), ok: true });
+            pushDebugLog({ category: 'heartbeat', message: 'POST /devices/me/heartbeat OK' });
+            if (isBoot) {
+              bootHeartbeatPending = false;
+              void flushDeviceLogs(auth).catch(() => {
+                /* best-effort boot log upload */
+              });
+            }
+            if (result.remoteCommands?.length) {
+              void processRemoteCommands(result.remoteCommands);
+            }
+          })
+          .catch((error) => {
+            setHeartbeat({ at: new Date().toISOString(), ok: false });
+            if (isDeviceAuthFailure(error)) {
+              handleDeviceRevoked(
+                error instanceof ApiError ? error.message : 'heartbeat auth failed',
+              );
+            }
+          });
+      });
     };
 
     tick();

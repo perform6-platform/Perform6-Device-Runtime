@@ -1,22 +1,20 @@
 import { runtimeConfig } from '../config/runtime';
 import { getSharedMessagePort, subscribeBsMessages } from './bsMessagePort';
 import { isLocalPlaybackSrc } from '../services/playbackSrc';
+import { BridgeMsg } from '../services/bridgeProtocol';
 import { subscribeSdCacheProgress } from '../services/sdCacheBridge';
 import { useRuntimeStore } from '../stores/runtimeStore';
 
-const PLAYBACK_MESSAGE = 'xt-playback';
-const LED_READY_MESSAGE = 'xt-led-ready';
-const LED_ENDED_MESSAGE = 'xt-led-ended';
-
 let initialized = false;
-/** Suppress xt-led-ended briefly after Restart (StopClear can fake MediaEnded). */
 let ignoreLedEndedUntil = 0;
+let awaitingAck = false;
+let ackTimer: number | null = null;
+let lastPostedNonce = '';
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-/** Native roVideoPlayer: local SD/file only. Never HTTPS VOD. */
 function nativePlayableSrc(src: string | null | undefined, fallbackSrc: string | null | undefined): string {
   const primary = asString(src);
   const fallback = asString(fallbackSrc);
@@ -25,12 +23,22 @@ function nativePlayableSrc(src: string | null | undefined, fallbackSrc: string |
   return '';
 }
 
-function postTouchPlayback(port: BrightSignMessagePort): void {
+function clearAckWait(): void {
+  if (ackTimer != null) {
+    window.clearTimeout(ackTimer);
+    ackTimer = null;
+  }
+  awaitingAck = false;
+}
+
+function postTouchPlayback(port: BrightSignMessagePort, isRetry = false): void {
   const state = useRuntimeStore.getState();
   const meta = state.displayPlaybackMeta;
   const src = nativePlayableSrc(state.displayVideoSrc, meta?.fallbackSrc);
+  const restartNonce = String(state.displayRestartNonce);
+  lastPostedNonce = restartNonce;
   port.PostBSMessage({
-    type: PLAYBACK_MESSAGE,
+    type: BridgeMsg.XT_PLAYBACK,
     role: 'touch',
     src,
     fallbackSrc: isLocalPlaybackSrc(asString(meta?.fallbackSrc))
@@ -39,25 +47,34 @@ function postTouchPlayback(port: BrightSignMessagePort): void {
     mediaVersionId: meta?.mediaVersionId ?? '',
     mediaTitle: meta?.title ?? '',
     screenKey: meta?.screenKey ?? 'SCREEN_1',
-    // BSMessagePort is flat and loosely typed — send transport flags as strings
-    // so BrightScript never receives an ambiguous boolean.
     loop: state.displayVideoLoop ? 'true' : 'false',
     paused: state.displayPaused ? 'true' : 'false',
     muted: state.displayMuted ? 'true' : 'false',
-    // Native SetVolume is 0–100; mute forces silence on the LED.
     volumePercent: String(
       state.displayMuted
         ? 0
         : Math.max(0, Math.min(100, Math.round(state.displayVolume * 100))),
     ),
-    restartNonce: String(state.displayRestartNonce),
+    restartNonce,
   });
+  if (!src) {
+    clearAckWait();
+    return;
+  }
+  if (awaitingAck && !isRetry) return;
+  awaitingAck = true;
+  if (ackTimer != null) window.clearTimeout(ackTimer);
+  ackTimer = window.setTimeout(() => {
+    awaitingAck = false;
+    ackTimer = null;
+    console.warn('[Perform6] XT playback ack timeout — retrying once', {
+      src,
+      restartNonce,
+    });
+    postTouchPlayback(port, true);
+  }, 3_000);
 }
 
-/**
- * XT2145: HDMI-1 React publishes playback; autorun drives HDMI-2 via roVideoPlayer.
- * No secondary Chromium on the LED.
- */
 export function initXtOutputBridge(): void {
   if (
     initialized ||
@@ -68,7 +85,6 @@ export function initXtOutputBridge(): void {
   }
   initialized = true;
 
-  // Only the touch/primary HtmlWidget runs this bridge. LED is native video.
   if (runtimeConfig.xtOutputRole === 'led') {
     return;
   }
@@ -81,9 +97,21 @@ export function initXtOutputBridge(): void {
 
   subscribeBsMessages((event) => {
     const type = asString(event.data.type);
-    if (type === LED_READY_MESSAGE) {
+    if (type === BridgeMsg.XT_LED_READY) {
       postTouchPlayback(port);
-    } else if (type === LED_ENDED_MESSAGE) {
+    } else if (type === BridgeMsg.XT_PLAYBACK_ACK) {
+      const nonce = asString(event.data.restartNonce);
+      if (!nonce || nonce === lastPostedNonce) {
+        clearAckWait();
+      }
+      const ok = asString(event.data.ok) !== '0';
+      if (!ok) {
+        console.warn('[Perform6] XT playback ack failed', {
+          detail: asString(event.data.detail),
+          src: asString(event.data.src),
+        });
+      }
+    } else if (type === BridgeMsg.XT_LED_ENDED) {
       if (Date.now() < ignoreLedEndedUntil) {
         console.info('[Perform6] Ignoring LED ended after restart');
         return;
@@ -100,7 +128,6 @@ export function initXtOutputBridge(): void {
 
   useRuntimeStore.subscribe((state, previous) => {
     if (state.displayRestartNonce !== previous.displayRestartNonce) {
-      // Cover StopClear → MediaEnded race on the native player.
       ignoreLedEndedUntil = Date.now() + 1500;
     }
     if (
@@ -116,6 +143,5 @@ export function initXtOutputBridge(): void {
     }
   });
 
-  // Publish once in case native LED ready arrived before the listener attached.
   postTouchPlayback(port);
 }

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "pauseMediaSync": false,
-  "pauseOta": false,
+  "pauseOta": true,
   "clearCacheOnBoot": false,
   "rebootAfterCacheClear": false,
   "syncOnBoot": false

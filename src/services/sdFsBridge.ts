@@ -1,4 +1,11 @@
 import { getSharedMessagePort, subscribeBsMessages } from '../platform/bsMessagePort';
+import {
+  getNodeFs,
+  isSafeNodeSdPath,
+  rmTreeSync,
+  toNodeSdPath,
+  type NodeFs,
+} from '../platform/brightSignNode';
 
 const FS_LIST = 'led-fs-list';
 const FS_READ = 'led-fs-read';
@@ -49,6 +56,226 @@ function parseEntries(raw: string): SdFsEntry[] {
         kind,
       };
     });
+}
+
+function emptyResult(
+  action: string,
+  path: string,
+  error: string,
+  requestId = '',
+): SdFsResult {
+  return {
+    requestId,
+    action,
+    ok: false,
+    path,
+    entries: [],
+    content: '',
+    encoding: 'utf8',
+    error,
+    sizeBytes: 0,
+  };
+}
+
+function displaySdPath(nodePath: string): string {
+  if (nodePath === '/storage/sd') return 'SD:/';
+  if (nodePath.startsWith('/storage/sd/')) {
+    return `SD:/${nodePath.slice('/storage/sd/'.length)}`;
+  }
+  return nodePath;
+}
+
+function resolveSafeNodePath(sdPath: string): { nodePath: string; error?: string } {
+  const nodePath = toNodeSdPath(sdPath || 'SD:/');
+  if (!isSafeNodeSdPath(nodePath)) {
+    return { nodePath, error: 'path outside SD:/' };
+  }
+  return { nodePath };
+}
+
+function listViaNode(fs: NodeFs, sdPath: string, requestId: string): SdFsResult {
+  const { nodePath, error } = resolveSafeNodePath(sdPath);
+  if (error) return emptyResult('SD_LIST', sdPath, error, requestId);
+  try {
+    if (!fs.existsSync(nodePath)) {
+      return emptyResult('SD_LIST', displaySdPath(nodePath), 'not found', requestId);
+    }
+    const st = fs.statSync(nodePath);
+    if (!st.isDirectory()) {
+      return emptyResult('SD_LIST', displaySdPath(nodePath), 'not a directory', requestId);
+    }
+    const names = fs.readdirSync(nodePath) as string[];
+    const entries: SdFsEntry[] = [];
+    for (const name of names) {
+      const child = `${nodePath.replace(/\/$/, '')}/${name}`;
+      try {
+        const childSt = fs.statSync(child);
+        entries.push({
+          name,
+          size: childSt.isFile() ? childSt.size : 0,
+          kind: childSt.isDirectory() ? 'dir' : 'file',
+        });
+      } catch {
+        entries.push({ name, size: 0, kind: 'file' });
+      }
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    return {
+      requestId,
+      action: 'SD_LIST',
+      ok: true,
+      path: displaySdPath(nodePath),
+      entries,
+      content: '',
+      encoding: 'utf8',
+      error: '',
+      sizeBytes: 0,
+    };
+  } catch (e) {
+    return emptyResult(
+      'SD_LIST',
+      displaySdPath(nodePath),
+      e instanceof Error ? e.message : 'Node list failed',
+      requestId,
+    );
+  }
+}
+
+function readViaNode(fs: NodeFs, sdPath: string, requestId: string): SdFsResult {
+  const { nodePath, error } = resolveSafeNodePath(sdPath);
+  if (error) return emptyResult('SD_READ', sdPath, error, requestId);
+  try {
+    if (!fs.existsSync(nodePath)) {
+      return emptyResult('SD_READ', displaySdPath(nodePath), 'not found', requestId);
+    }
+    const st = fs.statSync(nodePath);
+    if (!st.isFile()) {
+      return emptyResult('SD_READ', displaySdPath(nodePath), 'not a file', requestId);
+    }
+    if (st.size > SD_FS_MAX_CHARS) {
+      return emptyResult(
+        'SD_READ',
+        displaySdPath(nodePath),
+        `too large (max ${SD_FS_MAX_CHARS} chars)`,
+        requestId,
+      );
+    }
+    const content = String(fs.readFileSync(nodePath, 'utf8'));
+    return {
+      requestId,
+      action: 'SD_READ',
+      ok: true,
+      path: displaySdPath(nodePath),
+      entries: [],
+      content,
+      encoding: 'utf8',
+      error: '',
+      sizeBytes: st.size,
+    };
+  } catch (e) {
+    return emptyResult(
+      'SD_READ',
+      displaySdPath(nodePath),
+      e instanceof Error ? e.message : 'Node read failed',
+      requestId,
+    );
+  }
+}
+
+function writeViaNode(
+  fs: NodeFs,
+  sdPath: string,
+  content: string,
+  requestId: string,
+): SdFsResult {
+  const { nodePath, error } = resolveSafeNodePath(sdPath);
+  if (error) return emptyResult('SD_WRITE', sdPath, error, requestId);
+  try {
+    const parentIdx = Math.max(nodePath.lastIndexOf('/'), nodePath.lastIndexOf('\\'));
+    if (parentIdx > 0) {
+      const parent = nodePath.slice(0, parentIdx);
+      if (!fs.existsSync(parent)) {
+        fs.mkdirSync(parent, { recursive: true });
+      }
+    }
+    fs.writeFileSync(nodePath, content, 'utf8');
+    return {
+      requestId,
+      action: 'SD_WRITE',
+      ok: true,
+      path: displaySdPath(nodePath),
+      entries: [],
+      content: '',
+      encoding: 'utf8',
+      error: '',
+      sizeBytes: content.length,
+    };
+  } catch (e) {
+    return emptyResult(
+      'SD_WRITE',
+      displaySdPath(nodePath),
+      e instanceof Error ? e.message : 'Node write failed',
+      requestId,
+    );
+  }
+}
+
+function deleteViaNode(fs: NodeFs, sdPath: string, requestId: string): SdFsResult {
+  const { nodePath, error } = resolveSafeNodePath(sdPath);
+  if (error) return emptyResult('SD_DELETE', sdPath, error, requestId);
+  if (nodePath === '/storage/sd') {
+    return emptyResult('SD_DELETE', 'SD:/', 'refuse delete SD root', requestId);
+  }
+  try {
+    if (!fs.existsSync(nodePath)) {
+      return emptyResult('SD_DELETE', displaySdPath(nodePath), 'not found', requestId);
+    }
+    const st = fs.statSync(nodePath);
+    if (st.isDirectory()) {
+      rmTreeSync(fs, nodePath);
+    } else {
+      fs.unlinkSync(nodePath);
+    }
+    return {
+      requestId,
+      action: 'SD_DELETE',
+      ok: true,
+      path: displaySdPath(nodePath),
+      entries: [],
+      content: '',
+      encoding: 'utf8',
+      error: '',
+      sizeBytes: 0,
+    };
+  } catch (e) {
+    return emptyResult(
+      'SD_DELETE',
+      displaySdPath(nodePath),
+      e instanceof Error ? e.message : 'Node delete failed',
+      requestId,
+    );
+  }
+}
+
+/** Prefer Node fs (bridge-independent); autorun only when Node is unavailable. */
+function viaNodeOrAutorun(
+  action: SdFsAction,
+  sdPath: string,
+  autorun: () => Promise<SdFsResult>,
+  nodeRun: (fs: NodeFs, requestId: string) => SdFsResult,
+): Promise<SdFsResult> {
+  const fs = getNodeFs();
+  if (fs) {
+    const requestId = newRequestId();
+    const result = nodeRun(fs, requestId);
+    console.info('[Perform6] SD FS via Node', action, {
+      path: result.path || sdPath,
+      ok: result.ok,
+      error: result.error || undefined,
+    });
+    return Promise.resolve(result);
+  }
+  return autorun();
 }
 
 function waitForFsResult(requestId: string, timeoutMs: number): Promise<SdFsResult> {
@@ -136,11 +363,21 @@ async function postFsMessage(
 }
 
 export function listSdPath(path = 'SD:/', timeoutMs = 20_000): Promise<SdFsResult> {
-  return postFsMessage(FS_LIST, { path }, timeoutMs);
+  return viaNodeOrAutorun(
+    'SD_LIST',
+    path,
+    () => postFsMessage(FS_LIST, { path }, timeoutMs),
+    (fs, requestId) => listViaNode(fs, path, requestId),
+  );
 }
 
 export function readSdPath(path: string, timeoutMs = 25_000): Promise<SdFsResult> {
-  return postFsMessage(FS_READ, { path }, timeoutMs);
+  return viaNodeOrAutorun(
+    'SD_READ',
+    path,
+    () => postFsMessage(FS_READ, { path }, timeoutMs),
+    (fs, requestId) => readViaNode(fs, path, requestId),
+  );
 }
 
 export function writeSdPath(
@@ -175,9 +412,19 @@ export function writeSdPath(
       sizeBytes: 0,
     });
   }
-  return postFsMessage(FS_WRITE, { path, content, encoding: 'utf8' }, timeoutMs);
+  return viaNodeOrAutorun(
+    'SD_WRITE',
+    path,
+    () => postFsMessage(FS_WRITE, { path, content, encoding: 'utf8' }, timeoutMs),
+    (fs, requestId) => writeViaNode(fs, path, content, requestId),
+  );
 }
 
 export function deleteSdPath(path: string, timeoutMs = 20_000): Promise<SdFsResult> {
-  return postFsMessage(FS_DELETE, { path }, timeoutMs);
+  return viaNodeOrAutorun(
+    'SD_DELETE',
+    path,
+    () => postFsMessage(FS_DELETE, { path }, timeoutMs),
+    (fs, requestId) => deleteViaNode(fs, path, requestId),
+  );
 }

@@ -2,12 +2,10 @@ import { runtimeConfig } from '../config/runtime';
 import { getSharedMessagePort, subscribeBsMessages } from './bsMessagePort';
 import { findScreenForTarget, getCurrentVideo } from '../services/playback';
 import { isLocalPlaybackSrc } from '../services/playbackSrc';
+import { BridgeMsg } from '../services/bridgeProtocol';
 import { resolveSdPlaybackUrl, subscribeSdCacheProgress } from '../services/sdCacheBridge';
 import type { DisplayTarget } from '../shared/types';
 import { useRuntimeStore } from '../stores/runtimeStore';
-
-const PLAYBACK_MESSAGE = 'xc-playback';
-const LED_READY_MESSAGE = 'xc-led-ready';
 
 let initialized = false;
 let publishSequence = 0;
@@ -16,7 +14,6 @@ function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-/** Native roVideoPlayer: local SD/file only. Never HTTPS VOD. */
 function nativePlayableSrc(src: string | null | undefined): string {
   const value = asString(src);
   return isLocalPlaybackSrc(value) ? value : '';
@@ -35,7 +32,7 @@ async function postScreenPlayback(
   const src = nativePlayableSrc(cached);
 
   port.PostBSMessage({
-    type: PLAYBACK_MESSAGE,
+    type: BridgeMsg.XC_PLAYBACK,
     role: 'primary',
     target,
     src,
@@ -58,10 +55,6 @@ async function publishSecondaryScreens(port: BrightSignMessagePort): Promise<voi
   await postScreenPlayback(port, 'led3', 'SCREEN_3');
 }
 
-/**
- * XC4055: HDMI-1 React publishes SCREEN_2 / SCREEN_3; autorun drives
- * HDMI-2/3 via native roVideoPlayer. Secondary Chromium widgets are gone.
- */
 export function initXcOutputBridge(): void {
   if (
     initialized ||
@@ -72,7 +65,6 @@ export function initXcOutputBridge(): void {
   }
   initialized = true;
 
-  // LED-only roles never run in MULTI anymore (native players). Ignore if present.
   if (runtimeConfig.xcOutputRole !== 'primary') {
     return;
   }
@@ -84,8 +76,16 @@ export function initXcOutputBridge(): void {
   }
 
   subscribeBsMessages((event) => {
-    if (asString(event.data.type) === LED_READY_MESSAGE) {
+    const type = asString(event.data.type);
+    if (type === BridgeMsg.XC_LED_READY) {
       void publishSecondaryScreens(port);
+    } else if (type === BridgeMsg.XC_PLAYBACK_ACK) {
+      if (asString(event.data.ok) === '0') {
+        console.warn('[Perform6] XC playback ack failed', {
+          role: asString(event.data.role),
+          detail: asString(event.data.detail),
+        });
+      }
     }
   });
 
@@ -101,6 +101,5 @@ export function initXcOutputBridge(): void {
     }
   });
 
-  // Publish once if native LED ready beat the listener, or on first paint.
   void publishSecondaryScreens(port);
 }

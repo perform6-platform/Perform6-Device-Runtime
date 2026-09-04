@@ -109,12 +109,20 @@ function uploadProfileToR2(profileSlug) {
     return;
   }
 
-  const apiRoot = path.resolve(root, '../../backend/perform6-api');
-  const uploadScript = path.join(apiRoot, 'scripts', 'upload-startup-releases-r2.mjs');
-  if (!fs.existsSync(uploadScript)) {
-    console.warn(`[release:zip] R2 upload script missing (${uploadScript}) — skip`);
+  const apiRootCandidates = [
+    path.resolve(root, '../perform6-api'),
+    path.resolve(root, '../../backend/perform6-api'),
+  ];
+  const apiRoot = apiRootCandidates.find((candidate) =>
+    fs.existsSync(path.join(candidate, 'scripts', 'upload-startup-releases-r2.mjs')),
+  );
+  if (!apiRoot) {
+    console.warn(
+      `[release:zip] R2 upload script missing (tried ${apiRootCandidates.join(', ')}) — skip`,
+    );
     return;
   }
+  const uploadScript = path.join(apiRoot, 'scripts', 'upload-startup-releases-r2.mjs');
 
   console.log(`[release:zip] Uploading releases/${profileSlug}/ → R2…`);
   const result = spawnSync(process.execPath, [uploadScript, profileSlug], {
@@ -380,7 +388,8 @@ function main() {
       '',
       'Field maintenance (perform6-ops.json on SD root):',
       '  pauseMediaSync     = true  → stop media downloads (sync-check skipped)',
-      '  pauseOta           = true  → skip OTA until set back to false',
+      '  pauseOta           = true  → refuse OTA unless Admin Install (allowWhenPaused); default',
+      '                              Auto-OTA on sync is code-disabled — portal Install OTA only.',
       '  clearCacheOnBoot   = true  → wipe SD:/perform6-cache once on next boot (auto-clears)',
       '  rebootAfterCacheClear = true → reboot after clearCacheOnBoot',
       '  syncOnBoot         = true  → run one sync after boot (auto-clears; bypasses pause)',

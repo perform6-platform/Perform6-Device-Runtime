@@ -28,7 +28,9 @@ Mark pass/fail; on fail capture `SD:/perform6-led.log`, Admin SD browser listing
 - Media fallback: `led-cache-prefetch` / `perform6-cache`
 - OTA pool: `OTA asset pool ready` / `OTA via asset pool` / `OTA realized`
 - OTA fallback: `falling back to autorun HTTP` / `led-ota-install`
+- Bridge: `bridge watchdog armed` / `Bridge keepalive` / `led-hello-ack protocol=2`
 - Clear: `media cache+pool cleared (OTA untouched)`
+- Reconcile: `SD cache reconcile`
 
 ## Notes
 

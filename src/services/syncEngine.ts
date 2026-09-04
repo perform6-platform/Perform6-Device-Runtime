@@ -8,13 +8,14 @@ import {
 } from './manifest';
 import { downloadMediaBatchToSd, evictCachedMedia } from './media';
 import { checkOtaUpdate } from './ota';
-import { applyOtaUpdate, getLastOtaFailReason, shouldSkipOtaAfterRecentFail } from './otaApply';
+import { applyOtaUpdate } from './otaApply';
 import { flushDeviceLogs } from './deviceLogsApi';
 import {
   clearSdCached,
   getConfirmedCachedMediaVersionIds,
   hasSdCachedMedia,
   listSdCachedMediaVersionIds,
+  reconcileSdCacheMarksFromDisk,
 } from './sdCacheBridge';
 import { touchProgramMediaVersionIds } from './touchProgramGate';
 import {
@@ -23,7 +24,7 @@ import {
   reportDownloadProgress,
   reportSyncStatus,
 } from './sync';
-import { isMediaSyncPaused, isOtaPaused } from './perform6Ops';
+import { isMediaSyncPaused } from './perform6Ops';
 
 export interface SyncEngineResult {
   success: boolean;
@@ -44,8 +45,10 @@ export interface SyncEngineHooks {
 export interface SyncEngineOptions {
   /** Bypass pauseMediaSync for a one-shot sync (syncOnBoot). */
   forceMediaSync?: boolean;
-  /** Skip OTA apply (remote SYNC_NOW / after recent OTA failure). */
+  /** Skip OTA apply (default on periodic sync — OTA is admin-only). */
   skipOta?: boolean;
+  /** Admin Install OTA only — required to apply; never auto on sync. */
+  forceOta?: boolean;
   /** Skip media downloads (OTA-only pass while media pipeline is busy). */
   skipMedia?: boolean;
 }
@@ -95,6 +98,12 @@ export async function runSyncEngine(
     (!isMediaSyncPaused() || options?.forceMediaSync === true);
 
   try {
+    try {
+      await reconcileSdCacheMarksFromDisk();
+    } catch {
+      /* best-effort — localStorage still used if FS list fails */
+    }
+
     const claimedIds = [
       ...new Set([...getCachedMediaVersionIds(), ...listSdCachedMediaVersionIds()]),
     ];
@@ -124,26 +133,35 @@ export async function runSyncEngine(
     let otaApplied = false;
     let otaError: string | undefined;
 
-    const skipOta =
-      options?.skipOta === true ||
-      shouldSkipOtaAfterRecentFail();
+    const adminOta = options?.forceOta === true;
+    // Periodic sync never applies OTA. Admin Install must pass forceOta.
+    const skipOta = !adminOta || options?.skipOta === true;
 
-    if (skipOta) {
-      const reason = options?.skipOta
-        ? 'skipOta requested'
-        : `recent OTA fail cooldown (${getLastOtaFailReason() || 'unknown'})`;
-      console.info(`[Perform6] OTA skipped — ${reason} (media pipeline independent)`);
-    } else if (
-      !isOtaPaused() &&
-      (syncData.runtime?.updateAvailable || ota.updateAvailable)
-    ) {
-      console.info('[Perform6] OTA update available — applying (media path not cancelled)');
+    const updateAvailable =
+      syncData.runtime?.updateAvailable === true || ota.updateAvailable === true;
+
+    if (!adminOta) {
+      if (updateAvailable) {
+        console.info(
+          '[Perform6] OTA update available — waiting for admin Install (auto-OTA disabled)',
+          { version: ota.version ?? syncData.runtime?.version },
+        );
+      }
+    } else if (skipOta) {
+      console.info(
+        '[Perform6] OTA skipped — skipOta requested (media pipeline independent)',
+      );
+    } else if (updateAvailable) {
+      console.info('[Perform6] OTA admin Install — applying (media path not cancelled)');
       try {
         await flushDeviceLogs(auth);
       } catch {
         /* best-effort */
       }
-      const applied = await applyOtaUpdate(auth);
+      const applied = await applyOtaUpdate(auth, {
+        allowWhenPaused: true,
+        clearFailCooldown: true,
+      });
       if (applied.applied) {
         return {
           success: true,
@@ -214,19 +232,33 @@ export async function runSyncEngine(
 
     if (mediaItems.length > 0) {
       // Asset pool (preferred) or autorun perform6-cache — never OTA worker.
+      // Do NOT mark DOWNLOADING at 0 bytes before transfer — Admin showed false
+      // "Downloading — / 26 MB" for 16+ minutes while AssetPool hung.
       const batch = await downloadMediaBatchToSd(
         mediaItems,
         async (progress) => {
+          const bytes = progress.bytesDownloaded;
+          // Honest status: start (autorun ack), real byte progress, or terminal states.
+          if (progress.status === 'progress' && !(bytes > 0)) return;
           if (progress.status === 'progress') {
             const lastMs = progressLastSentMs.get(progress.mediaVersionId) ?? 0;
             if (Date.now() - lastMs < PROGRESS_REPORT_INTERVAL_MS) return;
+          }
+          if (
+            progress.status !== 'progress' &&
+            progress.status !== 'start' &&
+            progress.status !== 'done' &&
+            progress.status !== 'skip' &&
+            progress.status !== 'failed'
+          ) {
+            return;
           }
           progressLastSentMs.set(progress.mediaVersionId, Date.now());
           try {
             await reportDownloadProgress(auth, {
               syncJobId: syncData.syncJobId,
               mediaVersionId: progress.mediaVersionId,
-              bytesDownloaded: String(progress.bytesDownloaded),
+              bytesDownloaded: String(Math.max(0, bytes)),
               totalBytes:
                 progress.totalBytes != null
                   ? String(progress.totalBytes)

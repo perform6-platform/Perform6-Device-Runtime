@@ -1,7 +1,9 @@
 import { getSharedMessagePort } from '../platform/bsMessagePort';
+import { rebootViaBrightSignSystem } from '../platform/brightSignNode';
 import { getCredentials } from './credentialStore';
 import {
   clearAllSdCachedMarks,
+  clearSdMediaCacheViaNode,
   listSdCachedMediaVersionIds,
   requestSdCacheClearAll,
 } from './sdCacheBridge';
@@ -22,12 +24,15 @@ import {
 } from './sdFsBridge';
 import { reportSdFsResultSafe } from './sdFsResultApi';
 import { flushDeviceLogs } from './deviceLogsApi';
+import { clearLocalDeviceState } from './deviceLocalReset';
 
 const REBOOT_MESSAGE = 'led-ota-reboot';
 
 export interface RemoteSyncNowOptions {
   force?: boolean;
   skipOta?: boolean;
+  /** Admin-only: allow OTA install on this sync (default false). */
+  forceOta?: boolean;
   /** Allow starting even if another sync/download looks busy (remote recovery). */
   interrupt?: boolean;
   /** When interrupt: cancel OTA (default true). Set false for media-only recovery. */
@@ -46,15 +51,33 @@ export function registerDeviceRemoteControlHooks(hooks: {
 }
 
 export function requestDeviceReboot(): boolean {
-  const port = getSharedMessagePort();
-  if (!port) {
-    console.warn('[Perform6] Remote reboot skipped — BSMessagePort missing');
-    return false;
-  }
   // Cancel any stuck OTA so reboot is not blocked by a hung transfer.
   cancelOtaInstall();
-  port.PostBSMessage({ type: REBOOT_MESSAGE });
-  console.info('[Perform6] Remote reboot requested');
+
+  // Prefer Node @brightsign/system — works when autorun bridge is dead.
+  const nodeOk = rebootViaBrightSignSystem();
+
+  // Also ask autorun (healthy bridge / older packages without Node system).
+  const port = getSharedMessagePort();
+  let autorunOk = false;
+  if (port) {
+    try {
+      // Admin/remote REBOOT uses led-ota-reboot (not heal marker) so ops
+      // can force a reboot even after an earlier failed self-heal attempt.
+      port.PostBSMessage({ type: REBOOT_MESSAGE });
+      autorunOk = true;
+      console.info('[Perform6] Remote reboot requested via autorun');
+    } catch (error) {
+      console.warn('[Perform6] Autorun reboot PostBSMessage failed', error);
+    }
+  } else {
+    console.warn('[Perform6] Autorun reboot skipped — BSMessagePort missing');
+  }
+
+  if (!nodeOk && !autorunOk) {
+    console.warn('[Perform6] Remote reboot failed — no Node system and no autorun port');
+    return false;
+  }
   return true;
 }
 
@@ -62,12 +85,15 @@ export async function clearSdCacheRemotely(): Promise<void> {
   // Media only — do not cancel OTA (separate path).
   const mediaVersionIds = listSdCachedMediaVersionIds();
   cancelMediaDownloads();
+  // Node wipe first — works when autorun ignores led-cache-clear-all.
+  const nodeCleared = clearSdMediaCacheViaNode();
   requestSdCacheClearAll();
   clearAllSdCachedMarks();
   clearCachedMediaVersionIds();
   clearPlaybackManifestCache();
   console.info('[Perform6] Remote SD media cache clear requested', {
     trackedFiles: mediaVersionIds.length,
+    nodeCleared,
   });
 }
 
@@ -126,20 +152,26 @@ export async function executeSystemRemoteCommand(
 ): Promise<boolean> {
   switch (command.action) {
     case 'REBOOT':
-      // Do NOT wipe credentials here — if reboot fails, heartbeat/remote must keep working.
+      // Disable/restore must wipe persisted token or reboot reloads the same stuck session.
+      if (command.forceRePair === true) {
+        console.info('[Perform6] REBOOT forceRePair — clearing local credentials');
+        clearLocalDeviceState();
+      }
       requestDeviceReboot();
       return true;
     case 'SYNC_NOW':
       if (runSyncNowHook) {
-        // Only cancel OTA when unlocking a stuck wave (forceOta / ota-retry).
-        if (command.forceOta) {
+        // OTA only when Admin forceOta / ota-retry. Plain Sync Now = media only.
+        const forceOta = command.forceOta === true;
+        if (forceOta) {
           clearOtaFailCooldown();
         }
         void runSyncNowHook({
           force: true,
-          skipOta: command.skipOta === true,
+          forceOta,
+          skipOta: !forceOta || command.skipOta === true,
           interrupt: true,
-          cancelOta: command.forceOta === true,
+          cancelOta: forceOta,
           cancelMedia: true,
         });
       } else {

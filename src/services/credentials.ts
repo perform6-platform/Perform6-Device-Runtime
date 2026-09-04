@@ -24,6 +24,17 @@ function wrapCredentialError(e: unknown): never {
     if (e.status === 404 || e.status === 403 || e.status === 409) {
       throw new CredentialsNotReadyError(e.message, e.status);
     }
+    if (e.status === 400) {
+      const msg = e.message.toLowerCase();
+      if (
+        msg.includes('disabled') ||
+        msg.includes('not active') ||
+        msg.includes('not registered') ||
+        msg.includes('re-pair')
+      ) {
+        throw new CredentialsNotReadyError(e.message, e.status);
+      }
+    }
   }
   throw e;
 }

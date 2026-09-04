@@ -1,7 +1,3 @@
-/**
- * Single BSMessagePort per HtmlWidget — BrightSign delivers PostJSMessage to the
- * first port created; multiple instances drop cache-progress events.
- */
 let sharedPort: BrightSignMessagePort | null | undefined;
 const bsMessageListeners = new Set<(event: BrightSignMessagePortEvent) => void>();
 
@@ -15,25 +11,37 @@ function dispatchBsMessage(event: BrightSignMessagePortEvent): void {
   }
 }
 
-/** Lazily create and return the shared port (null in browser / simulator). */
-export function getSharedMessagePort(): BrightSignMessagePort | null {
-  if (sharedPort !== undefined) return sharedPort;
-  sharedPort = null;
+function createMessagePort(): BrightSignMessagePort | null {
   try {
     const ctor = window.BSMessagePort;
-    if (typeof ctor !== 'function') return sharedPort;
+    if (typeof ctor !== 'function') {
+      console.warn('[Perform6] BSMessagePort constructor missing');
+      return null;
+    }
     const port = new ctor();
     port.addEventListener('bsmessage', (event) => {
       dispatchBsMessage(event);
     });
-    sharedPort = port;
+    console.info('[Perform6] BSMessagePort ready');
+    return port;
   } catch (error) {
     console.warn('[Perform6] BSMessagePort unavailable', error);
+    return null;
   }
+}
+
+export function getSharedMessagePort(): BrightSignMessagePort | null {
+  if (sharedPort !== undefined) return sharedPort;
+  sharedPort = createMessagePort();
   return sharedPort;
 }
 
-/** Subscribe to all PostJSMessage events on the shared port. */
+export function resetSharedMessagePort(): BrightSignMessagePort | null {
+  sharedPort = undefined;
+  console.warn('[Perform6] BSMessagePort reset — recreating');
+  return getSharedMessagePort();
+}
+
 export function subscribeBsMessages(
   listener: (event: BrightSignMessagePortEvent) => void,
 ): () => void {

@@ -23,7 +23,8 @@ export interface Perform6Ops {
 export const DEFAULT_PERFORM6_OPS: Perform6Ops = {
   version: 1,
   pauseMediaSync: false,
-  pauseOta: false,
+  /** Safe default: no auto-OTA if ops file missing / unreadable. */
+  pauseOta: true,
   clearCacheOnBoot: false,
   rebootAfterCacheClear: false,
   syncOnBoot: false,

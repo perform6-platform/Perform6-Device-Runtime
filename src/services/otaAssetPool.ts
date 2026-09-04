@@ -1,15 +1,17 @@
 /**
  * BrightSign asset-pool OTA delivery (separate from media).
- * Pool: SD:/perform6-ota-pool — never cleared by media clear-cache.
+ * Pool: sd/perform6-ota-pool (BrightSign AssetPool path) — never cleared by media clear-cache.
  * After fetch, files are copied to SD:/{path} (autorun.brs, index.html, assets/…).
  */
 import type { DeviceAuthContext } from '../shared/types/api';
+import { OTA_ASSET_POOL_DIR, OTA_ASSET_POOL_DIR_DOCS } from './brightSignPoolPath';
 import { probeBrightSignAssetPool } from './assetPoolProbe';
 import type { OtaManifestFile, OtaManifestResponse } from './otaApply';
 import { runtimeConfig } from '../config/runtime';
 import { reportOtaStatusSafe } from './otaStatusApi';
 
-export const OTA_POOL_PATH = 'SD:/perform6-ota-pool';
+/** Docs-style pool root (sd/perform6-ota-pool). Realize still copies to SD:/{path}. */
+export const OTA_POOL_PATH = OTA_ASSET_POOL_DIR;
 
 type BrightSignRequire = (id: string) => unknown;
 
@@ -47,6 +49,10 @@ type AssetPoolFetcherInstance = {
     type: string,
     handler: (event: ProgressEvent | FileEvent) => void,
   ) => void;
+  removeEventListener?: (
+    type: string,
+    handler: (event: ProgressEvent | FileEvent) => void,
+  ) => void;
 };
 
 type AssetPoolFilesInstance = {
@@ -69,11 +75,51 @@ type NodeFs = {
 
 let pool: AssetPoolInstance | null = null;
 let fetcher: AssetPoolFetcherInstance | null = null;
+let FetcherClassRef: AssetPoolFetcherCtor | null = null;
 let AssetPoolFilesClass: AssetPoolFilesCtor | null = null;
 let modulesLoaded = false;
 let modulesAvailable = false;
 let activeFetch: AssetPoolFetcherInstance | null = null;
 let downloadInProgress = false;
+let downloadStartedAtMs = 0;
+const OTA_POOL_LOCK_MAX_MS = 20 * 60_000;
+let boundOtaFileListener: ((event: FileEvent) => void) | null = null;
+let boundOtaProgressListener: ((event: ProgressEvent) => void) | null = null;
+
+function detachOtaFetcherListeners(target: AssetPoolFetcherInstance | null): void {
+  if (!target) return;
+  if (boundOtaFileListener && typeof target.removeEventListener === 'function') {
+    try {
+      target.removeEventListener('fileevent', boundOtaFileListener);
+    } catch {
+      /* ignore */
+    }
+  }
+  if (boundOtaProgressListener && typeof target.removeEventListener === 'function') {
+    try {
+      target.removeEventListener('progressevent', boundOtaProgressListener);
+    } catch {
+      /* ignore */
+    }
+  }
+  boundOtaFileListener = null;
+  boundOtaProgressListener = null;
+}
+
+function recreateOtaFetcher(): AssetPoolFetcherInstance | null {
+  if (!pool || !FetcherClassRef) return fetcher;
+  detachOtaFetcherListeners(fetcher);
+  try {
+    fetcher = new FetcherClassRef(pool);
+    return fetcher;
+  } catch (e) {
+    console.warn(
+      '[Perform6] OTA asset pool fetcher recreate failed',
+      e instanceof Error ? e.message : e,
+    );
+    return fetcher;
+  }
+}
 
 function getRequire(): BrightSignRequire | null {
   const g = globalThis as { require?: BrightSignRequire };
@@ -107,8 +153,32 @@ function loadModules(): boolean {
   try {
     const PoolClass = req('@brightsign/assetpool') as AssetPoolCtor;
     const FetcherClass = req('@brightsign/assetpoolfetcher') as AssetPoolFetcherCtor;
-    pool = new PoolClass(OTA_POOL_PATH);
-    fetcher = new FetcherClass(pool);
+    FetcherClassRef = FetcherClass;
+    const pathCandidates = [OTA_POOL_PATH, OTA_ASSET_POOL_DIR_DOCS];
+    let lastErr: unknown = null;
+    for (const path of pathCandidates) {
+      try {
+        pool = new PoolClass(path);
+        fetcher = new FetcherClass(pool);
+        lastErr = null;
+        console.info('[Perform6] OTA asset pool ready', { path });
+        break;
+      } catch (e) {
+        lastErr = e;
+        pool = null;
+        fetcher = null;
+        console.warn(
+          '[Perform6] OTA asset pool path failed',
+          path,
+          e instanceof Error ? e.message : e,
+        );
+      }
+    }
+    if (!pool || !fetcher) {
+      throw lastErr instanceof Error
+        ? lastErr
+        : new Error('OTA asset pool unavailable');
+    }
     try {
       AssetPoolFilesClass = req('@brightsign/assetpoolfiles') as AssetPoolFilesCtor;
     } catch {
@@ -119,7 +189,6 @@ function loadModules(): boolean {
       }
     }
     modulesAvailable = true;
-    console.info('[Perform6] OTA asset pool ready', { path: OTA_POOL_PATH });
   } catch (e) {
     modulesAvailable = false;
     pool = null;
@@ -138,7 +207,17 @@ export function isOtaAssetPoolAvailable(): boolean {
 }
 
 export function isOtaAssetPoolDownloadInProgress(): boolean {
-  return downloadInProgress;
+  if (!downloadInProgress) return false;
+  if (
+    downloadStartedAtMs > 0 &&
+    Date.now() - downloadStartedAtMs > OTA_POOL_LOCK_MAX_MS
+  ) {
+    console.warn('[Perform6] OTA asset pool lock expired — clearing stuck flag');
+    downloadInProgress = false;
+    downloadStartedAtMs = 0;
+    return false;
+  }
+  return true;
 }
 
 export async function cancelOtaAssetPoolFetch(): Promise<void> {
@@ -257,6 +336,39 @@ function copyPoolFileToSd(poolPath: string, relPath: string): void {
     : new Error(`OTA realize copy failed for ${relPath}`);
 }
 
+function sdFileSize(relPath: string): number | null {
+  const fs = getNodeFs();
+  if (!fs) return null;
+  const destSd = `SD:/${relPath.replace(/^\/+/, '')}`;
+  const candidates = [destSd, toNodeSdPath(destSd)];
+  for (const path of candidates) {
+    try {
+      if (!fs.existsSync(path)) continue;
+      const st = fs.statSync(path);
+      if (st && st.size > 0) return st.size;
+    } catch {
+      /* try next */
+    }
+  }
+  return null;
+}
+
+/**
+ * True when every OTA file is already on SD at the expected size
+ * (e.g. download succeeded but REBOOTING ack failed — retry without re-fetch).
+ */
+export function otaFilesAlreadyOnSd(files: OtaManifestFile[]): boolean {
+  if (files.length === 0 || !getNodeFs()) return false;
+  for (const file of files) {
+    const rel = file.path.replace(/^\/+/, '');
+    const expected = file.sizeBytes ?? 0;
+    if (expected <= 0) return false;
+    const actual = sdFileSize(rel);
+    if (actual == null || actual !== expected) return false;
+  }
+  return true;
+}
+
 /**
  * Download full remaining OTA set into perform6-ota-pool, copy to SD:/ paths, then caller reboots.
  * Does not touch media pool or clear-cache paths.
@@ -277,7 +389,14 @@ export async function installOtaViaAssetPool(
   }
 
   downloadInProgress = true;
-  activeFetch = fetcher;
+  downloadStartedAtMs = Date.now();
+  const runFetcher = recreateOtaFetcher() ?? fetcher;
+  if (!runFetcher) {
+    downloadInProgress = false;
+    downloadStartedAtMs = 0;
+    return { ok: false, error: 'OTA asset pool fetcher unavailable' };
+  }
+  activeFetch = runFetcher;
 
   const assetList = files.map(fileToAsset);
   const byName = new Map(
@@ -298,7 +417,7 @@ export async function installOtaViaAssetPool(
       );
     }
 
-    fetcher.addEventListener('fileevent', (event: FileEvent) => {
+    const onFile = (event: FileEvent) => {
       const name = String(event.filename ?? '');
       const file = byName.get(name);
       const code = event.responseCode;
@@ -318,9 +437,9 @@ export async function installOtaViaAssetPool(
           runtimeVersion: runtimeConfig.runtimeVersion,
         });
       }
-    });
+    };
 
-    fetcher.addEventListener('progressevent', (event: ProgressEvent) => {
+    const onProgress = (event: ProgressEvent) => {
       const name = String(event.filename ?? '');
       const file = byName.get(name);
       if (!file) return;
@@ -334,7 +453,12 @@ export async function installOtaViaAssetPool(
         bytesTotal: event.currentFileTotal ?? file.sizeBytes,
         runtimeVersion: runtimeConfig.runtimeVersion,
       });
-    });
+    };
+
+    boundOtaFileListener = onFile;
+    boundOtaProgressListener = onProgress;
+    runFetcher.addEventListener('fileevent', onFile);
+    runFetcher.addEventListener('progressevent', onProgress);
 
     console.info('[Perform6] OTA asset pool fetch start', {
       pool: OTA_POOL_PATH,
@@ -342,7 +466,7 @@ export async function installOtaViaAssetPool(
       version: targetVersion,
     });
 
-    await fetcher.start(assetList, {
+    await runFetcher.start(assetList, {
       headers: {
         Authorization: `Bearer ${auth.apiToken}`,
         'X-Device-Id': auth.deviceId,
@@ -393,7 +517,9 @@ export async function installOtaViaAssetPool(
     console.warn('[Perform6] OTA asset pool install failed', msg);
     return { ok: false, error: msg || 'OTA asset pool install failed' };
   } finally {
+    detachOtaFetcherListeners(runFetcher);
     downloadInProgress = false;
+    downloadStartedAtMs = 0;
     activeFetch = null;
   }
 }

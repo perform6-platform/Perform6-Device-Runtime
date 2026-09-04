@@ -131,13 +131,25 @@ export interface PairingLifecycleStatusData {
   registrationStatus?: string;
   registeredDeviceId?: string | null;
   credentialsAvailable?: boolean;
+  deviceDisabled?: boolean;
+  rePairRequired?: boolean;
   isOnline?: boolean;
   expiresAt?: string;
 }
 
 export function mapLifecycleRegistrationStatus(
-  data: Pick<PairingLifecycleStatusData, 'status' | 'registrationStatus'>,
+  data: Pick<
+    PairingLifecycleStatusData,
+    'status' | 'registrationStatus' | 'credentialsAvailable' | 'deviceDisabled' | 'rePairRequired'
+  >,
 ): DeviceRegistrationStatus {
+  if (data.deviceDisabled === true || data.rePairRequired === true) {
+    return 'waiting_for_registration';
+  }
+  if (data.credentialsAvailable === false) {
+    const reg = data.registrationStatus?.toUpperCase();
+    if (reg === 'REGISTERED') return 'waiting_for_registration';
+  }
   const reg = data.registrationStatus?.toUpperCase();
   // API returns CLAIMED for admin-claimed; also accept ADMIN_CLAIMED.
   if (reg === 'REGISTERED') return 'registered';

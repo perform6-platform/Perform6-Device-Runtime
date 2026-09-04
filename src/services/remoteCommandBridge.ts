@@ -27,6 +27,8 @@ export interface DeviceRemoteCommand {
   forceOta?: boolean;
   /** Skip OTA; media-only sync. */
   skipOta?: boolean;
+  /** Clear local credentials before reboot (disable / restore re-pair). */
+  forceRePair?: boolean;
   createdAt: string;
 }
 

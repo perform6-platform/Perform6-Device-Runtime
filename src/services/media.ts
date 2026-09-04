@@ -74,6 +74,35 @@ export async function downloadMediaItem(
   return size;
 }
 
+function mergeBatchResults(
+  a: {
+    succeeded: string[];
+    downloaded: string[];
+    failed: string[];
+    failureReasons: Record<string, string>;
+  },
+  b: {
+    succeeded: string[];
+    downloaded: string[];
+    failed: string[];
+    failureReasons: Record<string, string>;
+  },
+): {
+  succeeded: string[];
+  downloaded: string[];
+  failed: string[];
+  failureReasons: Record<string, string>;
+} {
+  const succeeded = [...new Set([...a.succeeded, ...b.succeeded])];
+  const downloaded = [...new Set([...a.downloaded, ...b.downloaded])];
+  const failureReasons = { ...a.failureReasons, ...b.failureReasons };
+  for (const id of succeeded) delete failureReasons[id];
+  const failed = [...new Set([...a.failed, ...b.failed])].filter(
+    (id) => !succeeded.includes(id),
+  );
+  return { succeeded, downloaded, failed, failureReasons };
+}
+
 export async function downloadMediaBatchToSd(
   items: SyncMediaItem[],
   onProgress?: (progress: SdDownloadProgress) => void | Promise<void>,
@@ -84,10 +113,44 @@ export async function downloadMediaBatchToSd(
   failed: string[];
   failureReasons: Record<string, string>;
 }> {
-  // BrightSign asset pool first (SD:/perform6-media-pool). OTA stays separate.
-  const result = isMediaAssetPoolAvailable()
+  if (items.length === 0) {
+    return { succeeded: [], downloaded: [], failed: [], failureReasons: {} };
+  }
+
+  // BrightSign asset pool first (sd/perform6-media-pool). OTA stays separate.
+  // On pool fail/stall/partial → autorun SD:/perform6-cache (proven path).
+  let result = isMediaAssetPoolAvailable()
     ? await downloadMediaItemsViaAssetPool(items, onProgress, options)
-    : await downloadMediaItemsToSd(items, onProgress, options);
+    : {
+        succeeded: [] as string[],
+        downloaded: [] as string[],
+        failed: items.map((i) => i.mediaVersionId),
+        failureReasons: Object.fromEntries(
+          items.map((i) => [i.mediaVersionId, 'Media asset pool unavailable']),
+        ),
+      };
+
+  const missing = items.filter(
+    (item) =>
+      !result.succeeded.includes(item.mediaVersionId) &&
+      !result.downloaded.includes(item.mediaVersionId),
+  );
+
+  if (missing.length > 0) {
+    console.warn(
+      '[Perform6] Media asset pool incomplete — falling back to autorun perform6-cache',
+      {
+        missing: missing.length,
+        reasons: missing.map((m) => ({
+          id: m.mediaVersionId,
+          reason: result.failureReasons[m.mediaVersionId] ?? 'missing',
+        })),
+      },
+    );
+    const cacheResult = await downloadMediaItemsToSd(missing, onProgress, options);
+    result = mergeBatchResults(result, cacheResult);
+  }
+
   for (const item of items) {
     if (!result.downloaded.includes(item.mediaVersionId)) continue;
     await offlineCacheService.storeMediaMeta({

@@ -4,13 +4,20 @@ import { getSharedMessagePort, subscribeBsMessages } from '../platform/bsMessage
 import type { DeviceAuthContext } from '../shared/types/api';
 import { apiFetchData } from './api';
 import { flushDeviceLogs } from './deviceLogsApi';
-import { reportOtaStatusSafe } from './otaStatusApi';
+import { reportOtaStatusSafe, reportOtaStatusWithRetry } from './otaStatusApi';
 import { compareRuntimeVersions } from './runtimeVersion';
 import {
   cancelOtaAssetPoolFetch,
   installOtaViaAssetPool,
   isOtaAssetPoolAvailable,
+  otaFilesAlreadyOnSd,
 } from './otaAssetPool';
+import { requestBridgeSelfHeal } from './bridgeKeepalive';
+import {
+  autorunSupportsOtaBridge,
+  getAutorunCapabilities,
+  probeAutorunCapabilities,
+} from './autorunCapabilities';
 
 const OTA_INSTALL_MESSAGE = 'led-ota-install';
 const OTA_AUTH_MESSAGE = 'led-ota-auth';
@@ -321,16 +328,9 @@ function waitForOtaComplete(
           return;
         }
         console.info(
-          `[Perform6] OTA complete · ${totalCount ?? totalFiles} files · reboot pending`,
+          `[Perform6] OTA complete · ${totalCount ?? totalFiles} files · commit+reboot next`,
         );
-        reportOtaStatusSafe(auth, {
-          status: 'REBOOTING',
-          targetVersion,
-          doneCount: totalCount,
-          totalCount,
-          currentPath: lastPath,
-          runtimeVersion: runtimeConfig.runtimeVersion,
-        });
+        // Do not fire REBOOTING here — installOtaFromManifest awaits API ack first.
         finish({ ok: true });
       }
     });
@@ -428,6 +428,77 @@ function waitForOtaStatusDetail(
   });
 }
 
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+/**
+ * Persist wave completion on the API, then reboot.
+ * Never reboot before REBOOTING is acknowledged — otherwise the same file
+ * is re-offered and the player can reboot-loop.
+ */
+async function commitOtaWaveAndReboot(
+  auth: DeviceAuthContext,
+  opts: {
+    targetVersion: string;
+    doneCount: number;
+    totalCount: number;
+    currentPath?: string;
+  },
+): Promise<{ ok: boolean; error?: string }> {
+  const port = getSharedMessagePort();
+  if (!port) {
+    return { ok: false, error: 'BSMessagePort unavailable for reboot' };
+  }
+
+  try {
+    await flushDeviceLogs(auth);
+  } catch {
+    /* best-effort — do not block commit */
+  }
+
+  const committed = await reportOtaStatusWithRetry(
+    auth,
+    {
+      status: 'REBOOTING',
+      targetVersion: opts.targetVersion,
+      doneCount: opts.doneCount,
+      totalCount: opts.totalCount,
+      currentPath: opts.currentPath,
+      runtimeVersion: runtimeConfig.runtimeVersion,
+    },
+    { attempts: 6, label: 'REBOOTING' },
+  );
+
+  if (!committed) {
+    const error =
+      'OTA wave not acknowledged by API — refusing reboot to avoid stuck loop';
+    console.warn(`[Perform6] ${error}`);
+    markOtaFailed(error);
+    reportOtaStatusSafe(auth, {
+      status: 'FAILED',
+      targetVersion: opts.targetVersion,
+      doneCount: opts.doneCount,
+      totalCount: opts.totalCount,
+      currentPath: opts.currentPath,
+      error,
+      runtimeVersion: runtimeConfig.runtimeVersion,
+    });
+    return { ok: false, error };
+  }
+
+  clearOtaFailCooldown();
+
+  // Let the status response flush before tearing down the network stack.
+  await sleepMs(500);
+
+  console.info(
+    `[Perform6] OTA wave committed (${opts.currentPath ?? 'ok'}) — rebooting`,
+  );
+  port.PostBSMessage({ type: OTA_REBOOT_MESSAGE });
+  return { ok: true };
+}
+
 export async function installOtaFromManifest(
   auth: DeviceAuthContext,
   manifest: OtaManifestResponse,
@@ -455,6 +526,20 @@ export async function installOtaFromManifest(
   const alreadyDone = manifest.completedCount ?? 0;
   const targetVersion = manifest.version ?? '';
 
+  // Download already landed (e.g. prior REBOOTING POST failed) — commit only.
+  if (otaFilesAlreadyOnSd(files)) {
+    const paths = files.map((f) => f.path.replace(/^\/+/, ''));
+    console.info('[Perform6] OTA files already on SD — committing wave without re-download', {
+      paths,
+    });
+    return commitOtaWaveAndReboot(auth, {
+      targetVersion,
+      doneCount: alreadyDone + files.length,
+      totalCount: packageTotal,
+      currentPath: paths[paths.length - 1],
+    });
+  }
+
   // Prefer BrightSign asset pool (SD:/perform6-ota-pool) — isolated from media.
   if (isOtaAssetPoolAvailable()) {
     console.info('[Perform6] OTA via asset pool', {
@@ -467,19 +552,15 @@ export async function installOtaFromManifest(
     });
     const poolResult = await installOtaViaAssetPool(auth, manifest, files);
     if (poolResult.ok) {
-      reportOtaStatusSafe(auth, {
-        status: 'REBOOTING',
+      console.info(
+        `[Perform6] OTA asset pool ok (${files.length} files) — committing then reboot`,
+      );
+      return commitOtaWaveAndReboot(auth, {
         targetVersion,
         doneCount: alreadyDone + files.length,
         totalCount: packageTotal,
         currentPath: poolResult.realizedPaths?.slice(-1)[0],
-        runtimeVersion: runtimeConfig.runtimeVersion,
       });
-      console.info(
-        `[Perform6] OTA asset pool ok (${files.length} files) — rebooting`,
-      );
-      port.PostBSMessage({ type: OTA_REBOOT_MESSAGE });
-      return { ok: true };
     }
     console.warn(
       '[Perform6] OTA asset pool failed — falling back to autorun HTTP',
@@ -509,14 +590,29 @@ export async function installOtaFromManifest(
   });
 
   // Tiny ping first — proves JS↔autorun path before auth/install.
+  await probeAutorunCapabilities(4_000);
+  if (!autorunSupportsOtaBridge()) {
+    const proto = getAutorunCapabilities().protocolVersion;
+    const error =
+      proto === 0
+        ? 'Autorun too old or not answering — copy SD package 1.0.80+ and reboot (OTA cannot self-update autorun)'
+        : `Autorun protocol ${proto} lacks OTA bridge — SD reflash 1.0.80+ required`;
+    requestBridgeSelfHeal(error);
+    return { ok: false, error };
+  }
+
   const pingWait = waitForOtaStatusDetail('pong', 8_000);
   port.PostBSMessage({ type: OTA_PING_MESSAGE });
   const pingOk = await pingWait;
   if (!pingOk) {
-    console.warn('[Perform6] OTA bridge ping failed — autorun not answering');
-  } else {
-    console.info('[Perform6] OTA bridge ping ok');
+    // One-shot self-heal (autorun marker) — unblocks fleet when bridge is wedged.
+    requestBridgeSelfHeal('OTA bridge ping failed — autorun not answering');
+    return {
+      ok: false,
+      error: 'OTA bridge ping failed — autorun not answering',
+    };
   }
+  console.info('[Perform6] OTA bridge ping ok');
 
   // Auth in a separate message so install payload stays small (JWT can be huge).
   const authWait = waitForOtaStatusDetail('auth-ok', 8_000);
@@ -527,7 +623,10 @@ export async function installOtaFromManifest(
   });
   const authOk = await authWait;
   if (!authOk) {
-    console.warn('[Perform6] OTA auth ack missing — continuing with install anyway');
+    return {
+      ok: false,
+      error: 'OTA auth ack missing — refusing download (would 401)',
+    };
   }
 
   const installPromise = waitForOtaComplete(auth, targetVersion, wave.length);
@@ -552,30 +651,27 @@ export async function installOtaFromManifest(
   const result = await installPromise;
   if (!result.ok) return result;
 
-  reportOtaStatusSafe(auth, {
-    status: 'REBOOTING',
+  return commitOtaWaveAndReboot(auth, {
     targetVersion,
     doneCount: alreadyDone + wave.length,
     totalCount: packageTotal,
     currentPath: filePath,
-    runtimeVersion: runtimeConfig.runtimeVersion,
   });
-
-  console.info(
-    `[Perform6] OTA wave ok (${filePath}) — rebooting so next wave / new autorun can load`,
-  );
-  port.PostBSMessage({ type: OTA_REBOOT_MESSAGE });
-  return { ok: true };
 }
 
 export async function applyOtaUpdate(
   auth: DeviceAuthContext,
-  options?: { clearFailCooldown?: boolean },
+  options?: {
+    clearFailCooldown?: boolean;
+    /** Admin Install OTA — required when pauseOta is set (fleet default). */
+    allowWhenPaused?: boolean;
+  },
 ): Promise<{ applied: boolean; version?: string; error?: string }> {
   if (options?.clearFailCooldown) {
     clearOtaFailCooldown();
   }
-  if (isOtaPaused()) {
+  // pauseOta defaults true — only Admin Install (allowWhenPaused) may proceed.
+  if (isOtaPaused() && options?.allowWhenPaused !== true) {
     console.info('[Perform6] OTA skipped — pauseOta in perform6-ops.json');
     return { applied: false, error: 'OTA paused via perform6-ops.json' };
   }
