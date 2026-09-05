@@ -12,7 +12,6 @@ import {
   isOtaAssetPoolAvailable,
   otaFilesAlreadyOnSd,
 } from './otaAssetPool';
-import { requestBridgeSelfHeal } from './bridgeKeepalive';
 import {
   autorunSupportsOtaBridge,
   getAutorunCapabilities,
@@ -597,7 +596,6 @@ export async function installOtaFromManifest(
       proto === 0
         ? 'Autorun too old or not answering — copy SD package 1.0.80+ and reboot (OTA cannot self-update autorun)'
         : `Autorun protocol ${proto} lacks OTA bridge — SD reflash 1.0.80+ required`;
-    requestBridgeSelfHeal(error);
     return { ok: false, error };
   }
 
@@ -605,8 +603,6 @@ export async function installOtaFromManifest(
   port.PostBSMessage({ type: OTA_PING_MESSAGE });
   const pingOk = await pingWait;
   if (!pingOk) {
-    // One-shot self-heal (autorun marker) — unblocks fleet when bridge is wedged.
-    requestBridgeSelfHeal('OTA bridge ping failed — autorun not answering');
     return {
       ok: false,
       error: 'OTA bridge ping failed — autorun not answering',
