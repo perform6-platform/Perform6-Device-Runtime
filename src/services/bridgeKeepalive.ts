@@ -1,6 +1,5 @@
 import {
   getSharedMessagePort,
-  resetSharedMessagePort,
   subscribeBsMessages,
 } from '../platform/bsMessagePort';
 import { runtimeConfig } from '../config/runtime';
@@ -17,17 +16,14 @@ import { flushDeviceLogs } from './deviceLogsApi';
 
 export type BridgeLinkState = 'up' | 'degraded' | 'down';
 
-const PING_INTERVAL_MS = 15_000;
-const PONG_WAIT_MS = 15_000;
+const PING_INTERVAL_MS = 20_000;
+const PONG_WAIT_MS = 20_000;
 const PONG_WAIT_BUSY_MS = 30_000;
-const HELLO_RETRY_MS = 5_000;
+const HELLO_RETRY_MS = 30_000;
 const HEAVY_LOAD_HOLD_MS = 60_000;
 const ROUND_TRIP_FRESH_MS = 45_000;
 const TICK_FRESH_MS = 45_000;
 
-const MISS_PORT_RESET = 3;
-const MISS_HTML_RECYCLE = 5;
-const MISS_HEAL_REBOOT = 8;
 const HEAL_COOLDOWN_MS = 10 * 60_000;
 const RECYCLE_COOLDOWN_MS = 15 * 60_000;
 const PONG_STREAK_HEALTHY = 2;
@@ -46,8 +42,6 @@ let recycleRequestedAt = 0;
 let lastRoundTripAt = 0;
 let lastAutorunToJsAt = 0;
 let lastHeavyLoadAt = 0;
-let portResetDoneForStreak = false;
-let recycleDoneForStreak = false;
 let bridgeState: BridgeLinkState = 'down';
 
 function isBrightSignRuntime(): boolean {
@@ -156,8 +150,6 @@ function announceHealthy(): void {
   if (!port) return;
   healthyAnnounced = true;
   healRequestedAt = 0;
-  portResetDoneForStreak = false;
-  recycleDoneForStreak = false;
   try {
     port.PostBSMessage({ type: BridgeMsg.HEALTHY });
   } catch {
@@ -171,8 +163,6 @@ function announceHealthy(): void {
 function onRoundTrip(source: string, busy = false): void {
   clearPongWait();
   missStreak = 0;
-  portResetDoneForStreak = false;
-  recycleDoneForStreak = false;
   lastRoundTripAt = Date.now();
   lastAutorunToJsAt = lastRoundTripAt;
   if (busy) noteBridgeHeavyLoad('pong-busy');
@@ -201,27 +191,13 @@ function onAutorunToJs(source: string, busy = false): void {
 }
 
 function escalateMiss(reason: string): void {
-  sendAutorunHello();
-  if (missStreak >= MISS_PORT_RESET && !portResetDoneForStreak) {
-    portResetDoneForStreak = true;
-    resetSharedMessagePort();
+  if (missStreak === 1 || missStreak % 6 === 0) {
     sendAutorunHello();
-    console.warn('[Perform6] Bridge ladder: port reset', { missStreak });
-  }
-  if (missStreak >= MISS_HTML_RECYCLE && !recycleDoneForStreak) {
-    recycleDoneForStreak = true;
-    requestHtmlRecycle(reason);
-    console.warn('[Perform6] Bridge ladder: html recycle', { missStreak });
-  }
-  if (missStreak >= MISS_HEAL_REBOOT) {
-    if (isHeavyLoad()) {
-      console.warn(
-        '[Perform6] Bridge ladder: heal deferred (active transfer)',
-        { missStreak },
-      );
-      return;
-    }
-    requestHeal(reason);
+    console.warn('[Perform6] Bridge observe-only miss', {
+      reason,
+      missStreak,
+      state: computeBridgeState(),
+    });
   }
 }
 
@@ -231,10 +207,7 @@ function onPongTimeout(): void {
   pongStreak = 0;
   healthyAnnounced = false;
   missStreak += 1;
-  const shouldLog =
-    missStreak <= 3 ||
-    missStreak % 5 === 0 ||
-    missStreak >= MISS_HEAL_REBOOT;
+  const shouldLog = missStreak <= 3 || missStreak % 6 === 0;
   if (shouldLog) {
     console.warn('[Perform6] Bridge keepalive pong miss', {
       missStreak,
@@ -250,11 +223,8 @@ function onPongTimeout(): void {
 }
 
 function sendPing(): void {
-  let port = getSharedMessagePort();
-  if (!port) {
-    port = resetSharedMessagePort();
-    if (!port) return;
-  }
+  const port = getSharedMessagePort();
+  if (!port) return;
   if (awaitingPong) return;
   awaitingPong = true;
   try {
@@ -262,7 +232,6 @@ function sendPing(): void {
   } catch (error) {
     awaitingPong = false;
     console.warn('[Perform6] Bridge ping PostBSMessage failed', error);
-    resetSharedMessagePort();
     flushLogsSoon();
     return;
   }
@@ -287,10 +256,7 @@ export function startBridgeKeepalive(): void {
   if (!port) {
     console.warn('[Perform6] Bridge keepalive not started — BSMessagePort missing');
     window.setTimeout(() => {
-      if (!started) {
-        resetSharedMessagePort();
-        startBridgeKeepalive();
-      }
+      if (!started) startBridgeKeepalive();
     }, 3_000);
     return;
   }
@@ -327,10 +293,10 @@ export function startBridgeKeepalive(): void {
     sendPing();
   }, 1_000);
   pingTimer = window.setInterval(sendPing, PING_INTERVAL_MS);
-  console.info('[Perform6] Bridge keepalive started (recovery ladder)', {
+  console.info('[Perform6] Bridge keepalive started (observe-only)', {
     intervalMs: PING_INTERVAL_MS,
     pongWaitMs: PONG_WAIT_MS,
-    ladder: [MISS_PORT_RESET, MISS_HTML_RECYCLE, MISS_HEAL_REBOOT],
+    helloRetryMs: HELLO_RETRY_MS,
   });
 }
 

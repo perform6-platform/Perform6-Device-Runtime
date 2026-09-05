@@ -1,3 +1,7 @@
+/**
+ * BrightSign allows one BSMessagePort per HtmlWidget.
+ * Recreating the port drops autorun→JS replies onto a dead instance.
+ */
 let sharedPort: BrightSignMessagePort | null | undefined;
 const bsMessageListeners = new Set<(event: BrightSignMessagePortEvent) => void>();
 
@@ -22,7 +26,7 @@ function createMessagePort(): BrightSignMessagePort | null {
     port.addEventListener('bsmessage', (event) => {
       dispatchBsMessage(event);
     });
-    console.info('[Perform6] BSMessagePort ready');
+    console.info('[Perform6] BSMessagePort ready (single instance)');
     return port;
   } catch (error) {
     console.warn('[Perform6] BSMessagePort unavailable', error);
@@ -36,9 +40,14 @@ export function getSharedMessagePort(): BrightSignMessagePort | null {
   return sharedPort;
 }
 
+/** Docs: one port per widget. Never construct a second instance. */
 export function resetSharedMessagePort(): BrightSignMessagePort | null {
-  sharedPort = undefined;
-  console.warn('[Perform6] BSMessagePort reset — recreating');
+  if (sharedPort) {
+    console.warn(
+      '[Perform6] BSMessagePort reset ignored — keeping the boot instance',
+    );
+    return sharedPort;
+  }
   return getSharedMessagePort();
 }
 

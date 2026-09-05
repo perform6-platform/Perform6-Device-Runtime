@@ -2,7 +2,6 @@ import { runtimeConfig } from '../config/runtime';
 import { getSharedMessagePort, subscribeBsMessages } from './bsMessagePort';
 import { isLocalPlaybackSrc } from '../services/playbackSrc';
 import { BridgeMsg } from '../services/bridgeProtocol';
-import { requestBridgeHtmlRecycle } from '../services/bridgeKeepalive';
 import { subscribeSdCacheProgress } from '../services/sdCacheBridge';
 import { useRuntimeStore } from '../stores/runtimeStore';
 
@@ -72,8 +71,10 @@ function postTouchPlayback(port: BrightSignMessagePort, isRetry = false): void {
     awaitingAck = false;
     ackTimer = null;
     if (ackRetryUsed) {
-      console.warn('[Perform6] XT playback ack failed after retry — requesting html recycle');
-      requestBridgeHtmlRecycle('playback-ack-timeout');
+      console.warn(
+        '[Perform6] XT playback ack missed after retry — LED play left running',
+        { src, restartNonce },
+      );
       return;
     }
     ackRetryUsed = true;
@@ -86,8 +87,10 @@ function postTouchPlayback(port: BrightSignMessagePort, isRetry = false): void {
     ackTimer = window.setTimeout(() => {
       awaitingAck = false;
       ackTimer = null;
-      console.warn('[Perform6] XT playback ack failed after retry — requesting html recycle');
-      requestBridgeHtmlRecycle('playback-ack-timeout');
+      console.warn(
+        '[Perform6] XT playback ack missed after retry — LED play left running',
+        { src, restartNonce },
+      );
     }, 3_000);
   }, 3_000);
 }
