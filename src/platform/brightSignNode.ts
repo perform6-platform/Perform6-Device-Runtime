@@ -15,6 +15,7 @@ export type NodeFs = {
   statSync: (path: string) => { size: number; isDirectory: () => boolean; isFile: () => boolean };
   readFileSync: (path: string, encoding?: string) => string | Buffer;
   writeFileSync: (path: string, data: string, encoding?: string) => void;
+  copyFileSync?: (src: string, dest: string) => void;
   unlinkSync: (path: string) => void;
   rmSync?: (path: string, opts?: { recursive?: boolean; force?: boolean }) => void;
   rmdirSync: (path: string) => void;

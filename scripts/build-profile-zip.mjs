@@ -264,10 +264,10 @@ function main() {
         displayMode,
         storageEncryption: {
           enabled: false,
-          note: 'Plaintext SD — HtmlWidget requires readable index.html. Media lives in SD:/perform6-cache only (single-cache model).',
+          note: 'Plaintext SD — HtmlWidget requires readable index.html. Media lives in SD:/perform6-media only (single-cache model).',
         },
         mediaCache: {
-          path: 'SD:/perform6-cache',
+          path: 'SD:/perform6-media',
           naming: 'SimpleHash(fileUrl)+ext',
           usedBy: ['HtmlWidget file:// playback', 'native roVideoPlayer LEDs'],
         },
@@ -280,7 +280,7 @@ function main() {
                 canvas: 'HDMI-1 HtmlWidget + HDMI-2 native roVideoPlayer',
                 outputMap: 'HDMI-1 x=0; HDMI-2 x=1920',
                 mode: displayMode === 'MULTI_NOFULLRES' ? '1920x1080x60p' : '1920x1080x60p:fullres',
-                ledPlayback: 'roRtspStream for http(s) + SD:/perform6-cache offline copy',
+                ledPlayback: 'roRtspStream for http(s) + SD:/perform6-media offline copy',
                 ledIdleClip: 'led-idle.png (packaged) or led-idle.mp4 override',
                 audioRoute: 'HDMI-1 touch silent; native video audio to HDMI-2',
                 ledLog: 'SD:/perform6-led.log',
@@ -291,7 +291,7 @@ function main() {
                   canvas: 'HDMI-1 HtmlWidget + HDMI-2/3 native roVideoPlayer',
                   outputMap: 'HDMI-1 x=0; HDMI-2 x=1920; HDMI-3 x=3840',
                   mode: displayMode === 'MULTI_NOFULLRES' ? '1920x1080x60p' : '1920x1080x60p:fullres',
-                  ledPlayback: 'roRtspStream for http(s) + SD:/perform6-cache offline copy',
+                  ledPlayback: 'roRtspStream for http(s) + SD:/perform6-media offline copy',
                   ledIdleClip: 'led-idle.png (packaged) or led-idle.mp4 override',
                   audioRoute: 'SCREEN_1 to HDMI-1; SCREEN_2 to HDMI-2; SCREEN_3 to HDMI-3',
                   ledLog: 'SD:/perform6-led.log',
@@ -323,13 +323,15 @@ function main() {
       '',
       'Supported firmwares: BrightSign OS 8.2+ and 9.x (Series 5: XT/XC/HD).',
       'Storage: plaintext SD (no EncryptStorage). App files stay readable for HtmlWidget.',
-      'Media cache: SD:/perform6-cache/ — single source for Bluefin/HD HTML and XT/XC LEDs.',
-      '  Videos download once into perform6-cache (not IndexedDB). Rotation prune removes unused files.',
+      'Media cache: SD:/perform6-media/ — single source for Bluefin/HD HTML and XT/XC LEDs.',
+      '  Videos download once into perform6-media (not IndexedDB). Rotation prune removes unused files.',
       '',
       `Display mode (perform6-display.txt): ${displayMode}`,
-      '  MULTI           = BrightAuthor-style: HDMI-1 React + secondary native roVideoPlayer(s)',
-      '  MULTI_NOFULLRES = same layout without :fullres (scaled graphics)',
-      'XT/XC always run MULTI (SINGLE is not used). Edit only if you need MULTI_NOFULLRES.',
+      '  BrightSign multi-screen pattern: fixed mode per HDMI — never auto / never fleet-default 4K.',
+      '  MULTI           = 1920x1080x60p:fullres (recommended; BA-style dual/triple canvas)',
+      '  MULTI_NOFULLRES = 1920x1080x60p without :fullres (scaled graphics only)',
+      '  Other values (auto, 4K, SINGLE, …) are ignored → MULTI.',
+      'XT/XC always run MULTI layout. Edit only if you need MULTI_NOFULLRES.',
       '',
       profileKey === 'XT2145'
         ? 'Layout: HDMI-1 = React pairing/touch (Bluefin); HDMI-2 = native video (LED).'
@@ -337,10 +339,10 @@ function main() {
           ? 'Layout: HDMI-1 = React primary; HDMI-2/3 = native video for SCREEN_2/SCREEN_3.'
           : 'Canvas follows the player native resolution.',
       profileKey === 'XT2145'
-        ? 'Bluefin + LED both play from SD:/perform6-cache (file:// / PlayFile); HTTPS only as online fallback.'
+        ? 'Bluefin + LED both play from SD:/perform6-media (file:// / PlayFile); HTTPS only as online fallback.'
         : profileKey === 'XC4055'
-          ? 'All outputs play from SD:/perform6-cache after sync; HTTPS fallback while online.'
-          : 'Each HD226 player caches assigned media to SD:/perform6-cache and plays file://.',
+          ? 'All outputs play from SD:/perform6-media after sync; HTTPS fallback while online.'
+          : 'Each HD226 player caches assigned media to SD:/perform6-media and plays file://.',
       profileKey === 'XT2145'
         ? 'Audio: Bluefin HDMI-1 is silent; programme audio is routed only to LED HDMI-2.'
         : profileKey === 'XC4055'
@@ -353,7 +355,7 @@ function main() {
       ...(profileKey === 'XT2145' || profileKey === 'XC4055'
         ? [
             'LED video playback:',
-            '  Prefer SD:/perform6-cache local files; otherwise stream via roRtspStream and cache.',
+            '  Prefer SD:/perform6-media local files; otherwise stream via roRtspStream and cache.',
             '  Default idle: led-idle.png (Perform6 logo) is packaged on the SD root and loops',
             '  on the LED(s) from boot until the first deployment video arrives.',
             '  Optional override: place led-idle.mp4 on the SD root to replace the logo.',
@@ -386,11 +388,18 @@ function main() {
       'First boot reboots once while the output layout is applied — that is expected.',
       'Changing perform6-display.txt also causes one extra reboot on the next start.',
       '',
+      'OTA (custom fleet — not BSN):',
+      '  pauseOta=true in perform6-ops.json — Sync Now never installs runtime.',
+      '  Admin → Install OTA publishes files via API → device asset pool (perform6-ota-pool)',
+      '  or autorun HTTP fallback → REBOOTING ack → reboot.',
+      '  Publish a newer version than the device before Install; no downgrade.',
+      '  Roll out one device first, then fleet.',
+      '',
       'Field maintenance (perform6-ops.json on SD root):',
       '  pauseMediaSync     = true  → stop media downloads (sync-check skipped)',
       '  pauseOta           = true  → refuse OTA unless Admin Install (allowWhenPaused); default',
       '                              Auto-OTA on sync is code-disabled — portal Install OTA only.',
-      '  clearCacheOnBoot   = true  → wipe SD:/perform6-cache once on next boot (auto-clears)',
+      '  clearCacheOnBoot   = true  → wipe SD:/perform6-media once on next boot (auto-clears)',
       '  rebootAfterCacheClear = true → reboot after clearCacheOnBoot',
       '  syncOnBoot         = true  → run one sync after boot (auto-clears; bypasses pause)',
       '  Emergency template: copy perform6-ops.emergency.json → perform6-ops.json',

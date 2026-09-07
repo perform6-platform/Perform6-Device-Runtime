@@ -1,7 +1,7 @@
 import { runtimeConfig } from '../config/runtime';
 import { getSharedMessagePort, subscribeBsMessages } from './bsMessagePort';
 import { findScreenForTarget, getCurrentVideo } from '../services/playback';
-import { isLocalPlaybackSrc } from '../services/playbackSrc';
+import { toLedPlayableSrc } from '../services/playbackSrc';
 import { BridgeMsg } from '../services/bridgeProtocol';
 import { resolveSdPlaybackUrl, subscribeSdCacheProgress } from '../services/sdCacheBridge';
 import type { DisplayTarget } from '../shared/types';
@@ -15,8 +15,7 @@ function asString(value: unknown): string {
 }
 
 function nativePlayableSrc(src: string | null | undefined): string {
-  const value = asString(src);
-  return isLocalPlaybackSrc(value) ? value : '';
+  return toLedPlayableSrc(src);
 }
 
 async function postScreenPlayback(

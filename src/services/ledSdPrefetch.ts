@@ -1,5 +1,5 @@
 /**
- * @deprecated Use sdCacheBridge — SD:/perform6-cache is the only media store.
+ * @deprecated Use sdCacheBridge — SD:/perform6-media is the only playable media store.
  * Kept as a thin re-export so older imports do not break during the cutover.
  */
 export {

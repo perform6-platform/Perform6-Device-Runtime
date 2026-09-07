@@ -1,7 +1,8 @@
 /**
  * Must match brightsign/autorun.brs SimpleHash + CacheNameFor exactly.
- * Same HTTPS URL → same SD:/perform6-cache filename on every profile.
+ * Same HTTPS URL → same SD:/perform6-media filename on every profile.
  */
+import { mediaStoreFileUrl } from './mediaStorePaths';
 
 export function simpleHash(text: string): string {
   let h = 5381;
@@ -35,7 +36,7 @@ export function cacheNameFor(url: string): string {
   return simpleHash(url) + urlExtension(url);
 }
 
-/** HtmlWidget-local path for a cached media file. */
+/** HtmlWidget-local path for a playable media file (single store). */
 export function sdCacheFileUrl(url: string): string {
-  return `file:///SD:/perform6-cache/${cacheNameFor(url)}`;
+  return mediaStoreFileUrl(cacheNameFor(url));
 }

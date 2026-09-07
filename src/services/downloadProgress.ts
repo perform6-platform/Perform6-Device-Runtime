@@ -5,7 +5,7 @@ export interface DownloadUiState {
   currentLabel: string | null;
   completedFiles: number;
   totalFiles: number;
-  /** SD path for the active file, e.g. SD:/perform6-cache/12345.mp4 */
+  /** SD path for the active file, e.g. SD:/perform6-media/12345.mp4 */
   cachePath: string | null;
   /** Bytes written for the active file (.part or final). */
   fileBytesDownloaded: number;

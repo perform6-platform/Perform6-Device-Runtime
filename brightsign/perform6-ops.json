@@ -4,5 +4,6 @@
   "pauseOta": true,
   "clearCacheOnBoot": false,
   "rebootAfterCacheClear": false,
-  "syncOnBoot": false
+  "syncOnBoot": false,
+  "_comment": "pauseOta=true: custom fleet OTA is Admin Install only (never auto on Sync Now)."
 }

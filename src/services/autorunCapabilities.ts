@@ -131,8 +131,9 @@ export function sendAutorunHello(): boolean {
       runtimeVersion: runtimeConfig.runtimeVersion,
       protocolVersion: String(AUTORUN_PROTOCOL_VERSION),
     });
-    console.info('[Perform6] Autorun hello sent', {
-      ok: ok !== false,
+    // ok = PostBSMessage accepted locally — not duplex health / not hello-ack.
+    console.info('[Perform6] Autorun hello posted', {
+      posted: ok !== false,
       runtimeVersion: runtimeConfig.runtimeVersion,
     });
     return ok !== false;

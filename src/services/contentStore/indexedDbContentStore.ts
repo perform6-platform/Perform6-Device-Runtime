@@ -1,5 +1,5 @@
 /**
- * IndexedDB media blobs are retired — SD:/perform6-cache is the only store.
+ * IndexedDB media blobs are retired — SD:/perform6-media is the only playable store.
  * This stub keeps accidental imports from crashing while remaining a no-op.
  */
 

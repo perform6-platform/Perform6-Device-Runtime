@@ -1,4 +1,5 @@
 import { runtimeConfig } from '../config/runtime';
+import { MEDIA_POOL_DIR_NAME, MEDIA_STORE_DIR_NAME } from './mediaStorePaths';
 
 export function isHttpUrl(src: string | null | undefined): boolean {
   if (!src) return false;
@@ -14,6 +15,87 @@ export function isLocalPlaybackSrc(src: string | null | undefined): boolean {
 }
 
 /**
+ * BrightScript / roVideoPlayer path: SD:/perform6-media/….mp4
+ * Accepts file:///SD:/…, file:///storage/sd/…, /storage/sd/…, or SD:/…
+ */
+export function toBrightSignSdPath(src: string | null | undefined): string {
+  if (!src) return '';
+  const trimmed = src.trim();
+  if (!trimmed) return '';
+
+  if (trimmed.startsWith('file:///SD:/') || trimmed.startsWith('file:///sd:/')) {
+    return `SD:/${trimmed.slice('file:///SD:/'.length)}`;
+  }
+  if (trimmed.startsWith('file://SD:/') || trimmed.startsWith('file://sd:/')) {
+    return `SD:/${trimmed.slice('file://SD:/'.length)}`;
+  }
+  if (trimmed.startsWith('file:///storage/sd/')) {
+    return `SD:/${trimmed.slice('file:///storage/sd/'.length)}`;
+  }
+  if (trimmed.startsWith('file://storage/sd/')) {
+    return `SD:/${trimmed.slice('file://storage/sd/'.length)}`;
+  }
+  if (trimmed.startsWith('/storage/sd/')) {
+    return `SD:/${trimmed.slice('/storage/sd/'.length)}`;
+  }
+  if (/^sd:/i.test(trimmed)) {
+    return `SD:/${trimmed.replace(/^sd:\/*/i, '')}`;
+  }
+  return trimmed;
+}
+
+/**
+ * HtmlWidget <video> path: file:///SD:/perform6-media/….mp4
+ */
+export function toHtmlFileUrl(src: string | null | undefined): string {
+  if (!src) return '';
+  const trimmed = src.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('file://')) return trimmed;
+
+  const sd = toBrightSignSdPath(trimmed);
+  if (sd.startsWith('SD:/')) {
+    return `file:///${sd}`;
+  }
+  if (trimmed.startsWith('/storage/sd/')) {
+    return `file:///SD:/${trimmed.slice('/storage/sd/'.length)}`;
+  }
+  return trimmed;
+}
+
+function hasVideoExtension(src: string): boolean {
+  const lower = src.toLowerCase().split('?')[0] ?? '';
+  return (
+    lower.endsWith('.mp4') ||
+    lower.endsWith('.mov') ||
+    lower.endsWith('.m4v') ||
+    lower.endsWith('.webm')
+  );
+}
+
+/** Native LED PlayFile needs SD:/… with a real video extension (pool sha256 fails). */
+export function isNativeLedPlayableSrc(src: string | null | undefined): boolean {
+  if (!isLocalPlaybackSrc(src) || !src) return false;
+  const sd = toBrightSignSdPath(src);
+  const lower = sd.toLowerCase().split('?')[0] ?? '';
+  if (lower.includes(MEDIA_POOL_DIR_NAME)) return false;
+  return hasVideoExtension(sd);
+}
+
+/**
+ * LED / autorun PlayFile src — always SD:/perform6-media/….mp4 (never file:// or pool).
+ */
+export function toLedPlayableSrc(src: string | null | undefined): string {
+  if (!isNativeLedPlayableSrc(src)) return '';
+  const sd = toBrightSignSdPath(src);
+  if (!sd || !hasVideoExtension(sd)) return '';
+  if (sd.toLowerCase().includes(MEDIA_POOL_DIR_NAME)) return '';
+  // Prefer single-store paths; allow legacy cache filenames still on disk.
+  void MEDIA_STORE_DIR_NAME;
+  return sd;
+}
+
+/**
  * BrightSign hardware never plays HTTPS VOD (dual-decode + cache fight).
  * The browser simulator may use the remote URL so panes are not blank.
  */
@@ -21,7 +103,7 @@ export function resolvePlaybackSrc(
   localSrc: string | null | undefined,
   remoteSrc?: string | null,
 ): string | null {
-  if (localSrc) return localSrc;
+  if (localSrc) return toHtmlFileUrl(localSrc) || localSrc;
   if (runtimeConfig.isSimulator && remoteSrc) return remoteSrc;
   return null;
 }
@@ -31,5 +113,6 @@ export function safeHtmlVideoSrc(src: string | null | undefined): string | null 
   if (!src) return null;
   if (runtimeConfig.isSimulator) return src;
   if (isHttpUrl(src)) return null;
-  return src;
+  const html = toHtmlFileUrl(src);
+  return html || src;
 }

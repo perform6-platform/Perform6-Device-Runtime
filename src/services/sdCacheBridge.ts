@@ -16,6 +16,12 @@ import { resolveMediaFileUrl } from './manifest';
 import { cacheNameFor, sdCacheFileUrl } from './sdCacheName';
 import { MEDIA_POOL_MARKS_VERSION } from './brightSignPoolPath';
 import { listSdPath } from './sdFsBridge';
+import {
+  LEGACY_CACHE_SD,
+  MEDIA_POOL_SD,
+  MEDIA_STORE_SD,
+  mediaStoreFileSdPath,
+} from './mediaStorePaths';
 
 const PREFETCH_MESSAGE = 'led-cache-prefetch';
 const KEEP_MESSAGE = 'led-cache-keep';
@@ -207,25 +213,6 @@ export function clearMediaPoolPathMarks(mediaVersionIds?: string[]): void {
   writeMediaPoolPathMap(map);
 }
 
-function poolPathToFileUrl(sdPath: string): string {
-  if (sdPath.startsWith('file://')) return sdPath;
-  if (sdPath.startsWith('/storage/sd/')) {
-    return `file:///SD:/${sdPath.slice('/storage/sd/'.length)}`;
-  }
-  if (sdPath.startsWith('SD:/') || sdPath.startsWith('sd:/')) {
-    return `file:///${sdPath.replace(/^sd:/i, 'SD:')}`;
-  }
-  if (sdPath.startsWith('sd/')) {
-    return `file:///SD:/${sdPath.slice(3)}`;
-  }
-  // Bare path from AssetPoolFiles (e.g. perform6-media-pool/ab/cd/…)
-  if (sdPath.length > 0 && !sdPath.includes('://')) {
-    const trimmed = sdPath.replace(/^\/+/, '');
-    return `file:///SD:/${trimmed}`;
-  }
-  return sdPath;
-}
-
 function readConfirmedSet(): Set<string> {
   try {
     const raw = localStorage.getItem(CONFIRMED_KEY);
@@ -269,14 +256,14 @@ export function getSdCachedUrl(mediaVersionId: string): string | null {
 }
 
 export function hasSdCachedMedia(mediaVersionId: string): boolean {
-  return Boolean(getSdCachedUrl(mediaVersionId) || getMediaPoolPath(mediaVersionId));
+  // Playable = perform6-media mark (pool sha256 alone is not LED-safe).
+  return Boolean(getSdCachedUrl(mediaVersionId));
 }
 
-/** True when autorun/pool confirmed the file on SD — safe to skip re-download / play. */
+/** True when autorun/cache confirmed the file on SD — safe to skip re-download / play. */
 export function isMediaConfirmedOnSd(mediaVersionId: string): boolean {
-  if (getMediaPoolPath(mediaVersionId)) return true;
   return (
-    readConfirmedSet().has(mediaVersionId) && hasSdCachedMedia(mediaVersionId)
+    readConfirmedSet().has(mediaVersionId) && Boolean(getSdCachedUrl(mediaVersionId))
   );
 }
 
@@ -316,7 +303,7 @@ export function forceClearSdBulkDownloadLock(reason: string): void {
 }
 
 /**
- * Reconcile localStorage marks against real SD:/perform6-cache listing.
+ * Reconcile localStorage marks against real SD:/perform6-media listing.
  * Restores confirmed marks when files still exist; drops stale marks.
  */
 export async function reconcileSdCacheMarksFromDisk(): Promise<{
@@ -325,7 +312,7 @@ export async function reconcileSdCacheMarksFromDisk(): Promise<{
 }> {
   if (runtimeConfig.isSimulator) return { restored: 0, dropped: 0 };
 
-  const listing = await listSdPath('SD:/perform6-cache', 12_000);
+  const listing = await listSdPath(MEDIA_STORE_SD, 12_000);
   if (!listing.ok) {
     console.warn('[Perform6] SD cache reconcile skipped', listing.error);
     return { restored: 0, dropped: 0 };
@@ -424,7 +411,7 @@ type CacheBridgeItem = {
 };
 
 /**
- * Ask autorun to download URLs into SD:/perform6-cache (all hardware profiles).
+ * Ask autorun to download URLs into SD:/perform6-media (all hardware profiles).
  * ids[i] and sizes[i] align with urls[i] for progress reporting and validation.
  */
 function collectHttpItems(
@@ -559,7 +546,7 @@ export function requestSdCacheCancel(
   return true;
 }
 
-/** Delete all files under SD:/perform6-cache and reset the prefetch queue. */
+/** Delete all files under SD:/perform6-media (+ legacy cache/pool) and reset prefetch. */
 export function requestSdCacheClearAll(): boolean {
   const port = getPort();
   if (!port) return false;
@@ -572,7 +559,7 @@ export function requestSdCacheClearAll(): boolean {
 }
 
 /**
- * Wipe media cache dirs via Node fs (no autorun).
+ * Wipe single media store + pool staging (+ legacy cache) via Node fs.
  * Never touches perform6-ota-pool or package files.
  */
 export function clearSdMediaCacheViaNode(): boolean {
@@ -582,8 +569,9 @@ export function clearSdMediaCacheViaNode(): boolean {
     return false;
   }
   const targets = [
-    toNodeSdPath('SD:/perform6-cache'),
-    toNodeSdPath('SD:/perform6-media-pool'),
+    toNodeSdPath(MEDIA_STORE_SD),
+    toNodeSdPath(MEDIA_POOL_SD),
+    toNodeSdPath(LEGACY_CACHE_SD),
   ];
   let total = 0;
   for (const dir of targets) {
@@ -596,7 +584,7 @@ export function clearSdMediaCacheViaNode(): boolean {
       /* best-effort recreate empty dir */
     }
   }
-  console.info('[Perform6] Node SD media cache wiped', {
+  console.info('[Perform6] Node SD media store wiped', {
     removed: total,
     paths: targets,
   });
@@ -692,7 +680,7 @@ function chunkTimeoutMs(items: SyncMediaItem[]): number {
 }
 
 function sdCachePathForItem(item: SyncMediaItem): string {
-  return `SD:/perform6-cache/${cacheNameFor(item.fileUrl)}`;
+  return mediaStoreFileSdPath(cacheNameFor(item.fileUrl));
 }
 
 function sumBatchBytesTotal(items: SyncMediaItem[]): number | null {
@@ -1262,25 +1250,146 @@ export async function downloadMediaItemsToSd(
   };
 }
 
+function ensureParentDir(fs: NonNullable<ReturnType<typeof getNodeFs>>, filePath: string): void {
+  // BrightSign Node fs only accepts /storage/sd/… — never raw SD:/…
+  const nodePath = filePath.startsWith('/storage/sd')
+    ? filePath.replace(/\\/g, '/')
+    : toNodeSdPath(filePath);
+  const idx = nodePath.lastIndexOf('/');
+  if (idx <= 0) return;
+  const parent = nodePath.slice(0, idx);
+  if (!fs.existsSync(parent)) {
+    fs.mkdirSync(parent, { recursive: true });
+  }
+}
+
 /**
- * Local playback URL only when we have confirmed the file on SD.
- * Prefers BrightSign media asset-pool path; falls back to perform6-cache.
- * Always returns a HtmlWidget-safe file:///SD:/… URL (autorun normalizes for
- * roVideoPlayer). Returns null while downloading — never HTTPS on device.
+ * Realize pool blob → SD:/perform6-media/<name>.mp4 (single authoritative store).
+ * After a successful copy, delete the pool staging file so disk is not doubled.
+ * Node fs paths must be /storage/sd/… (never mkdir 'SD:/…').
+ */
+export function realizePoolPathToCache(
+  mediaVersionId: string,
+  fileUrl: string,
+  poolPath: string,
+): boolean {
+  const fs = getNodeFs();
+  if (!fs || typeof fs.copyFileSync !== 'function') {
+    console.warn('[Perform6] Pool→media realize skipped — Node fs.copyFileSync unavailable');
+    return false;
+  }
+
+  const resolvedUrl = resolveMediaFileUrl(fileUrl);
+  const destNode = toNodeSdPath(mediaStoreFileSdPath(cacheNameFor(resolvedUrl)));
+  const srcNodes = [
+    ...new Set(
+      [
+        poolPath.startsWith('/storage/sd') ? poolPath.replace(/\\/g, '/') : null,
+        toNodeSdPath(poolPath),
+        poolPath.replace(/\\/g, '/'),
+      ].filter((p): p is string => Boolean(p && p.length > 0)),
+    ),
+  ];
+
+  const markReady = () => {
+    markSdCached(mediaVersionId, resolvedUrl);
+    markSdDownloadConfirmed(mediaVersionId);
+  };
+
+  const prunePoolSrc = (src: string) => {
+    try {
+      if (src.includes('perform6-media-pool') && fs.existsSync(src)) {
+        fs.unlinkSync(src);
+        console.info('[Perform6] Pool staging pruned after realize', { src });
+      }
+    } catch (e) {
+      console.warn('[Perform6] Pool prune after realize failed', {
+        src,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  };
+
+  try {
+    if (fs.existsSync(destNode) && fs.statSync(destNode).size > 0) {
+      markReady();
+      for (const src of srcNodes) {
+        if (src !== destNode) prunePoolSrc(src);
+      }
+      return true;
+    }
+  } catch {
+    /* try copy */
+  }
+
+  try {
+    const mediaDir = toNodeSdPath(MEDIA_STORE_SD);
+    if (!fs.existsSync(mediaDir)) {
+      fs.mkdirSync(mediaDir, { recursive: true });
+    }
+  } catch (e) {
+    console.warn('[Perform6] Pool→media mkdir failed', {
+      dir: toNodeSdPath(MEDIA_STORE_SD),
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+
+  let lastError: unknown;
+  for (const src of srcNodes) {
+    try {
+      if (!fs.existsSync(src)) continue;
+      ensureParentDir(fs, destNode);
+      fs.copyFileSync(src, destNode);
+      const st = fs.statSync(destNode);
+      if (!st || st.size <= 0) {
+        throw new Error(`Copied media empty: ${destNode}`);
+      }
+      markReady();
+      prunePoolSrc(src);
+      console.info('[Perform6] Pool→media realized (single store)', {
+        mediaVersionId,
+        from: src,
+        to: destNode,
+        bytes: st.size,
+      });
+      return true;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+
+  console.warn('[Perform6] Pool→media realize failed', {
+    mediaVersionId,
+    poolPath,
+    destNode,
+    error: lastError instanceof Error ? lastError.message : String(lastError ?? 'unknown'),
+  });
+  return false;
+}
+
+/**
+ * Local playback URL only when we have perform6-media/*.mp4 (LED + Bluefin).
+ * Never returns bare asset-pool sha256 paths — native PlayFile needs an extension.
  */
 export function resolveSdPlaybackUrl(
   mediaVersionId: string,
   fallbackFileUrl?: string | null,
 ): string | null {
+  const cachedUrl = getSdCachedUrl(mediaVersionId);
   const poolPath = getMediaPoolPath(mediaVersionId);
-  if (poolPath) {
-    return poolPathToFileUrl(poolPath);
+
+  // Pool staging only: realize into single store before exposing a play URL.
+  if (poolPath && (cachedUrl || fallbackFileUrl)) {
+    realizePoolPathToCache(
+      mediaVersionId,
+      cachedUrl ?? fallbackFileUrl!,
+      poolPath,
+    );
   }
 
-  const cachedUrl = getSdCachedUrl(mediaVersionId);
-  if (cachedUrl) return sdCacheFileUrl(cachedUrl);
+  const readyUrl = getSdCachedUrl(mediaVersionId);
+  if (readyUrl) return sdCacheFileUrl(readyUrl);
 
-  // Confirmed on SD but ready-map URL missing — derive perform6-cache path.
   if (fallbackFileUrl && isMediaConfirmedOnSd(mediaVersionId)) {
     return sdCacheFileUrl(fallbackFileUrl);
   }

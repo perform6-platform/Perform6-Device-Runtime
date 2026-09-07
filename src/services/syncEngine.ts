@@ -151,8 +151,13 @@ export async function runSyncEngine(
       console.info(
         '[Perform6] OTA skipped — skipOta requested (media pipeline independent)',
       );
-    } else if (updateAvailable) {
-      console.info('[Perform6] OTA admin Install — applying (media path not cancelled)');
+    } else {
+      // Always run apply on Admin Install — even when sync says updateAvailable=false.
+      // Previously that gate caused a silent no-op (click → heartbeat → nothing).
+      console.info('[Perform6] OTA admin Install — applying', {
+        syncUpdateAvailable: updateAvailable,
+        syncTarget: syncData.runtime?.version ?? null,
+      });
       try {
         await flushDeviceLogs(auth);
       } catch {
@@ -178,6 +183,12 @@ export async function runSyncEngine(
           '[Perform6] OTA failed — media continues on separate path',
           applied.error,
         );
+      } else {
+        otaError =
+          applied.version != null
+            ? `No OTA action — device already at/above live v${applied.version} (publish a newer release)`
+            : 'No OTA action — no active published release (or package missing on server)';
+        console.warn('[Perform6] OTA admin Install no-op', otaError);
       }
     }
 
@@ -231,7 +242,7 @@ export async function runSyncEngine(
     const PROGRESS_REPORT_INTERVAL_MS = 3000;
 
     if (mediaItems.length > 0) {
-      // Asset pool (preferred) or autorun perform6-cache — never OTA worker.
+      // Asset pool → realize perform6-media, or autorun same store — never OTA worker.
       // Do NOT mark DOWNLOADING at 0 bytes before transfer — Admin showed false
       // "Downloading — / 26 MB" for 16+ minutes while AssetPool hung.
       const batch = await downloadMediaBatchToSd(

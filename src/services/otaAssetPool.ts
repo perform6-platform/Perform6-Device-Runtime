@@ -280,9 +280,12 @@ function getNodeFs(): NodeFs | null {
 }
 
 function ensureParentDir(fs: NodeFs, filePath: string): void {
-  const idx = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
+  const nodePath = filePath.startsWith('/storage/sd')
+    ? filePath.replace(/\\/g, '/')
+    : toNodeSdPath(filePath);
+  const idx = nodePath.lastIndexOf('/');
   if (idx <= 0) return;
-  const parent = filePath.slice(0, idx);
+  const parent = nodePath.slice(0, idx);
   if (!fs.existsSync(parent)) {
     fs.mkdirSync(parent, { recursive: true });
   }
@@ -307,25 +310,33 @@ function copyPoolFileToSd(poolPath: string, relPath: string): void {
   if (!fs) {
     throw new Error('Node fs unavailable — cannot realize OTA from asset pool');
   }
+  if (typeof fs.copyFileSync !== 'function') {
+    throw new Error('Node fs.copyFileSync unavailable — cannot realize OTA');
+  }
 
-  const destSd = `SD:/${relPath.replace(/^\/+/, '')}`;
-  const candidates = [
-    { src: poolPath, dest: destSd },
-    { src: toNodeSdPath(poolPath), dest: toNodeSdPath(destSd) },
-    { src: poolPath, dest: toNodeSdPath(destSd) },
-    { src: toNodeSdPath(poolPath), dest: destSd },
+  // Node fs only: /storage/sd/… (never mkdir/copy with SD:/ — ENOENT on device)
+  const destNode = toNodeSdPath(`SD:/${relPath.replace(/^\/+/, '')}`);
+  const srcNodes = [
+    ...new Set(
+      [
+        poolPath.startsWith('/storage/sd') ? poolPath.replace(/\\/g, '/') : null,
+        toNodeSdPath(poolPath),
+        poolPath.replace(/\\/g, '/'),
+      ].filter((p): p is string => Boolean(p && p.length > 0)),
+    ),
   ];
 
   let lastError: unknown;
-  for (const { src, dest } of candidates) {
+  for (const src of srcNodes) {
     try {
-      ensureParentDir(fs, dest);
-      fs.copyFileSync(src, dest);
-      const st = fs.statSync(dest);
+      if (!fs.existsSync(src)) continue;
+      ensureParentDir(fs, destNode);
+      fs.copyFileSync(src, destNode);
+      const st = fs.statSync(destNode);
       if (!st || st.size <= 0) {
-        throw new Error(`Copied OTA file empty: ${dest}`);
+        throw new Error(`Copied OTA file empty: ${destNode}`);
       }
-      console.info('[Perform6] OTA realized', { from: src, to: dest, bytes: st.size });
+      console.info('[Perform6] OTA realized', { from: src, to: destNode, bytes: st.size });
       return;
     } catch (e) {
       lastError = e;

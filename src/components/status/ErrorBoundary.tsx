@@ -30,7 +30,16 @@ export class ErrorBoundary extends Component<Props, State> {
 
   private handleReload = () => {
     this.setState({ error: null });
-    window.location.reload();
+    // BA-simple: location.reload() creates a new BSMessagePort on the same
+    // HtmlWidget and often kills autorun→JS duplex. Prefer full player reboot.
+    void import('../../platform/brightSignNode')
+      .then(({ rebootViaBrightSignSystem }) => {
+        if (rebootViaBrightSignSystem()) return;
+        window.location.reload();
+      })
+      .catch(() => {
+        window.location.reload();
+      });
   };
 
   render() {
@@ -51,7 +60,7 @@ export class ErrorBoundary extends Component<Props, State> {
           onClick={this.handleReload}
           className="rounded-xl bg-p6-cyan px-8 py-3 text-sm font-semibold text-black"
         >
-          Reload app
+          Reboot player
         </button>
       </main>
     );

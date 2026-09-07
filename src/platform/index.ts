@@ -14,10 +14,16 @@ declare global {
 
   interface BrightSignMessagePort {
     PostBSMessage(message: Record<string, string | number | boolean>): boolean;
-    addEventListener(
+    /** DOM `window.BSMessagePort` only — absent on Node `@brightsign/messageport`. */
+    addEventListener?: (
       type: 'bsmessage',
       listener: (event: BrightSignMessagePortEvent) => void,
-    ): void;
+    ) => void;
+    /**
+     * Inbound BrightScript→JS handler. DOM builds pass a `{ data }` event;
+     * Node `@brightsign/messageport` passes the raw message object.
+     */
+    onbsmessage?: (event: BrightSignMessagePortEvent | Record<string, unknown>) => void;
   }
 
   interface Window {

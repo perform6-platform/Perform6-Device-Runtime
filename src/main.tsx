@@ -81,6 +81,9 @@ try {
   initXtOutputBridge();
   initXcOutputBridge();
 
+  // Diagnostic-only: surfaces autorun-side state through the JS log channel.
+  void import('./services/autorunDiag').then((m) => m.startAutorunDiag());
+
   // StrictMode double-invokes effects — keep off on BrightSign for older Chromium stability.
   const tree = (
     <Router>

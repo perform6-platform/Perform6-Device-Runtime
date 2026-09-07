@@ -1,3 +1,13 @@
+/**
+ * Custom fleet OTA (no BSN) — market-correct pattern for Perform6:
+ *
+ * 1. Admin Install only (`forceOta` / allowWhenPaused) — never auto on Sync Now.
+ * 2. Prefer BrightSign `@brightsign/assetpool` → SD:/perform6-ota-pool → copy to SD:/{path}.
+ * 3. Fallback: autorun HTTP (`led-ota-*`) when pool unavailable.
+ * 4. No downgrade; pauseOta default true in perform6-ops.json.
+ * 5. Reboot only after API REBOOTING ack (avoids re-offer loops).
+ * 6. Media sync is a separate pipeline — OTA failure must not block media forever.
+ */
 import { runtimeConfig } from '../config/runtime';
 import { isOtaPaused } from './perform6Ops';
 import { getSharedMessagePort, subscribeBsMessages } from '../platform/bsMessagePort';
@@ -568,28 +578,7 @@ export async function installOtaFromManifest(
     );
   }
 
-  // Fallback: one file per autorun message (legacy custom HTTP).
-  const wave = files.slice(0, 1);
-  const file = wave[0];
-  const fileUrl = resolveOtaFileUrl(file);
-  const filePath = file.path.replace(/^\/+/, '');
-  const fileSize = String(file.sizeBytes ?? 0);
-
-  console.info('[Perform6] OTA install queue (autorun HTTP):', {
-    version: manifest.version,
-    profile: manifest.profile,
-    staged: manifest.staged === true || wave.length < files.length,
-    waveFileCount: wave.length,
-    packageProgress: `${alreadyDone}/${packageTotal}`,
-    files: wave.map((f, i) => ({
-      index: i + 1,
-      path: f.path,
-      sizeBytes: f.sizeBytes,
-      dest: `SD:/${f.path.replace(/^\/+/, '')}`,
-    })),
-  });
-
-  // Tiny ping first — proves JS↔autorun path before auth/install.
+  // Fallback: autorun HTTP — one file per message, all files in this Install session, one reboot.
   await probeAutorunCapabilities(4_000);
   if (!autorunSupportsOtaBridge()) {
     const proto = getAutorunCapabilities().protocolVersion;
@@ -605,7 +594,6 @@ export async function installOtaFromManifest(
   port.PostBSMessage({ type: OTA_PING_MESSAGE });
   const pingOk = await pingWait;
   if (!pingOk) {
-    // One-shot self-heal (autorun marker) — unblocks fleet when bridge is wedged.
     requestBridgeSelfHeal('OTA bridge ping failed — autorun not answering');
     return {
       ok: false,
@@ -614,7 +602,6 @@ export async function installOtaFromManifest(
   }
   console.info('[Perform6] OTA bridge ping ok');
 
-  // Auth in a separate message so install payload stays small (JWT can be huge).
   const authWait = waitForOtaStatusDetail('auth-ok', 8_000);
   port.PostBSMessage({
     type: OTA_AUTH_MESSAGE,
@@ -629,33 +616,52 @@ export async function installOtaFromManifest(
     };
   }
 
-  const installPromise = waitForOtaComplete(auth, targetVersion, wave.length);
-
-  console.info('[Perform6] OTA sending led-ota-install to autorun', {
-    version: targetVersion,
-    fileCount: 1,
-    path: filePath,
+  console.info('[Perform6] OTA install queue (autorun HTTP, full remaining set):', {
+    version: manifest.version,
+    profile: manifest.profile,
+    fileCount: files.length,
+    packageProgress: `${alreadyDone}/${packageTotal}`,
+    files: files.map((f, i) => ({
+      index: i + 1,
+      path: f.path,
+      sizeBytes: f.sizeBytes,
+      dest: `SD:/${f.path.replace(/^\/+/, '')}`,
+    })),
   });
 
-  // Singular keys only — no pipe lists, no authBearer on this message.
-  port.PostBSMessage({
-    type: OTA_INSTALL_MESSAGE,
-    fileUrl,
-    filePath,
-    fileSize,
-    fileSha256: file.sha256 ?? '',
-    version: manifest.version ?? '',
-    deviceId: auth.deviceId,
-  });
+  let lastPath = '';
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const fileUrl = resolveOtaFileUrl(file);
+    const filePath = file.path.replace(/^\/+/, '');
+    const fileSize = String(file.sizeBytes ?? 0);
+    lastPath = filePath;
 
-  const result = await installPromise;
-  if (!result.ok) return result;
+    const installPromise = waitForOtaComplete(auth, targetVersion, 1);
+    console.info('[Perform6] OTA sending led-ota-install to autorun', {
+      version: targetVersion,
+      index: i + 1,
+      of: files.length,
+      path: filePath,
+    });
+    port.PostBSMessage({
+      type: OTA_INSTALL_MESSAGE,
+      fileUrl,
+      filePath,
+      fileSize,
+      fileSha256: file.sha256 ?? '',
+      version: manifest.version ?? '',
+      deviceId: auth.deviceId,
+    });
+    const result = await installPromise;
+    if (!result.ok) return result;
+  }
 
   return commitOtaWaveAndReboot(auth, {
     targetVersion,
-    doneCount: alreadyDone + wave.length,
+    doneCount: alreadyDone + files.length,
     totalCount: packageTotal,
-    currentPath: filePath,
+    currentPath: lastPath,
   });
 }
 
@@ -682,10 +688,16 @@ export async function applyOtaUpdate(
     });
     const manifest = await fetchOtaManifest(auth);
     if (!manifest.updateAvailable) {
-      console.info('[Perform6] OTA up to date', {
+      const reason =
+        manifest.version != null
+          ? `No update — device ${runtimeConfig.runtimeVersion} already at/above live v${manifest.version}`
+          : 'No update — no active published release (publish a package in Admin → OTA Releases)';
+      console.info('[Perform6] OTA up to date / nothing to install', {
         version: manifest.version ?? runtimeConfig.runtimeVersion,
+        reason,
       });
-      return { applied: false, version: manifest.version };
+      // Do not report FAILED — Admin Install no-op is not a fleet failure.
+      return { applied: false, version: manifest.version, error: reason };
     }
 
     const target = manifest.version ?? '';
@@ -693,10 +705,9 @@ export async function applyOtaUpdate(
       target &&
       compareRuntimeVersions(runtimeConfig.runtimeVersion, target) >= 0
     ) {
-      console.info(
-        `[Perform6] OTA skipped — device ${runtimeConfig.runtimeVersion} >= target ${target} (no downgrade)`,
-      );
-      return { applied: false, version: target };
+      const reason = `OTA skipped — device ${runtimeConfig.runtimeVersion} >= target ${target} (no downgrade)`;
+      console.info(`[Perform6] ${reason}`);
+      return { applied: false, version: target, error: reason };
     }
 
     console.info(

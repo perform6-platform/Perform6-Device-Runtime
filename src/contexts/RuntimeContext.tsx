@@ -355,7 +355,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       );
 
       if (result.success) {
-        // Media landed in asset pool (or legacy perform6-cache) inside runSyncEngine.
+        // Media landed in perform6-media (pool realize or autorun) inside runSyncEngine.
         if (result.manifest) {
           setPlaybackManifest(result.manifest);
           savePlaybackManifestCache(result.manifest);
@@ -376,17 +376,22 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
               screens: result.manifest.screens.length,
               completeReportFailures: result.completeReportFailures ?? 0,
               sdCacheMedia: result.syncData?.media?.length ?? 0,
-              ota: result.ota?.updateAvailable
+              ota: result.otaApplied
                 ? {
-                    version: result.ota.version,
-                    reachable: result.ota.reachable,
-                    downloadUrl: result.ota.downloadUrl,
-                    applied: result.otaApplied,
-                    error: result.otaError,
+                    version: result.ota?.version,
+                    applied: true,
                   }
                 : result.otaError
                   ? { error: result.otaError }
-                  : undefined,
+                  : result.ota?.updateAvailable
+                    ? {
+                        version: result.ota.version,
+                        reachable: result.ota.reachable,
+                        downloadUrl: result.ota.downloadUrl,
+                        applied: result.otaApplied,
+                        error: result.otaError,
+                      }
+                    : undefined,
             },
           });
         } else {

@@ -1,8 +1,9 @@
 /**
  * BrightSign asset-pool media delivery (separate from OTA).
- * Pool dir: /storage/sd/perform6-media-pool (OS 9.1); docs fallback sd/….
- * Autorun wipe still targets SD:/perform6-media-pool.
- * On pool failure/stall → media.ts falls back to autorun SD:/perform6-cache.
+ * Staging pool: /storage/sd/perform6-media-pool (OS 9.1); docs fallback sd/….
+ * media.ts realizes once into SD:/perform6-media/*.mp4 then prunes staging
+ * (single authoritative store — no forever dual copy).
+ * Autorun led-cache-prefetch → same perform6-media dir as last-resort fallback.
  */
 import type { SyncMediaItem } from '../shared/types/api';
 import { resolveMediaFileUrl } from './manifest';
@@ -14,9 +15,8 @@ import {
 import {
   clearSdCached,
   getMediaPoolPath,
+  hasSdCachedMedia,
   markMediaPoolPath,
-  markSdCached,
-  markSdDownloadConfirmed,
   clearMediaPoolPathMarks,
   emitSdCacheProgress,
   type SdDownloadProgress,
@@ -34,7 +34,7 @@ export const MEDIA_POOL_PATH = MEDIA_ASSET_POOL_DIR;
 
 /**
  * No progressevent/fileevent after start → abort fast so media.ts can fall
- * back to autorun perform6-cache (BrightSign-docs path must not hang forever).
+ * back to autorun perform6-media (BrightSign-docs path must not hang forever).
  */
 const POOL_START_MS = 60_000;
 /**
@@ -401,9 +401,14 @@ export async function downloadMediaItemsViaAssetPool(
   const already: SyncMediaItem[] = [];
   const needFetch: MediaAsset[] = [];
 
-  // Only skip when AssetPoolFiles resolves a real path (not stale localStorage).
+  // Only skip when already in single store, or AssetPoolFiles resolves a real path.
   for (const asset of assetList) {
     const item = byName.get(asset.name)!;
+    if (hasSdCachedMedia(item.mediaVersionId)) {
+      already.push(item);
+      succeeded.push(item.mediaVersionId);
+      continue;
+    }
     const marked = getMediaPoolPath(item.mediaVersionId);
     if (marked) {
       const verified = await resolvePoolPath(assetList, asset.name);
@@ -660,9 +665,8 @@ export async function downloadMediaItemsViaAssetPool(
         clearSdCached([item.mediaVersionId]);
         continue;
       }
+      // Pool path only — media.ts realizes to perform6-media/*.mp4 then prunes staging.
       markMediaPoolPath(item.mediaVersionId, poolPath);
-      markSdCached(item.mediaVersionId, item.fileUrl);
-      markSdDownloadConfirmed(item.mediaVersionId);
       succeeded.push(item.mediaVersionId);
       downloaded.push(item.mediaVersionId);
       emitSdCacheProgress({

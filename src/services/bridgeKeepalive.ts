@@ -1,8 +1,16 @@
+/**
+ * BrightAuthor-simple bridge health.
+ * Touch → LED uses one BSMessagePort + PostBSMessage (xt-playback).
+ * Keepalive only probes duplex — never recreates the port or SetUrl-recycles HTML.
+ * Stuck recovery (Admin / OTA) = full player reboot only (market pattern).
+ */
 import {
+  getBridgeTransport,
   getSharedMessagePort,
   resetSharedMessagePort,
   subscribeBsMessages,
 } from '../platform/bsMessagePort';
+import { rebootViaBrightSignSystem } from '../platform/brightSignNode';
 import { runtimeConfig } from '../config/runtime';
 import {
   getBridgeHealthSnapshot,
@@ -17,20 +25,16 @@ import { flushDeviceLogs } from './deviceLogsApi';
 
 export type BridgeLinkState = 'up' | 'degraded' | 'down';
 
-const PING_INTERVAL_MS = 15_000;
-const PONG_WAIT_MS = 15_000;
-const PONG_WAIT_BUSY_MS = 30_000;
-const HELLO_RETRY_MS = 5_000;
+/** Status ping only — no recovery ladder. */
+const PING_INTERVAL_MS = 60_000;
+const PONG_WAIT_MS = 20_000;
+/** Hello only until first ack. */
+const HELLO_RETRY_MS = 60_000;
+const ROUND_TRIP_FRESH_MS = 120_000;
+const TICK_FRESH_MS = 120_000;
 const HEAVY_LOAD_HOLD_MS = 60_000;
-const ROUND_TRIP_FRESH_MS = 45_000;
-const TICK_FRESH_MS = 45_000;
-
-const MISS_PORT_RESET = 3;
-const MISS_HTML_RECYCLE = 5;
-const MISS_HEAL_REBOOT = 8;
-const HEAL_COOLDOWN_MS = 10 * 60_000;
-const RECYCLE_COOLDOWN_MS = 15 * 60_000;
-const PONG_STREAK_HEALTHY = 2;
+const REBOOT_COOLDOWN_MS = 10 * 60_000;
+const REBOOT_MESSAGE = 'led-ota-reboot';
 
 let started = false;
 let pingTimer: number | null = null;
@@ -39,15 +43,10 @@ let pongWaitTimer: number | null = null;
 let unsub: (() => void) | null = null;
 let awaitingPong = false;
 let missStreak = 0;
-let pongStreak = 0;
-let healthyAnnounced = false;
-let healRequestedAt = 0;
-let recycleRequestedAt = 0;
 let lastRoundTripAt = 0;
 let lastAutorunToJsAt = 0;
 let lastHeavyLoadAt = 0;
-let portResetDoneForStreak = false;
-let recycleDoneForStreak = false;
+let rebootRequestedAt = 0;
 let bridgeState: BridgeLinkState = 'down';
 
 function isBrightSignRuntime(): boolean {
@@ -72,22 +71,18 @@ function isHeavyLoad(): boolean {
   return lastHeavyLoadAt > 0 && Date.now() - lastHeavyLoadAt < HEAVY_LOAD_HOLD_MS;
 }
 
-export function noteBridgeHeavyLoad(source = 'transfer'): void {
+export function noteBridgeHeavyLoad(_source = 'transfer'): void {
   lastHeavyLoadAt = Date.now();
-  if (source) {
-    /* quiet — high frequency during downloads */
-  }
 }
 
 function computeBridgeState(): BridgeLinkState {
   const now = Date.now();
   const rtFresh =
     lastRoundTripAt > 0 && now - lastRoundTripAt < ROUND_TRIP_FRESH_MS;
-  if (rtFresh && missStreak === 0) return 'up';
+  if (rtFresh) return 'up';
   const tickFresh =
     lastAutorunToJsAt > 0 && now - lastAutorunToJsAt < TICK_FRESH_MS;
-  if (tickFresh && !rtFresh) return 'degraded';
-  if (rtFresh) return 'up';
+  if (tickFresh) return 'degraded';
   return 'down';
 }
 
@@ -100,161 +95,81 @@ function publishBridgeState(reason: string): void {
   flushLogsSoon();
 }
 
-function requestHtmlRecycle(reason: string, force = false): void {
+/**
+ * BA-simple stuck recovery: full reboot only.
+ * Prefer Node @brightsign/system (works when duplex is dead); also ask autorun.
+ */
+function requestPlayerReboot(reason: string, force = false): void {
   const now = Date.now();
   if (
     !force &&
-    recycleRequestedAt > 0 &&
-    now - recycleRequestedAt < RECYCLE_COOLDOWN_MS
+    rebootRequestedAt > 0 &&
+    now - rebootRequestedAt < REBOOT_COOLDOWN_MS
   ) {
+    console.warn('[Perform6] Bridge reboot skipped (cooldown)', { reason });
     return;
   }
+  rebootRequestedAt = now;
+  console.warn('[Perform6] Bridge recovery reboot (BA-simple)', { reason, force });
+  const nodeOk = rebootViaBrightSignSystem();
   const port = getSharedMessagePort();
-  if (!port) return;
-  recycleRequestedAt = now;
-  console.warn('[Perform6] Bridge html recycle requested:', reason);
-  try {
-    port.PostBSMessage({
-      type: BridgeMsg.RECYCLE,
+  let autorunOk = false;
+  if (port) {
+    try {
+      port.PostBSMessage({ type: REBOOT_MESSAGE, reason });
+      autorunOk = true;
+    } catch (error) {
+      console.warn('[Perform6] Bridge reboot PostBSMessage failed', error);
+    }
+  }
+  if (!nodeOk && !autorunOk) {
+    console.warn('[Perform6] Bridge reboot failed — no Node system and no autorun port', {
       reason,
-      force: force ? '1' : '0',
     });
-  } catch (error) {
-    console.warn('[Perform6] Bridge recycle PostBSMessage failed', error);
   }
-  flushLogsSoon();
-}
-
-function requestHeal(reason: string, force = false): void {
-  const now = Date.now();
-  if (!force && healRequestedAt > 0 && now - healRequestedAt < HEAL_COOLDOWN_MS) {
-    return;
-  }
-  const port = getSharedMessagePort();
-  if (!port) {
-    console.warn('[Perform6] Bridge heal skipped — BSMessagePort missing', reason);
-    flushLogsSoon();
-    return;
-  }
-  healRequestedAt = now;
-  console.warn('[Perform6] Bridge self-heal requested:', reason, { force });
-  try {
-    port.PostBSMessage({
-      type: BridgeMsg.HEAL,
-      reason,
-      force: force ? '1' : '0',
-    });
-  } catch (error) {
-    console.warn('[Perform6] Bridge heal PostBSMessage failed', error);
-  }
-  flushLogsSoon();
-}
-
-function announceHealthy(): void {
-  if (healthyAnnounced) return;
-  const port = getSharedMessagePort();
-  if (!port) return;
-  healthyAnnounced = true;
-  healRequestedAt = 0;
-  portResetDoneForStreak = false;
-  recycleDoneForStreak = false;
-  try {
-    port.PostBSMessage({ type: BridgeMsg.HEALTHY });
-  } catch {
-    /* ignore */
-  }
-  console.info('[Perform6] Bridge keepalive ok (round-trip)');
-  publishBridgeState('healthy');
   flushLogsSoon();
 }
 
 function onRoundTrip(source: string, busy = false): void {
   clearPongWait();
   missStreak = 0;
-  portResetDoneForStreak = false;
-  recycleDoneForStreak = false;
   lastRoundTripAt = Date.now();
   lastAutorunToJsAt = lastRoundTripAt;
   if (busy) noteBridgeHeavyLoad('pong-busy');
-  pongStreak += 1;
-  console.info('[Perform6] Bridge keepalive alive', {
-    source,
-    pongStreak,
-    busy,
-  });
-  if (pongStreak >= PONG_STREAK_HEALTHY) {
-    announceHealthy();
-  } else {
-    publishBridgeState(source);
+  if (source === BridgeMsg.HELLO_ACK || source === BridgeMsg.PONG) {
+    console.info('[Perform6] Bridge alive', { source });
   }
+  publishBridgeState(source);
 }
 
 function onAutorunToJs(source: string, busy = false): void {
   lastAutorunToJsAt = Date.now();
   if (busy) noteBridgeHeavyLoad('tick-busy');
   publishBridgeState(source);
-  if (source === BridgeMsg.TICK && missStreak > 0) {
-    console.info('[Perform6] Bridge degraded — autorun→JS only', {
-      missStreak,
-    });
-  }
-}
-
-function escalateMiss(reason: string): void {
-  sendAutorunHello();
-  if (missStreak >= MISS_PORT_RESET && !portResetDoneForStreak) {
-    portResetDoneForStreak = true;
-    resetSharedMessagePort();
-    sendAutorunHello();
-    console.warn('[Perform6] Bridge ladder: port reset', { missStreak });
-  }
-  if (missStreak >= MISS_HTML_RECYCLE && !recycleDoneForStreak) {
-    recycleDoneForStreak = true;
-    requestHtmlRecycle(reason);
-    console.warn('[Perform6] Bridge ladder: html recycle', { missStreak });
-  }
-  if (missStreak >= MISS_HEAL_REBOOT) {
-    if (isHeavyLoad()) {
-      console.warn(
-        '[Perform6] Bridge ladder: heal deferred (active transfer)',
-        { missStreak },
-      );
-      return;
-    }
-    requestHeal(reason);
-  }
 }
 
 function onPongTimeout(): void {
   awaitingPong = false;
   pongWaitTimer = null;
-  pongStreak = 0;
-  healthyAnnounced = false;
   missStreak += 1;
-  const shouldLog =
-    missStreak <= 3 ||
-    missStreak % 5 === 0 ||
-    missStreak >= MISS_HEAL_REBOOT;
-  if (shouldLog) {
-    console.warn('[Perform6] Bridge keepalive pong miss', {
+  // Observe only — never auto-reboot from keepalive (caused boot loops when
+  // inbound was on Node @brightsign/messageport while JS listened on DOM).
+  // Recovery: Admin REBOOT / power cycle only. Never SetUrl / port recreate.
+  if (missStreak <= 2 || missStreak % 5 === 0) {
+    console.warn('[Perform6] Bridge pong miss (no auto-reboot)', {
       missStreak,
       state: computeBridgeState(),
-      heavyLoad: isHeavyLoad(),
       lastRoundTripAt: lastRoundTripAt || null,
-      lastAutorunToJsAt: lastAutorunToJsAt || null,
+      transport: getBridgeTransport(),
     });
     flushLogsSoon();
   }
   publishBridgeState('pong-miss');
-  escalateMiss(`keepalive miss x${missStreak}`);
 }
 
 function sendPing(): void {
-  let port = getSharedMessagePort();
-  if (!port) {
-    port = resetSharedMessagePort();
-    if (!port) return;
-  }
+  const port = getSharedMessagePort();
+  if (!port) return;
   if (awaitingPong) return;
   awaitingPong = true;
   try {
@@ -262,22 +177,14 @@ function sendPing(): void {
   } catch (error) {
     awaitingPong = false;
     console.warn('[Perform6] Bridge ping PostBSMessage failed', error);
-    resetSharedMessagePort();
-    flushLogsSoon();
     return;
   }
-  const waitMs = isHeavyLoad() ? PONG_WAIT_BUSY_MS : PONG_WAIT_MS;
-  pongWaitTimer = window.setTimeout(onPongTimeout, waitMs);
+  pongWaitTimer = window.setTimeout(onPongTimeout, PONG_WAIT_MS);
 }
 
 function maybeSendHello(): void {
-  if (!isAutorunBridgeUp() || bridgeState !== 'up') {
-    sendAutorunHello();
-    return;
-  }
-  if (lastRoundTripAt > 0 && Date.now() - lastRoundTripAt > ROUND_TRIP_FRESH_MS) {
-    sendAutorunHello();
-  }
+  if (isAutorunBridgeUp() && lastRoundTripAt > 0) return;
+  sendAutorunHello();
 }
 
 export function startBridgeKeepalive(): void {
@@ -285,7 +192,7 @@ export function startBridgeKeepalive(): void {
   if (!isBrightSignRuntime()) return;
   const port = getSharedMessagePort();
   if (!port) {
-    console.warn('[Perform6] Bridge keepalive not started — BSMessagePort missing');
+    console.warn('[Perform6] Bridge probe not started — BSMessagePort missing');
     window.setTimeout(() => {
       if (!started) {
         resetSharedMessagePort();
@@ -327,10 +234,9 @@ export function startBridgeKeepalive(): void {
     sendPing();
   }, 1_000);
   pingTimer = window.setInterval(sendPing, PING_INTERVAL_MS);
-  console.info('[Perform6] Bridge keepalive started (recovery ladder)', {
-    intervalMs: PING_INTERVAL_MS,
-    pongWaitMs: PONG_WAIT_MS,
-    ladder: [MISS_PORT_RESET, MISS_HTML_RECYCLE, MISS_HEAL_REBOOT],
+  console.info('[Perform6] Bridge probe started (Node messageport duplex; no auto-reboot)', {
+    pingIntervalMs: PING_INTERVAL_MS,
+    transport: getBridgeTransport(),
   });
 }
 
@@ -371,17 +277,25 @@ export function getKeepaliveBridgeSnapshot() {
   };
 }
 
+/** Admin / OTA — BA-simple: full reboot only (never SetUrl / port recreate). */
 export function requestBridgeSelfHeal(reason: string): void {
   if (!isBrightSignRuntime()) return;
-  requestHeal(reason, false);
+  requestPlayerReboot(reason, false);
 }
 
+/**
+ * @deprecated HTML SetUrl recycle breaks duplex. Maps to full reboot (BA-simple).
+ */
 export function requestBridgeHtmlRecycle(reason: string, force = false): void {
   if (!isBrightSignRuntime()) return;
-  requestHtmlRecycle(reason, force);
+  console.warn(
+    '[Perform6] Bridge HTML recycle disabled (BA-simple) — rebooting instead',
+    { reason },
+  );
+  requestPlayerReboot(reason, force);
 }
 
 export function requestBridgeForceHeal(reason: string): void {
   if (!isBrightSignRuntime()) return;
-  requestHeal(reason, true);
+  requestPlayerReboot(reason, true);
 }

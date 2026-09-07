@@ -212,13 +212,16 @@ export async function executeSystemRemoteCommand(
       return true;
     }
     case 'BRIDGE_RECYCLE': {
-      const { requestBridgeHtmlRecycle } = await import('./bridgeKeepalive');
-      requestBridgeHtmlRecycle('admin remote', true);
+      // BA-simple: never SetUrl-recycle (breaks BSMessagePort duplex). Reboot only.
+      console.warn(
+        '[Perform6] BRIDGE_RECYCLE mapped to reboot (HTML recycle disabled)',
+      );
+      requestDeviceReboot();
       return true;
     }
     case 'FORCE_BRIDGE_HEAL': {
-      const { requestBridgeForceHeal } = await import('./bridgeKeepalive');
-      requestBridgeForceHeal('admin remote');
+      console.warn('[Perform6] FORCE_BRIDGE_HEAL → reboot (BA-simple)');
+      requestDeviceReboot();
       return true;
     }
     default:
