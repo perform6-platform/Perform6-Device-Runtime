@@ -1,3 +1,7 @@
+/**
+ * BrightSign allows one BSMessagePort per HtmlWidget.
+ * Recreating the port drops autorun→JS replies onto a dead instance.
+ */
 let sharedPort: BrightSignMessagePort | null | undefined;
 const bsMessageListeners = new Set<(event: BrightSignMessagePortEvent) => void>();
 

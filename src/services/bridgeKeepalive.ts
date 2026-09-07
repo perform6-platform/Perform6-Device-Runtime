@@ -7,7 +7,6 @@
 import {
   getBridgeTransport,
   getSharedMessagePort,
-  resetSharedMessagePort,
   subscribeBsMessages,
 } from '../platform/bsMessagePort';
 import { rebootViaBrightSignSystem } from '../platform/brightSignNode';
@@ -170,6 +169,8 @@ function onPongTimeout(): void {
 function sendPing(): void {
   const port = getSharedMessagePort();
   if (!port) return;
+  const port = getSharedMessagePort();
+  if (!port) return;
   if (awaitingPong) return;
   awaitingPong = true;
   try {
@@ -194,10 +195,7 @@ export function startBridgeKeepalive(): void {
   if (!port) {
     console.warn('[Perform6] Bridge probe not started — BSMessagePort missing');
     window.setTimeout(() => {
-      if (!started) {
-        resetSharedMessagePort();
-        startBridgeKeepalive();
-      }
+      if (!started) startBridgeKeepalive();
     }, 3_000);
     return;
   }

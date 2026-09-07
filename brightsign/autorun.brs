@@ -311,13 +311,26 @@ Sub PostJsToWidget(html as Object, msg as Object)
   html.PostJSMessage(msg)
 End Sub
 
+' One PostJSMessage per event — BrightSign: one port per widget.
 Sub PostJsMessage(html as Object, msg as Object)
   if type(msg) <> "roAssociativeArray" then return
-  PostJsToWidget(html, msg)
+  if type(html) = "roHtmlWidget" then
+    PostJsToWidget(html, msg)
+    return
+  end if
   g = GetGlobalAA()
-  if type(g.p6Html) = "roHtmlWidget" then PostJsToWidget(g.p6Html, msg)
-  if type(g.htmlTouch) = "roHtmlWidget" then PostJsToWidget(g.htmlTouch, msg)
-  if type(g.htmlPrimary) = "roHtmlWidget" then PostJsToWidget(g.htmlPrimary, msg)
+  if type(g.htmlTouch) = "roHtmlWidget" then
+    PostJsToWidget(g.htmlTouch, msg)
+    return
+  end if
+  if type(g.htmlPrimary) = "roHtmlWidget" then
+    PostJsToWidget(g.htmlPrimary, msg)
+    return
+  end if
+  if type(g.p6Html) = "roHtmlWidget" then
+    PostJsToWidget(g.p6Html, msg)
+    return
+  end if
   if type(g.html) = "roHtmlWidget" then PostJsToWidget(g.html, msg)
 End Sub
 
@@ -2204,13 +2217,7 @@ Sub HandleLedBridgeHeal(payload as Object)
     RebootDeviceAfterOta()
     return
   end if
-  if ShouldBridgeHealReboot() = false then
-    LedLog("=== Perform6: bridge heal refused (marker) — " + reason + " ===")
-    return
-  end if
-  LedLog("=== Perform6: bridge heal reboot — " + reason + " ===")
-  FlushLedLog()
-  RebootDeviceAfterOta()
+  LedLog("=== Perform6: bridge heal refused (observe-only) — " + reason + " ===")
 End Sub
 
 ' One automatic recovery reboot after a fatal boot error; avoids silent blank forever.
@@ -2760,7 +2767,8 @@ Sub HandleCacheEvent(st as Object, ev as Object, msgPort as Object, states as Ob
   if st.key <> "prefetch" and type(st.vp) = "roVideoPlayer" then
     ' Only take over when nothing is on screen - never interrupt a running stream.
     if st.wantUrl = url and Len(st.playingUrl) = 0 then
-      if st.idleShown = true then
+      wasIdle = (st.idleShown = true)
+      if wasIdle then
         st.vp.StopClear()
         st.vp.SetViewMode("FillScreenAndCentered")
         st.idleShown = false
@@ -2774,6 +2782,8 @@ Sub HandleCacheEvent(st as Object, ev as Object, msgPort as Object, states as Ob
         else
           st.vp.Resume()
         end if
+      else if wasIdle then
+        PlayIdleClip(st)
       end if
     end if
   end if
@@ -3794,6 +3804,16 @@ Sub Main()
       FatalHang("=== Perform6: FATAL no XT output rectangles ===")
     end if
 
+    LedLog("=== Perform6: HDMI-2 idle before HtmlWidget ===")
+    videoLed = TryCreateVideoPlayer(ledRect, msgPort, 2, "hdmi-2")
+    if type(videoLed) <> "roVideoPlayer" then
+      LedLog("=== Perform6: ERROR HDMI-2 roVideoPlayer create failed ===")
+    else
+      ledState = CreateLedState(videoLed, "led")
+      ledStates.Push(ledState)
+      PlayIdleClip(ledState)
+    end if
+
     touchUrl = BuildAppUrl("file:///index.html", identity, profile, "touch")
     SafePrint("=== Perform6: HDMI-1 touch widget " + touchUrl + " ===")
     htmlTouch = TryCreateHtmlWidget(touchRect, msgPort, touchUrl)
@@ -3840,6 +3860,24 @@ Sub Main()
     led3Rect = CreateObject("roRectangle", 3840, 0, 1920, 1080)
     if type(primaryRect) <> "roRectangle" or type(led2Rect) <> "roRectangle" or type(led3Rect) <> "roRectangle" then
       FatalHang("=== Perform6: FATAL no XC output rectangles ===")
+    end if
+
+    LedLog("=== Perform6: HDMI-2/3 idle before HtmlWidget ===")
+    videoLed2 = TryCreateVideoPlayer(led2Rect, msgPort, 2, "hdmi-2")
+    if type(videoLed2) <> "roVideoPlayer" then
+      LedLog("=== Perform6: ERROR HDMI-2 roVideoPlayer create failed ===")
+    else
+      led2State = CreateLedState(videoLed2, "led2")
+      ledStates.Push(led2State)
+      PlayIdleClip(led2State)
+    end if
+    videoLed3 = TryCreateVideoPlayer(led3Rect, msgPort, 3, "hdmi-3")
+    if type(videoLed3) <> "roVideoPlayer" then
+      LedLog("=== Perform6: ERROR HDMI-3 roVideoPlayer create failed ===")
+    else
+      led3State = CreateLedState(videoLed3, "led3")
+      ledStates.Push(led3State)
+      PlayIdleClip(led3State)
     end if
 
     primaryUrl = BuildAppUrl("file:///index.html", identity, profile, "primary")
@@ -3930,7 +3968,7 @@ Sub Main()
   ' DWS already enabled early (before SetScreenModes) for field recovery.
 
   InitBridgeWatch()
-  LedLog("=== Perform6: bridge watchdog armed (silence 4m / no-js 10m) ===")
+  LedLog("=== Perform6: bridge observe-only (no recycle/reboot on silence) ===")
 
   progressTimer = CreateObject("roTimer")
   if type(progressTimer) = "roTimer" then
