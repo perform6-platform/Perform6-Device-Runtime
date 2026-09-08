@@ -28,6 +28,8 @@ const KEEP_MESSAGE = 'led-cache-keep';
 const EVICT_MESSAGE = 'led-cache-evict';
 const CANCEL_MESSAGE = 'led-cache-cancel';
 const PROGRESS_TYPE = 'led-cache-progress';
+/** Autorun writes this even when JS↔BS inbound bridge is dead. */
+const PROGRESS_FILE_SD = 'SD:/perform6-media-progress.json';
 const READY_KEY = 'perform6-sd-cache-ready';
 const CONFIRMED_KEY = 'perform6-sd-cache-confirmed';
 /** mediaVersionId → asset-pool path from AssetPoolFiles.getPath */
@@ -132,6 +134,36 @@ export function emitSdCacheProgress(event: Omit<SdCacheProgressEvent, 'type'> & 
     type: PROGRESS_TYPE,
     status: event.status,
   });
+}
+
+/** Read autorun progress JSON (bridge-independent). Returns null if unchanged/missing. */
+let lastProgressFileSig = '';
+function pollMediaProgressFile(): SdCacheProgressEvent | null {
+  const fs = getNodeFs();
+  if (!fs) return null;
+  try {
+    const path = toNodeSdPath(PROGRESS_FILE_SD);
+    if (!fs.existsSync(path)) return null;
+    const raw = fs.readFileSync(path, 'utf8');
+    const text = typeof raw === 'string' ? raw : String(raw);
+    if (!text.trim()) return null;
+    const data = JSON.parse(text) as Record<string, unknown>;
+    const parsed = parseProgressEvent({ ...data, type: PROGRESS_TYPE });
+    if (!parsed) return null;
+    const sig = [
+      parsed.status,
+      parsed.url,
+      parsed.mediaVersionId,
+      parsed.bytesDownloaded,
+      parsed.error,
+      data.writtenAt,
+    ].join('|');
+    if (sig === lastProgressFileSig) return null;
+    lastProgressFileSig = sig;
+    return parsed;
+  } catch {
+    return null;
+  }
 }
 
 function ensureProgressBridge(): BrightSignMessagePort | null {
@@ -435,35 +467,21 @@ function collectHttpItems(
   return { urls, ids, sizes };
 }
 
+/**
+ * Autorun HTTP prefetch — DISABLED.
+ * Correct path: @brightsign/assetpool + assetpoolfetcher + assetrealizer → perform6-media.
+ * led-cache-prefetch stalled when bridge inbound was dead and spammed Bluefin UI.
+ */
 export function requestSdCachePrefetch(
   items: CacheBridgeItem[],
-  options?: { append?: boolean; priority?: boolean },
+  _options?: { append?: boolean; priority?: boolean },
 ): boolean {
-  const port = getPort();
-  if (!port) {
-    console.warn('[Perform6] SD cache prefetch skipped — BSMessagePort missing');
-    return false;
-  }
-
-  const { urls, ids, sizes } = collectHttpItems(items);
-  if (urls.length === 0) return true;
-
-  port.PostBSMessage({
-    type: PREFETCH_MESSAGE,
-    role: prefetchRole(),
-    urls: urls.join('|'),
-    ids: ids.join('|'),
-    sizes: sizes.join('|'),
-    count: String(urls.length),
-    append: options?.append ? 'true' : 'false',
-    priority: options?.priority ? 'true' : 'false',
-  });
-  console.info('[Perform6] SD cache prefetch requested', {
-    count: urls.length,
-    append: options?.append ?? false,
-    priority: options?.priority ?? false,
-  });
-  return true;
+  if (items.length === 0) return false;
+  console.warn(
+    '[Perform6] SD cache prefetch disabled — AssetPool + AssetRealizer only',
+    { count: items.length },
+  );
+  return false;
 }
 
 /** Bump a clip to the front of the autorun queue (tap before P1 finished). */
@@ -836,6 +854,10 @@ async function downloadMediaChunkToSd(
 
     const stallInterval = window.setInterval(() => {
       if (settled || pending.size === 0) return;
+      // Bridge-independent: autorun writes SD:/perform6-media-progress.json
+      const fromFile = pollMediaProgressFile();
+      if (fromFile) dispatchProgress(fromFile);
+
       const waited = Date.now() - (sawStartAck ? lastProgressAt : chunkStartedAt);
       const limit = sawStartAck ? DOWNLOAD_STALL_MS : DOWNLOAD_START_ACK_MS;
       if (waited < limit) return;
@@ -859,7 +881,7 @@ async function downloadMediaChunkToSd(
         retryInSeconds: null,
       });
       finish();
-    }, 10_000);
+    }, 2_000);
 
     const touchProgress = (bytes: number) => {
       if (bytes > lastProgressBytes) {
@@ -1081,289 +1103,51 @@ async function downloadMediaChunkToSd(
 }
 
 /**
- * Prefetch missing items to SD and resolve when the batch finishes.
- * Sends URLs in small chunks so BSMessagePort payloads stay within limits.
+ * @deprecated Autorun HTTP media download disabled.
+ * Use media.downloadMediaBatchToSd (AssetPool + AssetRealizer) only.
  */
 export async function downloadMediaItemsToSd(
   items: SyncMediaItem[],
-  onProgress?: (progress: SdDownloadProgress) => void | Promise<void>,
-  options?: { manifest?: import('../shared/types').PlaybackManifest | null },
+  _onProgress?: (progress: SdDownloadProgress) => void | Promise<void>,
+  _options?: { manifest?: import('../shared/types').PlaybackManifest | null },
 ): Promise<{
   succeeded: string[];
   downloaded: string[];
   failed: string[];
   failureReasons: Record<string, string>;
 }> {
-  const succeeded: string[] = [];
-  const downloaded: string[] = [];
-  const failed: string[] = [];
-  const failureReasons: Record<string, string> = {};
-
-  if (items.length === 0) {
-    return { succeeded, downloaded, failed, failureReasons };
-  }
-
-  if (!isSdCacheBridgeAvailable()) {
-    for (const item of items) {
-      failed.push(item.mediaVersionId);
-      failureReasons[item.mediaVersionId] = 'SD cache bridge unavailable';
-    }
-    return { succeeded, downloaded, failed, failureReasons };
-  }
-
-  bulkDownloadInProgress = true;
-  bulkDownloadStartedAtMs = Date.now();
-  const succeededSoFar = new Set<string>();
-
-  for (const item of items) {
-    if (isMediaConfirmedOnSd(item.mediaVersionId)) {
-      succeeded.push(item.mediaVersionId);
-      succeededSoFar.add(item.mediaVersionId);
-    }
-  }
-
-  const pendingItems = items.filter((item) => !isMediaConfirmedOnSd(item.mediaVersionId));
-
-  if (pendingItems.length === 0) {
-    bulkDownloadInProgress = false;
-    bulkDownloadStartedAtMs = 0;
-    return {
-      succeeded: [...new Set(succeeded)],
-      downloaded,
-      failed,
-      failureReasons,
-    };
-  }
-
-  updateDownloadUiFromBatch(pendingItems, succeededSoFar, pendingItems[0] ?? null, {
-    manifest: options?.manifest ?? null,
-  });
-
-  try {
-    requestSdCacheKeepSet(
-      items.map((item) => ({
-        mediaVersionId: item.mediaVersionId,
-        fileUrl: item.fileUrl,
-      })),
-    );
-    const chunks = chunkItems(pendingItems, PREFETCH_CHUNK_SIZE);
-    for (let index = 0; index < chunks.length; index++) {
-      const chunk = chunks[index];
-      let result = await downloadMediaChunkToSd(chunk, onProgress, {
-        append: true,
-        priority: index === 0,
-        manifest: options?.manifest ?? null,
-        batchItems: items,
-        succeededSoFar,
-      });
-      succeeded.push(...result.succeeded);
-      downloaded.push(...result.downloaded);
-      for (const id of result.succeeded) succeededSoFar.add(id);
-      Object.assign(failureReasons, result.failureReasons);
-
-      let retries = 0;
-      while (result.failed.length > 0 && retries < MAX_DOWNLOAD_RETRIES) {
-        const delayMs = RETRY_DELAYS_MS[retries] ?? 30_000;
-        const attempt = retries + 1;
-        const retryItems = chunk.filter(
-          (item) =>
-            result.failed.includes(item.mediaVersionId) &&
-            isRetryableCacheError(result.failureReasons[item.mediaVersionId]),
-        );
-        if (retryItems.length === 0) break;
-
-        for (const item of retryItems) {
-          delete failureReasons[item.mediaVersionId];
-        }
-
-        for (let sec = Math.ceil(delayMs / 1000); sec > 0; sec -= 1) {
-          setDownloadUiState({
-            phase: 'retrying',
-            currentLabel: retryItems[0]?.title?.trim() || labelForMediaVersionId(
-              options?.manifest ?? null,
-              retryItems[0].mediaVersionId,
-            ),
-            retryInSeconds: sec,
-            statusMessage: `Retry ${attempt}/${MAX_DOWNLOAD_RETRIES} after stall or timeout`,
-          });
-          await sleep(1000);
-        }
-
-        result = await downloadMediaChunkToSd(retryItems, onProgress, {
-          append: true,
-          priority: true,
-          manifest: options?.manifest ?? null,
-          batchItems: items,
-          succeededSoFar,
-        });
-        succeeded.push(...result.succeeded.filter((id) => !succeeded.includes(id)));
-        downloaded.push(...result.downloaded.filter((id) => !downloaded.includes(id)));
-        for (const id of result.succeeded) {
-          succeededSoFar.add(id);
-          delete failureReasons[id];
-        }
-        Object.assign(failureReasons, result.failureReasons);
-        retries += 1;
-      }
-
-      failed.push(...result.failed.filter((id) => !succeeded.includes(id)));
-      for (const id of result.failed) {
-        if (succeeded.includes(id)) continue;
-        const reason = failureReasons[id] ?? '';
-        if (
-          reason.includes('cancelled for retry') ||
-          reason.includes('stalled') ||
-          reason.toLowerCase().includes('timed out')
-        ) {
-          failureReasons[id] =
-            `Download failed after ${MAX_DOWNLOAD_RETRIES} retries — check network or use Sync Now`;
-        }
-      }
-    }
-  } finally {
-    bulkDownloadInProgress = false;
-    bulkDownloadStartedAtMs = 0;
-    const manifest = options?.manifest ?? null;
-    const hasPermanentFailure = Object.values(failureReasons).some(isPermanentCacheError);
-    const hasAnyFailure = Object.keys(failureReasons).length > 0;
-    if (manifest && !areTouchProgramsReady(manifest)) {
-      setDownloadUiState({
-        phase: hasPermanentFailure ? 'error' : hasAnyFailure ? 'downloading' : 'waiting',
-        retryInSeconds: null,
-        currentLabel: null,
-        statusMessage: hasPermanentFailure
-          ? describeCacheError(Object.values(failureReasons).find(isPermanentCacheError))
-          : hasAnyFailure
-            ? 'Some videos failed — ready items can still play'
-            : null,
-      });
-    } else if (!hasPermanentFailure) {
-      resetDownloadUiState();
-    }
-  }
-
-  return {
-    succeeded: [...new Set(succeeded)],
-    downloaded: [...new Set(downloaded)],
-    failed: [...new Set(failed)].filter((id) => !succeeded.includes(id)),
-    failureReasons,
-  };
-}
-
-function ensureParentDir(fs: NonNullable<ReturnType<typeof getNodeFs>>, filePath: string): void {
-  // BrightSign Node fs only accepts /storage/sd/… — never raw SD:/…
-  const nodePath = filePath.startsWith('/storage/sd')
-    ? filePath.replace(/\\/g, '/')
-    : toNodeSdPath(filePath);
-  const idx = nodePath.lastIndexOf('/');
-  if (idx <= 0) return;
-  const parent = nodePath.slice(0, idx);
-  if (!fs.existsSync(parent)) {
-    fs.mkdirSync(parent, { recursive: true });
-  }
+  const reason =
+    'Autorun SD prefetch disabled — BrightSign AssetPool + AssetRealizer required';
+  console.warn('[Perform6]', reason, { count: items.length });
+  const failed = items.map((i) => i.mediaVersionId);
+  const failureReasons = Object.fromEntries(failed.map((id) => [id, reason]));
+  return { succeeded: [], downloaded: [], failed, failureReasons };
 }
 
 /**
- * Realize pool blob → SD:/perform6-media/<name>.mp4 (single authoritative store).
- * After a successful copy, delete the pool staging file so disk is not doubled.
- * Node fs paths must be /storage/sd/… (never mkdir 'SD:/…').
+ * Verify playable file already in perform6-media (from AssetRealizer).
+ * Never uses Node copyFileSync — field EPERM on AssetPool sha256 blobs.
  */
 export function realizePoolPathToCache(
   mediaVersionId: string,
   fileUrl: string,
-  poolPath: string,
+  _poolPath?: string,
 ): boolean {
   const fs = getNodeFs();
-  if (!fs || typeof fs.copyFileSync !== 'function') {
-    console.warn('[Perform6] Pool→media realize skipped — Node fs.copyFileSync unavailable');
-    return false;
-  }
+  if (!fs) return false;
 
   const resolvedUrl = resolveMediaFileUrl(fileUrl);
   const destNode = toNodeSdPath(mediaStoreFileSdPath(cacheNameFor(resolvedUrl)));
-  const srcNodes = [
-    ...new Set(
-      [
-        poolPath.startsWith('/storage/sd') ? poolPath.replace(/\\/g, '/') : null,
-        toNodeSdPath(poolPath),
-        poolPath.replace(/\\/g, '/'),
-      ].filter((p): p is string => Boolean(p && p.length > 0)),
-    ),
-  ];
-
-  const markReady = () => {
-    markSdCached(mediaVersionId, resolvedUrl);
-    markSdDownloadConfirmed(mediaVersionId);
-  };
-
-  const prunePoolSrc = (src: string) => {
-    try {
-      if (src.includes('perform6-media-pool') && fs.existsSync(src)) {
-        fs.unlinkSync(src);
-        console.info('[Perform6] Pool staging pruned after realize', { src });
-      }
-    } catch (e) {
-      console.warn('[Perform6] Pool prune after realize failed', {
-        src,
-        error: e instanceof Error ? e.message : String(e),
-      });
-    }
-  };
 
   try {
     if (fs.existsSync(destNode) && fs.statSync(destNode).size > 0) {
-      markReady();
-      for (const src of srcNodes) {
-        if (src !== destNode) prunePoolSrc(src);
-      }
+      markSdCached(mediaVersionId, resolvedUrl);
+      markSdDownloadConfirmed(mediaVersionId);
       return true;
     }
   } catch {
-    /* try copy */
+    return false;
   }
-
-  try {
-    const mediaDir = toNodeSdPath(MEDIA_STORE_SD);
-    if (!fs.existsSync(mediaDir)) {
-      fs.mkdirSync(mediaDir, { recursive: true });
-    }
-  } catch (e) {
-    console.warn('[Perform6] Pool→media mkdir failed', {
-      dir: toNodeSdPath(MEDIA_STORE_SD),
-      error: e instanceof Error ? e.message : String(e),
-    });
-  }
-
-  let lastError: unknown;
-  for (const src of srcNodes) {
-    try {
-      if (!fs.existsSync(src)) continue;
-      ensureParentDir(fs, destNode);
-      fs.copyFileSync(src, destNode);
-      const st = fs.statSync(destNode);
-      if (!st || st.size <= 0) {
-        throw new Error(`Copied media empty: ${destNode}`);
-      }
-      markReady();
-      prunePoolSrc(src);
-      console.info('[Perform6] Pool→media realized (single store)', {
-        mediaVersionId,
-        from: src,
-        to: destNode,
-        bytes: st.size,
-      });
-      return true;
-    } catch (e) {
-      lastError = e;
-    }
-  }
-
-  console.warn('[Perform6] Pool→media realize failed', {
-    mediaVersionId,
-    poolPath,
-    destNode,
-    error: lastError instanceof Error ? lastError.message : String(lastError ?? 'unknown'),
-  });
   return false;
 }
 

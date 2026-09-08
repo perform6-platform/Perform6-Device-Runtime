@@ -242,7 +242,7 @@ export async function runSyncEngine(
     const PROGRESS_REPORT_INTERVAL_MS = 3000;
 
     if (mediaItems.length > 0) {
-      // Asset pool → realize perform6-media, or autorun same store — never OTA worker.
+      // AssetPoolFetcher + AssetRealizer → perform6-media only (no autorun prefetch).
       // Do NOT mark DOWNLOADING at 0 bytes before transfer — Admin showed false
       // "Downloading — / 26 MB" for 16+ minutes while AssetPool hung.
       const batch = await downloadMediaBatchToSd(

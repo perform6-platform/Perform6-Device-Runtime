@@ -169,8 +169,6 @@ function onPongTimeout(): void {
 function sendPing(): void {
   const port = getSharedMessagePort();
   if (!port) return;
-  const port = getSharedMessagePort();
-  if (!port) return;
   if (awaitingPong) return;
   awaitingPong = true;
   try {

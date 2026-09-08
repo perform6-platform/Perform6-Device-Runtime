@@ -27,6 +27,7 @@ import {
   getAutorunCapabilities,
   probeAutorunCapabilities,
 } from './autorunCapabilities';
+import { requestBridgeSelfHeal } from './bridgeKeepalive';
 
 const OTA_INSTALL_MESSAGE = 'led-ota-install';
 const OTA_AUTH_MESSAGE = 'led-ota-auth';

@@ -1,9 +1,8 @@
 /**
  * BrightSign asset-pool media delivery (separate from OTA).
  * Staging pool: /storage/sd/perform6-media-pool (OS 9.1); docs fallback sd/….
- * media.ts realizes once into SD:/perform6-media/*.mp4 then prunes staging
- * (single authoritative store — no forever dual copy).
- * Autorun led-cache-prefetch → same perform6-media dir as last-resort fallback.
+ * media.ts realizes once into SD:/perform6-media/*.mp4 via AssetRealizer.
+ * Autorun led-cache-prefetch is disabled (bridge-inbound unreliable).
  */
 import type { SyncMediaItem } from '../shared/types/api';
 import { resolveMediaFileUrl } from './manifest';

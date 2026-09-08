@@ -1,8 +1,6 @@
 import type { SyncMediaItem } from '../shared/types/api';
 import {
   clearSdCached,
-  downloadMediaItemsToSd,
-  getMediaPoolPath,
   hasSdCachedMedia,
   realizePoolPathToCache,
   resolveSdPlaybackUrl,
@@ -12,10 +10,12 @@ import {
   downloadMediaItemsViaAssetPool,
   isMediaAssetPoolAvailable,
 } from './mediaAssetPool';
+import { realizeMediaAssetsViaRealizer } from './mediaRealize';
 import { resolveMediaFileUrl } from './manifest';
 import { offlineCacheService } from './offlineCache';
 import { MEDIA_CAPACITY_RESERVE_BYTES } from './mediaStorePaths';
 import { refreshSdStorageInfo } from './sdStorageInfo';
+import { resetDownloadUiState, setDownloadUiState } from './downloadProgress';
 
 export interface CachedMediaMeta {
   assetId: string;
@@ -51,7 +51,7 @@ export function revokeLocalPlaybackUrl(_mediaVersionId: string): void {
 }
 
 /**
- * Download one item via AssetPool (BrightSign events) then realize to perform6-media/*.mp4.
+ * Download one item via AssetPool + AssetRealizer to perform6-media/*.mp4.
  */
 export async function downloadMediaItem(
   item: SyncMediaItem,
@@ -78,40 +78,6 @@ export async function downloadMediaItem(
   return size;
 }
 
-function mergeBatchResults(
-  a: {
-    succeeded: string[];
-    downloaded: string[];
-    failed: string[];
-    failureReasons: Record<string, string>;
-  },
-  b: {
-    succeeded: string[];
-    downloaded: string[];
-    failed: string[];
-    failureReasons: Record<string, string>;
-  },
-): {
-  succeeded: string[];
-  downloaded: string[];
-  failed: string[];
-  failureReasons: Record<string, string>;
-} {
-  const succeeded = [...new Set([...a.succeeded, ...b.succeeded])];
-  const downloaded = [...new Set([...a.downloaded, ...b.downloaded])];
-  const failureReasons = { ...a.failureReasons, ...b.failureReasons };
-  for (const id of succeeded) delete failureReasons[id];
-  const failed = [...new Set([...a.failed, ...b.failed])].filter(
-    (id) => !succeeded.includes(id),
-  );
-  return { succeeded, downloaded, failed, failureReasons };
-}
-
-/**
- * Capacity gate (BrightSign docs: free space in MB / reserve before download).
- * current on-disk playable assets are already counted in "used"; we only need
- * bytes still missing + working reserve to fit in free space.
- */
 async function assertCapacityForDownload(
   items: SyncMediaItem[],
 ): Promise<string | null> {
@@ -123,7 +89,7 @@ async function assertCapacityForDownload(
   if (needBytes <= 0) return null;
 
   const snap = await refreshSdStorageInfo(6_000);
-  if (!snap || snap.freeBytes <= 0) return null; // unknown — autorun still gates HTTP path
+  if (!snap || snap.freeBytes <= 0) return null;
 
   const required = needBytes + MEDIA_CAPACITY_RESERVE_BYTES;
   if (snap.freeBytes >= required) return null;
@@ -136,9 +102,10 @@ async function assertCapacityForDownload(
 }
 
 /**
- * Realize pool staging into perform6-media/*.mp4 (single store). Only then playable.
+ * After AssetPool fetch: AssetRealizer into perform6-media (BrightSign docs path).
+ * No autorun led-cache-prefetch — that path depends on a dead bridge and stalls Bluefin.
  */
-function realizePoolBatchToCache(
+async function realizePoolBatchToStore(
   items: SyncMediaItem[],
   poolResult: {
     succeeded: string[];
@@ -146,39 +113,46 @@ function realizePoolBatchToCache(
     failed: string[];
     failureReasons: Record<string, string>;
   },
-): {
+): Promise<{
   succeeded: string[];
   downloaded: string[];
   failed: string[];
   failureReasons: Record<string, string>;
-} {
+}> {
+  const poolOk = items.filter((item) =>
+    poolResult.succeeded.includes(item.mediaVersionId),
+  );
+  const failureReasons = { ...poolResult.failureReasons };
+  const failed = [...poolResult.failed];
+
+  if (poolOk.length === 0) {
+    return {
+      succeeded: [],
+      downloaded: [],
+      failed: [...new Set(failed)],
+      failureReasons,
+    };
+  }
+
+  const realized = await realizeMediaAssetsViaRealizer(poolOk);
   const succeeded: string[] = [];
   const downloaded: string[] = [];
-  const failed = [...poolResult.failed];
-  const failureReasons = { ...poolResult.failureReasons };
 
-  for (const item of items) {
-    if (!poolResult.succeeded.includes(item.mediaVersionId)) continue;
-    // Already realized into single store (pool pruned) — treat as success.
-    if (hasSdCachedMedia(item.mediaVersionId)) {
+  for (const item of poolOk) {
+    if (realized.succeeded.includes(item.mediaVersionId)) {
       succeeded.push(item.mediaVersionId);
       downloaded.push(item.mediaVersionId);
       continue;
     }
-    const poolPath = getMediaPoolPath(item.mediaVersionId);
-    if (!poolPath) {
-      failed.push(item.mediaVersionId);
-      failureReasons[item.mediaVersionId] = 'Pool path missing after fetch';
+    if (realizePoolPathToCache(item.mediaVersionId, item.fileUrl)) {
+      succeeded.push(item.mediaVersionId);
+      downloaded.push(item.mediaVersionId);
       continue;
     }
-    if (!realizePoolPathToCache(item.mediaVersionId, item.fileUrl, poolPath)) {
-      failed.push(item.mediaVersionId);
-      failureReasons[item.mediaVersionId] =
-        'Pool fetch ok but realize to perform6-media failed';
-      continue;
-    }
-    succeeded.push(item.mediaVersionId);
-    downloaded.push(item.mediaVersionId);
+    failed.push(item.mediaVersionId);
+    failureReasons[item.mediaVersionId] =
+      realized.failureReasons[item.mediaVersionId] ??
+      'Pool fetch ok but AssetRealizer to perform6-media failed';
   }
 
   return {
@@ -189,6 +163,12 @@ function realizePoolBatchToCache(
   };
 }
 
+/**
+ * BrightSign-correct media path only:
+ * AssetPoolFetcher (progressevent/fileevent) → AssetRealizer → SD:/perform6-media/*.mp4
+ *
+ * Autorun HTTP prefetch is disabled (bridge-inbound unreliable; Bluefin overlay spam).
+ */
 export async function downloadMediaBatchToSd(
   items: SyncMediaItem[],
   onProgress?: (progress: SdDownloadProgress) => void | Promise<void>,
@@ -206,6 +186,12 @@ export async function downloadMediaBatchToSd(
   const capacityError = await assertCapacityForDownload(items);
   if (capacityError) {
     console.warn('[Perform6] Media download blocked — capacity', capacityError);
+    setDownloadUiState({
+      phase: 'error',
+      statusMessage: capacityError,
+      totalFiles: items.length,
+      completedFiles: 0,
+    });
     return {
       succeeded: [],
       downloaded: [],
@@ -216,22 +202,30 @@ export async function downloadMediaBatchToSd(
     };
   }
 
-  // Primary (BrightSign AssetPool): fetch → realize once into SD:/perform6-media/*.mp4
-  // then prune pool staging (no dual forever-copy).
-  // Fallback (Option B): autorun HTTP → same perform6-media dir (.part → rename).
-  let result = isMediaAssetPoolAvailable()
-    ? realizePoolBatchToCache(
-        items,
-        await downloadMediaItemsViaAssetPool(items, onProgress, options),
-      )
-    : {
-        succeeded: [] as string[],
-        downloaded: [] as string[],
-        failed: items.map((i) => i.mediaVersionId),
-        failureReasons: Object.fromEntries(
-          items.map((i) => [i.mediaVersionId, 'Media asset pool unavailable']),
-        ),
-      };
+  if (!isMediaAssetPoolAvailable()) {
+    const reason =
+      'Media asset pool unavailable — BrightSign AssetPool required (autorun prefetch disabled)';
+    console.warn('[Perform6]', reason);
+    setDownloadUiState({
+      phase: 'error',
+      statusMessage: reason,
+      totalFiles: items.length,
+      completedFiles: 0,
+    });
+    return {
+      succeeded: [],
+      downloaded: [],
+      failed: items.map((i) => i.mediaVersionId),
+      failureReasons: Object.fromEntries(
+        items.map((i) => [i.mediaVersionId, reason]),
+      ),
+    };
+  }
+
+  const result = await realizePoolBatchToStore(
+    items,
+    await downloadMediaItemsViaAssetPool(items, onProgress, options),
+  );
 
   const missing = items.filter(
     (item) =>
@@ -241,7 +235,7 @@ export async function downloadMediaBatchToSd(
 
   if (missing.length > 0) {
     console.warn(
-      '[Perform6] Asset pool/realize incomplete — falling back to autorun perform6-media',
+      '[Perform6] AssetPool/Realizer incomplete — autorun prefetch NOT used (disabled)',
       {
         missing: missing.length,
         reasons: missing.map((m) => ({
@@ -250,8 +244,17 @@ export async function downloadMediaBatchToSd(
         })),
       },
     );
-    const cacheResult = await downloadMediaItemsToSd(missing, onProgress, options);
-    result = mergeBatchResults(result, cacheResult);
+    setDownloadUiState({
+      phase: 'error',
+      statusMessage:
+        missing.length === items.length
+          ? 'Media download failed (AssetPool/Realizer)'
+          : `Some media failed (${missing.length}) — AssetPool/Realizer only`,
+      totalFiles: items.length,
+      completedFiles: result.succeeded.length,
+    });
+  } else {
+    resetDownloadUiState();
   }
 
   for (const item of items) {

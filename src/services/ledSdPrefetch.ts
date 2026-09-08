@@ -1,6 +1,6 @@
 /**
- * @deprecated Use sdCacheBridge — SD:/perform6-media is the only playable media store.
- * Kept as a thin re-export so older imports do not break during the cutover.
+ * @deprecated Media uses AssetPool + AssetRealizer only.
+ * Autorun led-cache-prefetch is disabled (unreliable bridge / Bluefin spam).
  */
 export {
   requestSdCachePrefetch as requestLedSdPrefetch,
@@ -8,9 +8,8 @@ export {
   type SdCacheProgressEvent,
 } from './sdCacheBridge';
 import type { SyncCheckResponseData } from '../shared/types/api';
-import { requestSdCachePrefetch } from './sdCacheBridge';
 
-/** @deprecated Sync engine owns prefetch; no-op wrapper for RuntimeContext. */
+/** @deprecated Sync engine owns downloads; no-op. */
 export function collectLedPrefetchUrls(
   syncData: SyncCheckResponseData | null | undefined,
 ): string[] {
@@ -19,15 +18,9 @@ export function collectLedPrefetchUrls(
     .filter(Boolean);
 }
 
-/** @deprecated Prefer runSyncEngine SD downloads. */
+/** @deprecated Autorun prefetch disabled — no-op. */
 export function prefetchLedSdFromSync(
-  syncData: SyncCheckResponseData | null | undefined,
+  _syncData: SyncCheckResponseData | null | undefined,
 ): void {
-  if (!syncData?.media?.length) return;
-  requestSdCachePrefetch(
-    syncData.media.map((m) => ({
-      mediaVersionId: m.mediaVersionId,
-      fileUrl: m.fileUrl,
-    })),
-  );
+  /* intentional no-op */
 }

@@ -1,8 +1,9 @@
 ' Perform6 BrightSign autorun - thin boot + deferred SD workers
 ' BOOT ONLY: identity, DWS, SetScreenModes, HtmlWidget Show, native LED idle/playback, reboot.
 ' DEFERRED (after Show / when JS asks): cache prefetch (legacy fallback), OTA install, clearCache.
-' MEDIA: AssetPoolFetcher staging → realize /storage/sd/perform6-media/*.mp4 (pool pruned);
-'   autorun HTTP fallback → same SD:/perform6-media (*.part → verify → rename).
+' MEDIA: AssetPoolFetcher + AssetRealizer → /storage/sd/perform6-media/*.mp4
+'   (JS never uses Node copyFile or autorun led-cache-prefetch for media).
+'   Prefetch progress file kept for diagnostics only if autorun still receives old msgs.
 ' Byte sizes: BrightSign-safe Float/Val/LongInteger — never 32-bit Integer for multi-GB files.
 ' Free space: GetFreeInMegabytes() (never freeMb*1048576 into Integer).
 ' Bridge led-cache-prefetch = last-resort fallback only (inbound bridge historically flaky).
@@ -1166,14 +1167,39 @@ Sub FlushDeferredCacheComplete(states as Object)
   LedLog("=== Perform6: prefetch queue empty (complete posted) ===")
 End Sub
 
+Sub WriteCacheProgressFile(status as String, url as String, name as String, mediaVersionId as String, errorText as String, destPath as String, bytesDownloaded as Dynamic, bytesTotal as Dynamic, doneCount as Integer, totalCount as Integer)
+  ' Bridge-independent progress for JS (inbound messageport often dead).
+  q = Chr(34)
+  json = "{"
+  json = json + q + "type" + q + ":" + q + "led-cache-progress" + q + ","
+  json = json + q + "status" + q + ":" + q + status + q + ","
+  json = json + q + "url" + q + ":" + q + url + q + ","
+  json = json + q + "name" + q + ":" + q + name + q + ","
+  json = json + q + "mediaVersionId" + q + ":" + q + mediaVersionId + q + ","
+  json = json + q + "error" + q + ":" + q + errorText + q + ","
+  json = json + q + "destPath" + q + ":" + q + destPath + q + ","
+  json = json + q + "bytesDownloaded" + q + ":" + q + ByteSizeToStr(bytesDownloaded) + q + ","
+  json = json + q + "bytesTotal" + q + ":" + q + ByteSizeToStr(bytesTotal) + q + ","
+  json = json + q + "doneCount" + q + ":" + q + IntToStr(doneCount) + q + ","
+  json = json + q + "totalCount" + q + ":" + q + IntToStr(totalCount) + q + ","
+  json = json + q + "writtenAt" + q + ":" + q + IntToStr(ProgressNowMs()) + q
+  json = json + "}"
+  WriteAsciiFile("SD:/perform6-media-progress.json", json)
+  WriteAsciiFile("/storage/sd/perform6-media-progress.json", json)
+End Sub
+
 Sub PostCacheProgress(states as Object, status as String, url as String, name as String, mediaVersionId as String, errorText as String, destPath as String, bytesDownloaded as Dynamic, bytesTotal as Dynamic)
   worker = FindPrefetchWorker(states)
   if type(worker) <> "roAssociativeArray" then return
   RecalcPrefetchTotals(worker)
+
+  ' Always write SD progress file — JS polls this when bridge inbound is dead.
+  WriteCacheProgressFile(status, url, name, mediaVersionId, errorText, destPath, bytesDownloaded, bytesTotal, worker.prefetchDone, worker.prefetchTotal)
+
   html = worker.notifyHtml
   if type(html) <> "roHtmlWidget" then html = ResolveP6Html(states, worker)
   if type(html) <> "roHtmlWidget" then
-    LedLog("=== Perform6: cache progress dropped (no html) status=" + status + " ===")
+    LedLog("=== Perform6: cache progress file-only (no html) status=" + status + " ===")
     return
   end if
   worker.notifyHtml = html
@@ -2133,7 +2159,7 @@ Sub HandleLedHello(payload as Object, states as Object)
   msg.AddReplace("type", "led-hello-ack")
   msg.AddReplace("protocolVersion", "2")
   msg.AddReplace("features", "ota-ping,ota-reboot,cache-cancel,bridge-heal,bridge-recycle,fs,playback-ack")
-  msg.AddReplace("autorunRelease", "1.3.0")
+  msg.AddReplace("autorunRelease", "1.4.1")
   PostJsMessage(html, msg)
   g = GetGlobalAA()
   lastJs = ""
@@ -2172,7 +2198,7 @@ Sub DiagEchoInbound(rxType as String, states as Object)
   msg.AddReplace("type", "led-diag-echo")
   msg.AddReplace("rxType", rxType)
   msg.AddReplace("rxCount", IntToStr(n))
-  msg.AddReplace("autorunRelease", "1.3.0")
+  msg.AddReplace("autorunRelease", "1.4.1")
   PostJsMessage(html, msg)
   if n = 1 or n mod 20 = 0 then
     LedLog("=== Perform6: DIAG echo #" + IntToStr(n) + " rx=" + rxType + " ===")
