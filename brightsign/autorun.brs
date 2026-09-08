@@ -2,8 +2,10 @@
 ' BOOT ONLY: identity, DWS, SetScreenModes, HtmlWidget Show, native LED idle/playback, reboot.
 ' DEFERRED (after Show / when JS asks): cache prefetch (legacy fallback), OTA install, clearCache.
 ' MEDIA: AssetPoolFetcher → play GetPoolFilePath (perform6-media-pool/sha256-…) on LED.
-'   No Node copyFile / AssetRealizer / second media store. Prefetch disabled for media.
-'   XT playback command: SD:/perform6-xt-playback.json (bridge optional).
+'   No Node AssetRealizer / second store by default. Prefetch disabled for media.
+'   LED command bus (PRIMARY): SD:/perform6-led-playback.json (XT+XC; bridge optional/dead).
+'   Legacy: SD:/perform6-xt-playback.json still accepted.
+'   PlayFile: alias-hit first if .mp4 exists; else pool-direct; CopyFile alias only on fail.
 ' Byte sizes: BrightSign-safe Float/Val/LongInteger — never 32-bit Integer for multi-GB files.
 ' Free space: GetFreeInMegabytes() (never freeMb*1048576 into Integer).
 ' Bridge led-cache-prefetch = last-resort fallback only (inbound bridge historically flaky).
@@ -18,7 +20,8 @@
 '   4K/8K is hardware-capable but NOT the fleet default (load + media size).
 '   perform6-display.txt: MULTI (default) | MULTI_NOFULLRES only.
 ' SetScreenModes only when config differs. Do NOT call SetMode / trusted_iframes / roTouchScreen.Enable.
-' Media store: SD:/perform6-media-pool (AssetPool). Legacy SD:/perform6-media/*.mp4 still playable.
+' Media store: SD:/perform6-media-pool (AssetPool GetPoolFilePath). Legacy perform6-media/*.mp4 OK.
+' XT/XC init: HtmlWidget.Show BEFORE native players; exactly one player per LED output.
 ' HOT PATH: idle first; BA-simple bridge (no auto recycle/heal); hello/ping/playback quiet.
 
 Sub SafePrint(msg as String)
@@ -1015,15 +1018,152 @@ Function CreateLedState(vp as Object, key as String) as Object
   return st
 End Function
 
-Function PlayLocalFile(vp as Object, path as String) as Boolean
-  ok = false
-  ok = vp.PlayFile(path)
-  if ok <> true then
-    aa = CreateObject("roAssociativeArray")
-    aa.Filename = path
-    ok = vp.PlayFile(aa)
+Function LocalMediaExists(path as String) as Boolean
+  path = NormalizeLocalSrc(path)
+  if Len(path) = 0 then return false
+  if PartFileBytes(path) > 0 then return true
+  alt = ""
+  if Left(path, 4) = "SD:/" then
+    alt = "/storage/sd/" + Mid(path, 5)
+  else if Left(path, 12) = "/storage/sd/" then
+    alt = "SD:/" + Mid(path, 13)
   end if
-  return (ok = true)
+  if Len(alt) > 0 and PartFileBytes(alt) > 0 then return true
+  fs = CreateObject("roFileSystem")
+  if type(fs) = "roFileSystem" then
+    if fs.Exists(path) = true then return true
+    if Len(alt) > 0 and fs.Exists(alt) = true then return true
+  end if
+  return false
+End Function
+
+' True for AssetPool hash objects (no .mp4). BrightAuthor plays these via
+' PlayFile({Filename: GetPoolFilePath(...)[, ProbeString]}) — extensionless is valid.
+Function IsExtensionlessPoolPath(path as String) as Boolean
+  low = LCase(path)
+  if Instr(1, low, "perform6-media-pool") = 0 then return false
+  if HasVideoExtension(path) then return false
+  return true
+End Function
+
+Function PathLeafName(path as String) as String
+  path = NormalizeLocalSrc(path)
+  leaf = path
+  while Instr(1, leaf, "/") > 0
+    leaf = Mid(leaf, Instr(1, leaf, "/") + 1)
+  end while
+  while Instr(1, leaf, "\") > 0
+    leaf = Mid(leaf, Instr(1, leaf, "\") + 1)
+  end while
+  return leaf
+End Function
+
+' Expected .mp4 alias path for an extensionless pool leaf (no I/O).
+' Alias presence on SD is the persist signal that this hash needs .mp4 PlayFile.
+Function PoolMp4AliasPath(poolPath as String) as String
+  poolPath = NormalizeLocalSrc(poolPath)
+  if not IsExtensionlessPoolPath(poolPath) then return ""
+  leaf = PathLeafName(poolPath)
+  if Len(leaf) = 0 then return ""
+  if Right(LCase(leaf), 4) = ".mp4" then return ""
+  return CacheDir() + "/" + leaf + ".mp4"
+End Function
+
+' CopyFile → SD:/perform6-media/<leaf>.mp4 only when alias missing.
+' BrightScript has no hardlink API; MoveFile would remove pool object — CopyFile once, reuse.
+Function EnsureMp4PlayAlias(poolPath as String) as String
+  poolPath = NormalizeLocalSrc(poolPath)
+  dest = PoolMp4AliasPath(poolPath)
+  if Len(dest) = 0 then return ""
+  CreateDirectory(CacheDir())
+  if LocalMediaExists(dest) then return dest
+
+  leaf = PathLeafName(poolPath)
+  srcCandidates = CreateObject("roArray", 2, true)
+  srcCandidates.Push(poolPath)
+  if Left(poolPath, 4) = "SD:/" then
+    srcCandidates.Push("/storage/sd/" + Mid(poolPath, 5))
+  else if Left(poolPath, 12) = "/storage/sd/" then
+    srcCandidates.Push("SD:/" + Mid(poolPath, 13))
+  end if
+
+  for each src in srcCandidates
+    ok = CopyFile(src, dest)
+    if ok = true and LocalMediaExists(dest) then
+      LedLog("=== Perform6: PlayLocalFile alias-create " + dest + " ===")
+      return dest
+    end if
+    altDest = "/storage/sd/perform6-media/" + leaf + ".mp4"
+    ok = CopyFile(src, altDest)
+    if ok = true and LocalMediaExists(altDest) then
+      LedLog("=== Perform6: PlayLocalFile alias-create " + altDest + " ===")
+      return NormalizeLocalSrc(altDest)
+    end if
+  end for
+  LedLog("=== Perform6: PlayLocalFile alias-create FAILED for " + poolPath + " ===")
+  return ""
+End Function
+
+Function TryPlayFileOnce(vp as Object, p as String) as Boolean
+  ok = vp.PlayFile(p)
+  if ok = true then return true
+  ' BrightAuthor pattern: PlayFile({Filename: GetPoolFilePath(...)})
+  aa = CreateObject("roAssociativeArray")
+  aa.Filename = p
+  ok = vp.PlayFile(aa)
+  if ok = true then return true
+  return false
+End Function
+
+' Pool hash play order:
+'   1) alias-hit — if SD:/perform6-media/<leaf>.mp4 exists, PlayFile it first (skip fail tax)
+'   2) pool-direct — PlayFile extensionless GetPoolFilePath
+'   3) alias-create — CopyFile once only if alias missing AND pool PlayFile failed
+Function PlayLocalFile(vp as Object, path as String) as Boolean
+  path = NormalizeLocalSrc(path)
+  isPool = IsExtensionlessPoolPath(path)
+
+  if isPool then
+    existingAlias = PoolMp4AliasPath(path)
+    if Len(existingAlias) > 0 and LocalMediaExists(existingAlias) then
+      if TryPlayFileOnce(vp, existingAlias) then
+        LedLog("=== Perform6: PlayLocalFile alias-hit " + existingAlias + " ===")
+        return true
+      end if
+      ' Stale/corrupt alias — remove so we can recreate after pool retry.
+      DeleteFile(existingAlias)
+      altAlias = "/storage/sd/perform6-media/" + PathLeafName(path) + ".mp4"
+      if LocalMediaExists(altAlias) then DeleteFile(altAlias)
+    end if
+  end if
+
+  candidates = CreateObject("roArray", 4, true)
+  candidates.Push(path)
+  if Left(path, 4) = "SD:/" then
+    candidates.Push("/storage/sd/" + Mid(path, 5))
+  else if Left(path, 12) = "/storage/sd/" then
+    candidates.Push("SD:/" + Mid(path, 13))
+  end if
+  for each p in candidates
+    if TryPlayFileOnce(vp, p) then
+      if isPool then
+        LedLog("=== Perform6: PlayLocalFile pool-direct OK " + p + " ===")
+      end if
+      return true
+    end if
+  end for
+
+  if isPool then
+    alias = EnsureMp4PlayAlias(path)
+    if Len(alias) > 0 then
+      if TryPlayFileOnce(vp, alias) then
+        LedLog("=== Perform6: PlayLocalFile alias-play OK " + alias + " ===")
+        return true
+      end if
+    end if
+  end if
+  LedLog("=== Perform6: PlayLocalFile exhausted " + path + " ===")
+  return false
 End Function
 
 Function PlayNetworkStream(st as Object, url as String) as Boolean
@@ -2165,7 +2305,7 @@ Sub HandleLedHello(payload as Object, states as Object)
   msg.AddReplace("type", "led-hello-ack")
   msg.AddReplace("protocolVersion", "2")
   msg.AddReplace("features", "ota-ping,ota-reboot,cache-cancel,bridge-heal,bridge-recycle,fs,playback-ack")
-  msg.AddReplace("autorunRelease", "1.5.0")
+  msg.AddReplace("autorunRelease", "1.5.4")
   PostJsMessage(html, msg)
   g = GetGlobalAA()
   lastJs = ""
@@ -2204,7 +2344,7 @@ Sub DiagEchoInbound(rxType as String, states as Object)
   msg.AddReplace("type", "led-diag-echo")
   msg.AddReplace("rxType", rxType)
   msg.AddReplace("rxCount", IntToStr(n))
-  msg.AddReplace("autorunRelease", "1.5.0")
+  msg.AddReplace("autorunRelease", "1.5.4")
   PostJsMessage(html, msg)
   if n = 1 or n mod 20 = 0 then
     LedLog("=== Perform6: DIAG echo #" + IntToStr(n) + " rx=" + rxType + " ===")
@@ -2861,24 +3001,33 @@ Sub PlayNativeSrc(st as Object, src as String, msgPort as Object, states as Obje
       st.vp.StopClear()
       st.vp.SetViewMode("FillScreenAndCentered")
       st.idleShown = false
+      Sleep(100)
     end if
-    ok = PlayLocalFile(st.vp, src)
+    if not LocalMediaExists(src) then
+      LedLog("=== Perform6: LED " + st.key + " media missing " + src + " ===")
+      ok = false
+    else
+      ok = PlayLocalFile(st.vp, src)
+    end if
   end if
 
   if ok then
     st.playingUrl = src
+    st.idleShown = false
     st.vp.SetLoopMode(st.loopMode)
     if st.paused then
       st.vp.Pause()
     else
       st.vp.Resume()
     end if
+    LedLog("=== Perform6: LED " + st.key + " play OK " + src + " ===")
   else
     st.playingUrl = ""
     LedLog("=== Perform6: LED " + st.key + " play FAILED " + src + " ===")
     ' Always restore splash after a failed swap — wasIdle alone missed some clears.
     if st.idleShown = false then PlayIdleClip(st)
   end if
+  FlushLedLog()
 End Sub
 
 Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, states as Object)
@@ -2900,6 +3049,7 @@ Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, stat
     if Len(st.playingUrl) = 0 then PlayIdleClip(st)
     PostPlaybackAck(states, st, payload, false, "no playable src")
     WriteXtPlaybackStatus(st, "no playable src", false)
+    FlushLedLog()
     return
   end if
 
@@ -2911,7 +3061,8 @@ Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, stat
   st.wantUrl = src
   WriteXtPlaybackStatus(st, "accepted", false)
 
-  if src = st.playingUrl and not forceRestart then
+  ' Idle splash must never short-circuit as "already playing".
+  if src = st.playingUrl and not forceRestart and st.idleShown <> true and Len(st.playingUrl) > 0 then
     st.vp.SetLoopMode(st.loopMode)
     ApplyLedVolume(st, payload)
     ApplyLedPauseState(st)
@@ -2959,15 +3110,15 @@ Sub PostPlaybackAck(states as Object, st as Object, payload as Object, ok as Boo
   PostJsMessage(html, msg)
 End Sub
 
-' --- Bridge-independent playback fallback -------------------------------------
-' JS writes the desired native-playback state to SD:/perform6-xt-playback.json
-' with Node fs (no BSMessagePort). autorun re-applies it on the 15s timer and
-' on boot, so the LED keeps playing real content even when the JS<->autorun
-' message bridge never comes up (outbound-only / one-way port).
+' --- Bridge-independent LED playback bus (PRIMARY for XT + XC) ----------------
+' JS writes SD:/perform6-led-playback.json (commands[] per LED target).
+' Legacy SD:/perform6-xt-playback.json still accepted (maps to target "led").
+' Bridge PostBSMessage is best-effort only — never required for LED play.
 
-Function LoadXtPlaybackFileAA() as Object
-  ' Node fs writes /storage/sd/… — try both BrightScript path forms.
-  paths = CreateObject("roArray", 2, true)
+Function LoadLedPlaybackFileAA() as Object
+  paths = CreateObject("roArray", 4, true)
+  paths.Push("SD:/perform6-led-playback.json")
+  paths.Push("/storage/sd/perform6-led-playback.json")
   paths.Push("SD:/perform6-xt-playback.json")
   paths.Push("/storage/sd/perform6-xt-playback.json")
   for each path in paths
@@ -2976,6 +3127,7 @@ Function LoadXtPlaybackFileAA() as Object
       if Len(text) > 0 then
         parsed = ParseJSON(text)
         if type(parsed) = "roAssociativeArray" then return parsed
+        LedLog("=== Perform6: LED playback file JSON parse fail " + path + " len=" + IntToStr(Len(text)) + " ===")
       end if
     end if
   end for
@@ -2997,8 +3149,7 @@ Function BoolToStr(v as Boolean) as String
   return "0"
 End Function
 
-Function XtPlaybackSignature(aa as Object) as String
-  ' Include writtenAt so JS can force re-apply after media finishes downloading.
+Function LedCmdSignature(aa as Object) as String
   sig = PayloadString(aa, "src")
   sig = sig + "|" + IntToStr(PayloadInt(aa, "restartNonce", 0))
   sig = sig + "|" + IntToStr(PayloadInt(aa, "volumePercent", 100))
@@ -3009,70 +3160,270 @@ Function XtPlaybackSignature(aa as Object) as String
   return sig
 End Function
 
-Sub WriteXtPlaybackStatus(st as Object, detail as String, ended as Boolean)
+Function ResolveLedCommandTarget(aa as Object) as String
+  target = PayloadString(aa, "target")
+  if Len(target) > 0 then return target
+  role = PayloadString(aa, "role")
+  if role = "led2" or role = "led3" or role = "led" then return role
+  ' Legacy xt-playback used role=touch for HDMI-2 LED.
+  if role = "touch" or role = "primary" or Len(role) = 0 then return "led"
+  return role
+End Function
+
+Function LoadLedStatusRootAA() as Object
+  paths = CreateObject("roArray", 2, true)
+  paths.Push("SD:/perform6-led-playback-status.json")
+  paths.Push("/storage/sd/perform6-led-playback-status.json")
+  for each path in paths
+    text = ReadAsciiFile(path)
+    if Len(text) > 0 then
+      parsed = ParseJSON(text)
+      if type(parsed) = "roAssociativeArray" then return parsed
+    end if
+  end for
+  return invalid
+End Function
+
+Function RoleStatusEntryFromFlat(aa as Object) as Object
+  if type(aa) <> "roAssociativeArray" then return invalid
+  role = AsBrString(aa.role)
+  if Len(role) = 0 then return invalid
+  entry = CreateObject("roAssociativeArray")
+  entry.role = role
+  entry.src = AsBrString(aa.src)
+  entry.wantUrl = AsBrString(aa.wantUrl)
+  entry.restartNonce = AsBrString(aa.restartNonce)
+  entry.ok = AsBrString(aa.ok)
+  entry.state = AsBrString(aa.state)
+  entry.detail = AsBrString(aa.detail)
+  entry.ended = AsBrString(aa.ended)
+  return entry
+End Function
+
+' Per-role keys in one JSON (read-modify-write) so XC led2/led3 do not clobber.
+' Sidecar: SD:/perform6-led-playback-status-<role>.json
+Sub WriteLedPlaybackStatus(st as Object, detail as String, ended as Boolean)
   if type(st) <> "roAssociativeArray" then return
   okStr = "0"
-  if Len(st.playingUrl) > 0 then okStr = "1"
+  if Len(st.playingUrl) > 0 and st.idleShown <> true then okStr = "1"
   endedStr = "0"
   if ended then endedStr = "1"
-  ' Explicit state machine for JS (bridge-independent): accepted|started|pending|error|ended
   state = "pending"
   if ended then
     state = "ended"
   else if detail = "accepted" then
     state = "accepted"
-  else if Instr(1, detail, "fail") > 0 or Instr(1, detail, "error") > 0 or detail = "no playable src" or detail = "no video player" then
+  else if Instr(1, detail, "fail") > 0 or Instr(1, detail, "error") > 0 or detail = "no playable src" or detail = "no video player" or detail = "media missing" then
     state = "error"
-  else if Len(st.playingUrl) > 0 then
+  else if Len(st.playingUrl) > 0 and st.idleShown <> true then
     state = "started"
   else if Instr(1, detail, "pending") > 0 then
     state = "pending"
   end if
+
+  roleKey = st.key
+  entry = CreateObject("roAssociativeArray")
+  entry.role = roleKey
+  entry.src = st.playingUrl
+  entry.wantUrl = st.wantUrl
+  entry.restartNonce = IntToStr(st.nonce)
+  entry.ok = okStr
+  entry.state = state
+  entry.detail = detail
+  entry.ended = endedStr
+
+  root = CreateObject("roAssociativeArray")
+  root.type = "led-playback-status"
+  roles = CreateObject("roAssociativeArray")
+
+  existing = LoadLedStatusRootAA()
+  if type(existing) = "roAssociativeArray" then
+    if type(existing.roles) = "roAssociativeArray" then
+      roles = existing.roles
+    else
+      migrated = RoleStatusEntryFromFlat(existing)
+      if type(migrated) = "roAssociativeArray" then
+        roles.AddReplace(migrated.role, migrated)
+      end if
+    end if
+  end if
+  roles.AddReplace(roleKey, entry)
+  root.roles = roles
+
+  ' Flat mirror of the role just written (legacy XT / last-event probe).
+  root.role = roleKey
+  root.src = entry.src
+  root.wantUrl = entry.wantUrl
+  root.restartNonce = entry.restartNonce
+  root.ok = entry.ok
+  root.state = entry.state
+  root.detail = entry.detail
+  root.ended = entry.ended
+
+  json = FormatJSON(root)
+  if type(json) <> "roString" and type(json) <> "String" then json = ""
+  if Len(json) = 0 then
+    q = Chr(34)
+    json = "{"
+    json = json + q + "type" + q + ":" + q + "led-playback-status" + q + ","
+    json = json + q + "role" + q + ":" + q + roleKey + q + ","
+    json = json + q + "src" + q + ":" + q + st.playingUrl + q + ","
+    json = json + q + "wantUrl" + q + ":" + q + st.wantUrl + q + ","
+    json = json + q + "restartNonce" + q + ":" + q + IntToStr(st.nonce) + q + ","
+    json = json + q + "ok" + q + ":" + q + okStr + q + ","
+    json = json + q + "state" + q + ":" + q + state + q + ","
+    json = json + q + "detail" + q + ":" + q + detail + q + ","
+    json = json + q + "ended" + q + ":" + q + endedStr + q
+    json = json + "}"
+  end if
+
+  WriteAsciiFile("SD:/perform6-led-playback-status.json", json)
+  WriteAsciiFile("/storage/sd/perform6-led-playback-status.json", json)
+  WriteAsciiFile("SD:/perform6-xt-playback-status.json", json)
+  WriteAsciiFile("/storage/sd/perform6-xt-playback-status.json", json)
+
+  entryJson = FormatJSON(entry)
+  if Len(entryJson) = 0 then entryJson = json
+  WriteAsciiFile("SD:/perform6-led-playback-status-" + roleKey + ".json", entryJson)
+  WriteAsciiFile("/storage/sd/perform6-led-playback-status-" + roleKey + ".json", entryJson)
+End Sub
+
+Sub WriteLedBusHeartbeat(detail as String, src as String)
   q = Chr(34)
   json = "{"
-  json = json + q + "type" + q + ":" + q + "xt-playback-status" + q + ","
-  json = json + q + "role" + q + ":" + q + st.key + q + ","
-  json = json + q + "src" + q + ":" + q + st.playingUrl + q + ","
-  json = json + q + "wantUrl" + q + ":" + q + st.wantUrl + q + ","
-  json = json + q + "restartNonce" + q + ":" + q + IntToStr(st.nonce) + q + ","
-  json = json + q + "ok" + q + ":" + q + okStr + q + ","
-  json = json + q + "state" + q + ":" + q + state + q + ","
+  json = json + q + "type" + q + ":" + q + "led-bus" + q + ","
   json = json + q + "detail" + q + ":" + q + detail + q + ","
-  json = json + q + "ended" + q + ":" + q + endedStr + q
+  json = json + q + "src" + q + ":" + q + src + q + ","
+  json = json + q + "ts" + q + ":" + q + IntToStr(ProgressNowMs()) + q
   json = json + "}"
-  WriteAsciiFile("SD:/perform6-xt-playback-status.json", json)
+  WriteAsciiFile("SD:/perform6-led-bus.json", json)
+  WriteAsciiFile("SD:/perform6-xt-bus.json", json)
+End Sub
+
+' Back-compat aliases used by ApplyNativePlayback / MediaEnded.
+Sub WriteXtPlaybackStatus(st as Object, detail as String, ended as Boolean)
+  WriteLedPlaybackStatus(st, detail, ended)
+End Sub
+
+Sub WriteXtBusHeartbeat(detail as String, src as String)
+  WriteLedBusHeartbeat(detail, src)
+End Sub
+
+Function LoadXtPlaybackFileAA() as Object
+  return LoadLedPlaybackFileAA()
+End Function
+
+Function XtPlaybackSignature(aa as Object) as String
+  return LedCmdSignature(aa)
+End Function
+
+Sub ApplyOneLedPlaybackCommand(states as Object, msgPort as Object, aa as Object, reason as String)
+  if type(aa) <> "roAssociativeArray" then return
+  target = ResolveLedCommandTarget(aa)
+  st = FindLedStateByKey(states, target)
+  if type(st) <> "roAssociativeArray" then
+    WriteLedBusHeartbeat("no-led-state-" + target, reason)
+    return
+  end if
+  if type(st.vp) <> "roVideoPlayer" then
+    WriteLedBusHeartbeat("no-video-player-" + target, reason)
+    WriteLedPlaybackStatus(st, "no video player", false)
+    return
+  end if
+
+  src = PayloadString(aa, "src")
+  fallbackSrc = PayloadString(aa, "fallbackSrc")
+  playSrc = src
+  if not IsPlayableNativeSrc(playSrc) then playSrc = fallbackSrc
+  if not IsPlayableNativeSrc(playSrc) then
+    WriteLedBusHeartbeat("no-playable-src-" + target, src)
+    WriteLedPlaybackStatus(st, "no playable src", false)
+    return
+  end if
+
+  sig = LedCmdSignature(aa)
+  g = GetGlobalAA()
+  sigKey = "p6PbSig_" + target
+  lastSig = ""
+  lastVal = g.Lookup(sigKey)
+  if type(lastVal) = "roString" or type(lastVal) = "String" then lastSig = lastVal
+
+  needApply = (sig <> lastSig)
+  if Len(st.playingUrl) = 0 then needApply = true
+  if st.idleShown = true then needApply = true
+  if needApply <> true then
+    WriteLedBusHeartbeat("playing-" + target, st.playingUrl)
+    return
+  end if
+
+  g.AddReplace(sigKey, sig)
+  WriteLedBusHeartbeat("apply-" + reason + "-" + target, playSrc)
+  LedLog("=== Perform6: LED " + target + " command via SD file (" + reason + ") nonce " + IntToStr(PayloadInt(aa, "restartNonce", 0)) + " src " + playSrc + " ===")
+  FlushLedLog()
+  ApplyNativePlayback(st, aa, msgPort, states)
+
+  if Len(st.playingUrl) = 0 or st.idleShown = true then
+    g.AddReplace(sigKey, "")
+    WriteLedPlaybackStatus(st, "file-play-pending", false)
+    WriteLedBusHeartbeat("pending-" + target, playSrc)
+  else
+    WriteLedPlaybackStatus(st, "file-play-" + reason, false)
+    WriteLedBusHeartbeat("started-" + target, st.playingUrl)
+  end if
+  FlushLedLog()
 End Sub
 
 Sub MaybeResumePlaybackFromFile(states as Object, msgPort as Object, reason as String)
-  st = FindLedStateByKey(states, "led")
-  if type(st) <> "roAssociativeArray" then return
-  if type(st.vp) <> "roVideoPlayer" then return
-
-  aa = LoadXtPlaybackFileAA()
-  if type(aa) <> "roAssociativeArray" then return
-  if PayloadString(aa, "type") <> "xt-playback" then return
-  if not IsPlayableNativeSrc(PayloadString(aa, "src")) then
-    if not IsPlayableNativeSrc(PayloadString(aa, "fallbackSrc")) then return
+  aa = LoadLedPlaybackFileAA()
+  if type(aa) <> "roAssociativeArray" then
+    WriteLedBusHeartbeat("no-command-file", reason)
+    return
   end if
 
-  sig = XtPlaybackSignature(aa)
+  typeStr = PayloadString(aa, "type")
+  if typeStr = "led-playback" then
+    cmds = aa.Lookup("commands")
+    if type(cmds) <> "roArray" then
+      WriteLedBusHeartbeat("bad-commands", reason)
+      return
+    end if
+    if cmds.Count() = 0 then
+      WriteLedBusHeartbeat("empty-commands", reason)
+      return
+    end if
+    for each cmd in cmds
+      if type(cmd) = "roAssociativeArray" then
+        ApplyOneLedPlaybackCommand(states, msgPort, cmd, reason)
+      end if
+    end for
+    return
+  end if
+
+  if typeStr = "xt-playback" or typeStr = "xc-playback" then
+    ApplyOneLedPlaybackCommand(states, msgPort, aa, reason)
+    return
+  end if
+
+  WriteLedBusHeartbeat("bad-type", reason)
+End Sub
+
+' Backup poll when roTimer identity matching fails on some BOS builds.
+Sub MaybePollLedPlaybackFile(states as Object, msgPort as Object)
+  if type(states) <> "roArray" then return
+  if states.Count() = 0 then return
   g = GetGlobalAA()
-  lastSig = ""
-  if type(g.p6PbFileSig) = "roString" or type(g.p6PbFileSig) = "String" then lastSig = g.p6PbFileSig
-  if sig = lastSig then return
-  g.p6PbFileSig = sig
-
-  LedLog("=== Perform6: XT playback command via SD file (" + reason + ") nonce " + IntToStr(PayloadInt(aa, "restartNonce", 0)) + " src " + PayloadString(aa, "src") + " ===")
-  ApplyNativePlayback(st, aa, msgPort, states)
-
-  ' If nothing is playing yet (media pool still filling), drop the signature so
-  ' the next poll retries instead of latching on a failed attempt.
-  if Len(st.playingUrl) = 0 then
-    g.p6PbFileSig = ""
-    WriteXtPlaybackStatus(st, "file-play-pending", false)
-  else
-    WriteXtPlaybackStatus(st, "file-play-" + reason, false)
+  if type(g.p6PbPollSpan) <> "roTimespan" then
+    g.p6PbPollSpan = CreateObject("roTimespan")
+    if type(g.p6PbPollSpan) = "roTimespan" then g.p6PbPollSpan.Mark()
   end if
+  if type(g.p6PbPollSpan) <> "roTimespan" then return
+  if g.p6PbPollSpan.TotalMilliseconds() < 500 then return
+  g.p6PbPollSpan.Mark()
+  MaybeResumePlaybackFromFile(states, msgPort, "loop")
+End Sub
+
+Sub MaybePollXtPlaybackFile(states as Object, msgPort as Object)
+  MaybePollLedPlaybackFile(states, msgPort)
 End Sub
 ' ---------------------------------------------------------------------------
 
@@ -3829,21 +4180,13 @@ Sub Main()
   ' Cache/OTA workers created AFTER HtmlWidget.Show (EnsureDeferredWorkers).
 
   if profile = "XT2145" and multiOutput then
+    ' Order (BrightSign multi-out + decoder budget): HtmlWidget Show FIRST, then
+    ' exactly ONE HDMI-2 roVideoPlayer. Never allocate a pre-HTML LED player.
     SafePrint("=== Perform6: XT React HDMI-1 + native video HDMI-2 ===")
     touchRect = CreateObject("roRectangle", 0, 0, 1920, 1080)
     ledRect = CreateObject("roRectangle", 1920, 0, 1920, 1080)
     if type(touchRect) <> "roRectangle" or type(ledRect) <> "roRectangle" then
       FatalHang("=== Perform6: FATAL no XT output rectangles ===")
-    end if
-
-    LedLog("=== Perform6: HDMI-2 idle before HtmlWidget ===")
-    videoLed = TryCreateVideoPlayer(ledRect, msgPort, 2, "hdmi-2")
-    if type(videoLed) <> "roVideoPlayer" then
-      LedLog("=== Perform6: ERROR HDMI-2 roVideoPlayer create failed ===")
-    else
-      ledState = CreateLedState(videoLed, "led")
-      ledStates.Push(ledState)
-      PlayIdleClip(ledState)
     end if
 
     touchUrl = BuildAppUrl("file:///index.html", identity, profile, "touch")
@@ -3868,9 +4211,9 @@ Sub Main()
     RememberAppUrl("touch", touchUrl)
     ClearBootFailMarker()
 
-    ' Picture first: LED idle before any cache/OTA/ops work on the boot thread.
+    ' Exactly one XT HDMI-2 player — after HtmlWidget.Show (not before).
     Sleep(500)
-    LedLog("=== Perform6: HDMI-2 native roVideoPlayer (idle first) ===")
+    LedLog("=== Perform6: HDMI-2 native roVideoPlayer (single, after HtmlWidget) ===")
     videoLed = TryCreateVideoPlayer(ledRect, msgPort, 2, "hdmi-2")
     if type(videoLed) <> "roVideoPlayer" then
       LedLog("=== Perform6: ERROR HDMI-2 roVideoPlayer create failed ===")
@@ -3879,37 +4222,25 @@ Sub Main()
       ledStates.Push(ledState)
       PlayIdleClip(ledState)
       PostLedReady(htmlTouch, "xt-led-ready", "led")
+      FlushLedLog()
     end if
 
     EnsureDeferredWorkers(ledStates, htmlTouch)
     ProcessOpsOnBoot(ledStates)
     ' Resume last known content immediately — do not wait for the JS bridge.
+    FlushLedLog()
     MaybeResumePlaybackFromFile(ledStates, msgPort, "boot")
+    Sleep(1500)
+    MaybeResumePlaybackFromFile(ledStates, msgPort, "boot2")
+    FlushLedLog()
   else if profile = "XC4055" and multiOutput then
+    ' Same order as XT: HtmlWidget Show first, then one player per LED output.
     SafePrint("=== Perform6: XC React HDMI-1 + native video HDMI-2/3 ===")
     primaryRect = CreateObject("roRectangle", 0, 0, 1920, 1080)
     led2Rect = CreateObject("roRectangle", 1920, 0, 1920, 1080)
     led3Rect = CreateObject("roRectangle", 3840, 0, 1920, 1080)
     if type(primaryRect) <> "roRectangle" or type(led2Rect) <> "roRectangle" or type(led3Rect) <> "roRectangle" then
       FatalHang("=== Perform6: FATAL no XC output rectangles ===")
-    end if
-
-    LedLog("=== Perform6: HDMI-2/3 idle before HtmlWidget ===")
-    videoLed2 = TryCreateVideoPlayer(led2Rect, msgPort, 2, "hdmi-2")
-    if type(videoLed2) <> "roVideoPlayer" then
-      LedLog("=== Perform6: ERROR HDMI-2 roVideoPlayer create failed ===")
-    else
-      led2State = CreateLedState(videoLed2, "led2")
-      ledStates.Push(led2State)
-      PlayIdleClip(led2State)
-    end if
-    videoLed3 = TryCreateVideoPlayer(led3Rect, msgPort, 3, "hdmi-3")
-    if type(videoLed3) <> "roVideoPlayer" then
-      LedLog("=== Perform6: ERROR HDMI-3 roVideoPlayer create failed ===")
-    else
-      led3State = CreateLedState(videoLed3, "led3")
-      ledStates.Push(led3State)
-      PlayIdleClip(led3State)
     end if
 
     primaryUrl = BuildAppUrl("file:///index.html", identity, profile, "primary")
@@ -3934,9 +4265,8 @@ Sub Main()
     RememberAppUrl("primary", primaryUrl)
     ClearBootFailMarker()
 
-    ' Picture first on both LEDs, then deferred SD workers.
     Sleep(500)
-    LedLog("=== Perform6: HDMI-2 native roVideoPlayer (idle first) ===")
+    LedLog("=== Perform6: HDMI-2 native roVideoPlayer (single, after HtmlWidget) ===")
     videoLed2 = TryCreateVideoPlayer(led2Rect, msgPort, 2, "hdmi-2")
     if type(videoLed2) <> "roVideoPlayer" then
       LedLog("=== Perform6: ERROR HDMI-2 roVideoPlayer create failed ===")
@@ -3948,7 +4278,7 @@ Sub Main()
     end if
 
     Sleep(500)
-    LedLog("=== Perform6: HDMI-3 native roVideoPlayer (idle first) ===")
+    LedLog("=== Perform6: HDMI-3 native roVideoPlayer (single, after HtmlWidget) ===")
     videoLed3 = TryCreateVideoPlayer(led3Rect, msgPort, 3, "hdmi-3")
     if type(videoLed3) <> "roVideoPlayer" then
       LedLog("=== Perform6: ERROR HDMI-3 roVideoPlayer create failed ===")
@@ -3961,6 +4291,11 @@ Sub Main()
 
     EnsureDeferredWorkers(ledStates, htmlPrimary)
     ProcessOpsOnBoot(ledStates)
+    FlushLedLog()
+    MaybeResumePlaybackFromFile(ledStates, msgPort, "boot")
+    Sleep(1500)
+    MaybeResumePlaybackFromFile(ledStates, msgPort, "boot2")
+    FlushLedLog()
   else
     ' HD226 (and any non-multi profile): one HtmlWidget on the native canvas.
     SafePrint("=== Perform6: canvas " + StrI(width) + "x" + StrI(height) + " ===")
@@ -4020,6 +4355,8 @@ Sub Main()
     ev = wait(100, msgPort)
     FlushDeferredCacheComplete(ledStates)
     MaybeFlushLedLog()
+    ' SD bus primary — poll XT + XC even if roTimer identity matching fails.
+    if profile = "XT2145" or profile = "XC4055" then MaybePollLedPlaybackFile(ledStates, msgPort)
     if type(ev) = "roVideoEvent" then
       videoCode = ev.GetInt()
       if videoCode <> 8 then

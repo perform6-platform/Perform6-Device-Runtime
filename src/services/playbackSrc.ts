@@ -76,7 +76,8 @@ function hasVideoExtension(src: string): boolean {
 /**
  * Native LED PlayFile:
  * - SD:/perform6-media/*.mp4 (legacy realized files)
- * - SD:/perform6-media-pool/…/sha256-… (AssetPool GetPoolFilePath — BrightAuthor pattern)
+ * - SD:/perform6-media-pool/…/sha256-… (AssetPool GetPoolFilePath — BrightAuthor
+ *   PlayFile({Filename}) pattern; extensionless is valid; autorun aliases .mp4 on fail)
  */
 export function isNativeLedPlayableSrc(src: string | null | undefined): boolean {
   if (!isLocalPlaybackSrc(src) || !src) return false;

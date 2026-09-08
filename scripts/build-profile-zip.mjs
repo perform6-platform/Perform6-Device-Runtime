@@ -58,6 +58,84 @@ function fail(message) {
   process.exit(1);
 }
 
+/**
+ * Guard: XT must create HDMI-2 once (after HtmlWidget), never a pre-HTML duplicate.
+ * XC must create HDMI-2 and HDMI-3 once each after HtmlWidget.
+ */
+function assertAutorunPlayerAllocation(autorunPath) {
+  const text = fs.readFileSync(autorunPath, 'utf8');
+  if (text.includes('idle before HtmlWidget')) {
+    fail(
+      'autorun.brs still has pre-HtmlWidget LED allocation ("idle before HtmlWidget") — remove duplicate players',
+    );
+  }
+
+  const xtStart = text.indexOf('if profile = "XT2145" and multiOutput then');
+  const xcStart = text.indexOf('else if profile = "XC4055" and multiOutput then');
+  const hdStart = text.indexOf("else\n    ' HD226");
+  if (xtStart < 0 || xcStart < 0) {
+    fail('autorun.brs missing XT2145 / XC4055 multiOutput branches');
+  }
+
+  const xtBlock = text.slice(xtStart, xcStart);
+  const xcBlock = text.slice(xcStart, hdStart > xcStart ? hdStart : text.length);
+
+  const xtHdmi2 = (xtBlock.match(/TryCreateVideoPlayer\([^)]*2,\s*"hdmi-2"\)/g) || []).length;
+  if (xtHdmi2 !== 1) {
+    fail(`XT2145 branch must allocate HDMI-2 exactly once (found ${xtHdmi2})`);
+  }
+
+  const xcHdmi2 = (xcBlock.match(/TryCreateVideoPlayer\([^)]*2,\s*"hdmi-2"\)/g) || []).length;
+  const xcHdmi3 = (xcBlock.match(/TryCreateVideoPlayer\([^)]*3,\s*"hdmi-3"\)/g) || []).length;
+  if (xcHdmi2 !== 1 || xcHdmi3 !== 1) {
+    fail(
+      `XC4055 branch must allocate HDMI-2 once and HDMI-3 once (found hdmi-2=${xcHdmi2}, hdmi-3=${xcHdmi3})`,
+    );
+  }
+
+  console.log(
+    '[release:zip] autorun player assert OK (XT HDMI-2×1, XC HDMI-2×1 HDMI-3×1, no pre-HTML LED)',
+  );
+}
+
+/**
+ * Guard: XT+XC must poll unified SD LED bus; pool PlayFile + mp4 alias fallback present.
+ */
+function assertLedPlaybackBus(autorunPath) {
+  const text = fs.readFileSync(autorunPath, 'utf8');
+  const required = [
+    'perform6-led-playback.json',
+    'MaybePollLedPlaybackFile',
+    'EnsureMp4PlayAlias',
+    'PoolMp4AliasPath',
+    'IsExtensionlessPoolPath',
+    'ApplyOneLedPlaybackCommand',
+    'PlayLocalFile alias-hit',
+    'LoadLedStatusRootAA',
+    'profile = "XT2145" or profile = "XC4055"',
+  ];
+  for (const needle of required) {
+    if (!text.includes(needle)) {
+      fail(`autorun.brs missing LED SD bus requirement: ${needle}`);
+    }
+  }
+  const jsLed = path.join(root, 'src', 'platform', 'ledPlaybackFile.ts');
+  const jsXc = path.join(root, 'src', 'platform', 'xcOutputBridge.ts');
+  if (!fs.existsSync(jsLed)) fail('src/platform/ledPlaybackFile.ts missing');
+  const ledText = fs.readFileSync(jsLed, 'utf8');
+  if (!ledText.includes('readLedPlaybackStatusForRole')) {
+    fail('ledPlaybackFile.ts must read per-role status');
+  }
+  const xcText = fs.readFileSync(jsXc, 'utf8');
+  if (!xcText.includes('writeLedPlaybackFile')) {
+    fail('xcOutputBridge.ts must write SD LED bus (writeLedPlaybackFile)');
+  }
+  if (!xcText.includes('readLedPlaybackStatusForRole')) {
+    fail('xcOutputBridge.ts must read per-role LED status');
+  }
+  console.log('[release:zip] LED SD bus assert OK (alias-first, per-role status, JS write)');
+}
+
 function run(command, args, env = {}) {
   const result = spawnSync(command, args, {
     cwd: root,
@@ -174,6 +252,14 @@ function main() {
   console.log(`[release:zip] mode=${profile.mode}`);
   console.log(`[release:zip] api from ${path.basename(envFile)} (edit VITE_API_BASE_URL for production)`);
 
+  const autorun = path.join(root, 'brightsign', 'autorun.brs');
+  if (!fs.existsSync(autorun)) {
+    fail('Missing brightsign/autorun.brs');
+  }
+  assertAutorunPlayerAllocation(autorun);
+  assertLedPlaybackBus(autorun);
+  run(process.execPath, [path.join(root, 'scripts', 'assert-led-playback.mjs')]);
+
   const buildEnv = {};
   if (member) {
     buildEnv.VITE_CLUSTER_MEMBER = member;
@@ -192,7 +278,6 @@ function main() {
 
   const distIndex = path.join(root, 'dist', 'index.html');
   const distAssets = path.join(root, 'dist', 'assets');
-  const autorun = path.join(root, 'brightsign', 'autorun.brs');
   if (!fs.existsSync(distIndex) || !fs.existsSync(distAssets) || !fs.existsSync(autorun)) {
     fail('Build output incomplete (need dist/index.html, dist/assets, brightsign/autorun.brs)');
   }
@@ -264,12 +349,13 @@ function main() {
         displayMode,
         storageEncryption: {
           enabled: false,
-          note: 'Plaintext SD — HtmlWidget requires readable index.html. Media lives in SD:/perform6-media only (single-cache model).',
+          note: 'Plaintext SD — HtmlWidget requires readable index.html. Authoritative media: SD:/perform6-media-pool (AssetPool).',
         },
         mediaCache: {
-          path: 'SD:/perform6-media',
-          naming: 'SimpleHash(fileUrl)+ext',
-          usedBy: ['HtmlWidget file:// playback', 'native roVideoPlayer LEDs'],
+          path: 'SD:/perform6-media-pool',
+          naming: 'AssetPool GetPoolFilePath (sha256-… hash objects)',
+          usedBy: ['native roVideoPlayer LEDs via PlayFile', 'JS led-playback SD bus'],
+          legacyPath: 'SD:/perform6-media (optional realized .mp4 if present)',
         },
         displayModeFile: 'perform6-display.txt',
         displayModeOptions: ['MULTI', 'MULTI_NOFULLRES'],
@@ -280,7 +366,7 @@ function main() {
                 canvas: 'HDMI-1 HtmlWidget + HDMI-2 native roVideoPlayer',
                 outputMap: 'HDMI-1 x=0; HDMI-2 x=1920',
                 mode: displayMode === 'MULTI_NOFULLRES' ? '1920x1080x60p' : '1920x1080x60p:fullres',
-                ledPlayback: 'roRtspStream for http(s) + SD:/perform6-media offline copy',
+                ledPlayback: 'PlayFile(GetPoolFilePath) under SD:/perform6-media-pool; command via perform6-led-playback.json',
                 ledIdleClip: 'led-idle.png (packaged) or led-idle.mp4 override',
                 audioRoute: 'HDMI-1 touch silent; native video audio to HDMI-2',
                 ledLog: 'SD:/perform6-led.log',
@@ -291,7 +377,7 @@ function main() {
                   canvas: 'HDMI-1 HtmlWidget + HDMI-2/3 native roVideoPlayer',
                   outputMap: 'HDMI-1 x=0; HDMI-2 x=1920; HDMI-3 x=3840',
                   mode: displayMode === 'MULTI_NOFULLRES' ? '1920x1080x60p' : '1920x1080x60p:fullres',
-                  ledPlayback: 'roRtspStream for http(s) + SD:/perform6-media offline copy',
+                  ledPlayback: 'PlayFile(GetPoolFilePath) under SD:/perform6-media-pool; command via perform6-led-playback.json',
                   ledIdleClip: 'led-idle.png (packaged) or led-idle.mp4 override',
                   audioRoute: 'SCREEN_1 to HDMI-1; SCREEN_2 to HDMI-2; SCREEN_3 to HDMI-3',
                   ledLog: 'SD:/perform6-led.log',
@@ -323,8 +409,11 @@ function main() {
       '',
       'Supported firmwares: BrightSign OS 8.2+ and 9.x (Series 5: XT/XC/HD).',
       'Storage: plaintext SD (no EncryptStorage). App files stay readable for HtmlWidget.',
-      'Media cache: SD:/perform6-media/ — single source for Bluefin/HD HTML and XT/XC LEDs.',
-      '  Videos download once into perform6-media (not IndexedDB). Rotation prune removes unused files.',
+      'Media store: SD:/perform6-media-pool/ — AssetPool GetPoolFilePath (authoritative for XT/XC LED PlayFile).',
+      '  JS writes SD:/perform6-led-playback.json; autorun polls and PlayFile(pool path). Bridge optional/dead OK.',
+      '  Extensionless sha256 pool paths: try existing .mp4 alias first; else pool-direct; CopyFile alias only on fail.',
+      '  Status: perform6-led-playback-status.json roles.{led,led2,led3} (RMW) + per-role sidecars.',
+      '  Legacy SD:/perform6-media/*.mp4 and perform6-xt-playback.json still accepted. clearCache wipes pool + media.',
       '',
       `Display mode (perform6-display.txt): ${displayMode}`,
       '  BrightSign multi-screen pattern: fixed mode per HDMI — never auto / never fleet-default 4K.',
@@ -339,10 +428,10 @@ function main() {
           ? 'Layout: HDMI-1 = React primary; HDMI-2/3 = native video for SCREEN_2/SCREEN_3.'
           : 'Canvas follows the player native resolution.',
       profileKey === 'XT2145'
-        ? 'Bluefin + LED both play from SD:/perform6-media (file:// / PlayFile); HTTPS only as online fallback.'
+        ? 'Bluefin UI on HDMI-1; LED plays from SD:/perform6-media-pool via autorun PlayFile (led-playback.json bus).'
         : profileKey === 'XC4055'
-          ? 'All outputs play from SD:/perform6-media after sync; HTTPS fallback while online.'
-          : 'Each HD226 player caches assigned media to SD:/perform6-media and plays file://.',
+          ? 'HDMI-1 React; HDMI-2/3 LEDs play from pool via autorun PlayFile (same led-playback.json bus).'
+          : 'Each HD226 player caches assigned media and plays local file:// where available.',
       profileKey === 'XT2145'
         ? 'Audio: Bluefin HDMI-1 is silent; programme audio is routed only to LED HDMI-2.'
         : profileKey === 'XC4055'
@@ -355,11 +444,14 @@ function main() {
       ...(profileKey === 'XT2145' || profileKey === 'XC4055'
         ? [
             'LED video playback:',
-            '  Prefer SD:/perform6-media local files; otherwise stream via roRtspStream and cache.',
+            '  Authoritative: SD:/perform6-media-pool hash paths (GetPoolFilePath) → PlayFile.',
+            '  Command bus: SD:/perform6-led-playback.json (JS → autorun poll; bridge optional).',
+            '  XT target=led (HDMI-2); XC targets=led2+led3 (HDMI-2/3). Legacy xt-playback.json OK.',
             '  Default idle: led-idle.png (Perform6 logo) is packaged on the SD root and loops',
             '  on the LED(s) from boot until the first deployment video arrives.',
             '  Optional override: place led-idle.mp4 on the SD root to replace the logo.',
             '  Troubleshooting: SD:/perform6-led.log lists every LED playback decision.',
+            '  XT/XC: HtmlWidget.Show before native players; exactly one player per LED output.',
             '',
           ]
         : []),
@@ -399,7 +491,7 @@ function main() {
       '  pauseMediaSync     = true  → stop media downloads (sync-check skipped)',
       '  pauseOta           = true  → refuse OTA unless Admin Install (allowWhenPaused); default',
       '                              Auto-OTA on sync is code-disabled — portal Install OTA only.',
-      '  clearCacheOnBoot   = true  → wipe SD:/perform6-media once on next boot (auto-clears)',
+      '  clearCacheOnBoot   = true  → wipe SD:/perform6-media-pool + perform6-media once on next boot (auto-clears)',
       '  rebootAfterCacheClear = true → reboot after clearCacheOnBoot',
       '  syncOnBoot         = true  → run one sync after boot (auto-clears; bypasses pause)',
       '  Emergency template: copy perform6-ops.emergency.json → perform6-ops.json',

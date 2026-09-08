@@ -1,9 +1,11 @@
 import { runtimeConfig } from '../config/runtime';
 import { getSharedMessagePort, subscribeBsMessages } from './bsMessagePort';
 import {
+  readXtBusHeartbeat,
   readXtPlaybackStatus,
   writeXtPlaybackFile,
-} from './xtPlaybackFile';
+  isLedStatusStarted,
+} from './ledPlaybackFile';
 import { toLedPlayableSrc } from '../services/playbackSrc';
 import { BridgeMsg } from '../services/bridgeProtocol';
 import { subscribeSdCacheProgress } from '../services/sdCacheBridge';
@@ -13,6 +15,7 @@ let initialized = false;
 let ignoreLedEndedUntil = 0;
 let lastPostedNonce = '';
 let lastStatusEndedNonce = '';
+let lastReassertAt = 0;
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
@@ -66,17 +69,18 @@ function buildPayload(): {
 /**
  * Primary path: SD file (autorun polls 500ms). Bridge PostBSMessage is best-effort only.
  */
-function postTouchPlayback(port: BrightSignMessagePort | null): void {
+function postTouchPlayback(port: BrightSignMessagePort | null, force = false): void {
   const payload = buildPayload();
   if (!payload.src) {
     return;
   }
 
-  const fileOk = writeXtPlaybackFile(payload, { immediate: true });
+  const fileOk = writeXtPlaybackFile(payload, { immediate: true, force });
   if (fileOk) {
     console.info('[Perform6] XT LED command via SD file (bridge optional)', {
       src: payload.src,
       restartNonce: payload.restartNonce,
+      force,
     });
   } else {
     console.warn('[Perform6] XT LED SD file write failed — trying bridge only', {
@@ -92,15 +96,15 @@ function postTouchPlayback(port: BrightSignMessagePort | null): void {
   }
 }
 
-function pollPlaybackStatus(): void {
+function pollPlaybackStatus(port: BrightSignMessagePort | null): void {
   const status = readXtPlaybackStatus();
-  if (!status) return;
+  const bus = readXtBusHeartbeat();
 
-  if (status.ok === '1' && status.restartNonce === lastPostedNonce) {
+  if (status?.ok === '1' && status.restartNonce === lastPostedNonce) {
     // LED confirmed playing via SD status — no bridge ack needed.
   }
 
-  if (status.ended === '1') {
+  if (status?.ended === '1') {
     const nonce = asString(status.restartNonce);
     if (nonce && nonce === lastStatusEndedNonce) return;
     if (nonce) lastStatusEndedNonce = nonce;
@@ -110,7 +114,24 @@ function pollPlaybackStatus(): void {
     }
     console.info('[Perform6] LED ended via SD status file');
     useRuntimeStore.getState().displayVideoEndedHandler?.();
+    return;
   }
+
+  // Reassert command on SD bus until autorun reports started (bridge stays broken OK).
+  const state = useRuntimeStore.getState();
+  const want = nativePlayableSrc(state.displayVideoSrc, state.displayPlaybackMeta?.fallbackSrc);
+  if (!want) return;
+  if (isLedStatusStarted(status)) return;
+
+  const now = Date.now();
+  if (now - lastReassertAt < 5000) return;
+  lastReassertAt = now;
+  console.info('[Perform6] XT SD bus reassert (waiting for autorun play)', {
+    status: status?.state ?? null,
+    detail: status?.detail ?? null,
+    bus: bus?.detail ?? null,
+  });
+  postTouchPlayback(port, true);
 }
 
 export function initXtOutputBridge(): void {
@@ -182,7 +203,7 @@ export function initXtOutputBridge(): void {
     }
   });
 
-  window.setInterval(pollPlaybackStatus, 1000);
+  window.setInterval(() => pollPlaybackStatus(port), 1000);
   postTouchPlayback(port);
   console.info('[Perform6] XT output bridge armed (SD file primary, messageport optional)');
 }
