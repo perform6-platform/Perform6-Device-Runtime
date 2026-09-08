@@ -111,6 +111,9 @@ function assertLedPlaybackBus(autorunPath) {
     'IsExtensionlessPoolPath',
     'ApplyOneLedPlaybackCommand',
     'PlayLocalFile alias-hit',
+    'DrainMp4AliasQueueOne',
+    'AtomicWriteAsciiFile',
+    'LedStatusRolesAA',
     'LoadLedStatusRootAA',
     'profile = "XT2145" or profile = "XC4055"',
   ];
@@ -126,6 +129,16 @@ function assertLedPlaybackBus(autorunPath) {
   if (!ledText.includes('readLedPlaybackStatusForRole')) {
     fail('ledPlaybackFile.ts must read per-role status');
   }
+  if (!ledText.includes('Sidecar first') && !ledText.includes('sidecar first')) {
+    // Prefer sidecar reads — check call order via statusRolePath before readLedPlaybackStatus
+    const idxSide = ledText.indexOf('statusRolePath(role)');
+    const idxDoc = ledText.indexOf('readLedPlaybackStatus()');
+    if (idxSide < 0 || idxDoc < 0 || idxSide > idxDoc) {
+      fail('ledPlaybackFile.ts must prefer per-role sidecar before unified status');
+    }
+  }
+  const aliasQ = path.join(root, 'src', 'services', 'mp4AliasQueue.ts');
+  if (!fs.existsSync(aliasQ)) fail('src/services/mp4AliasQueue.ts missing');
   const xcText = fs.readFileSync(jsXc, 'utf8');
   if (!xcText.includes('writeLedPlaybackFile')) {
     fail('xcOutputBridge.ts must write SD LED bus (writeLedPlaybackFile)');
@@ -133,7 +146,7 @@ function assertLedPlaybackBus(autorunPath) {
   if (!xcText.includes('readLedPlaybackStatusForRole')) {
     fail('xcOutputBridge.ts must read per-role LED status');
   }
-  console.log('[release:zip] LED SD bus assert OK (alias-first, per-role status, JS write)');
+  console.log('[release:zip] LED SD bus assert OK (alias-queue, atomic status, JS write)');
 }
 
 function run(command, args, env = {}) {
@@ -411,8 +424,9 @@ function main() {
       'Storage: plaintext SD (no EncryptStorage). App files stay readable for HtmlWidget.',
       'Media store: SD:/perform6-media-pool/ — AssetPool GetPoolFilePath (authoritative for XT/XC LED PlayFile).',
       '  JS writes SD:/perform6-led-playback.json; autorun polls and PlayFile(pool path). Bridge optional/dead OK.',
-      '  Extensionless sha256 pool paths: try existing .mp4 alias first; else pool-direct; CopyFile alias only on fail.',
-      '  Status: perform6-led-playback-status.json roles.{led,led2,led3} (RMW) + per-role sidecars.',
+      '  Extensionless sha256 pool paths: alias-hit first; pool-direct (+ProbeString); CopyFile only on fail.',
+      '  Eager alias: JS queues perform6-mp4-alias-queue.json after pool mark; autorun drains off play path.',
+      '  Status: per-role sidecars (atomic) + unified roles map from in-memory merge (no disk RMW).',
       '  Legacy SD:/perform6-media/*.mp4 and perform6-xt-playback.json still accepted. clearCache wipes pool + media.',
       '',
       `Display mode (perform6-display.txt): ${displayMode}`,

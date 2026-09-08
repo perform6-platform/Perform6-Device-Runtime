@@ -5,7 +5,8 @@
 '   No Node AssetRealizer / second store by default. Prefetch disabled for media.
 '   LED command bus (PRIMARY): SD:/perform6-led-playback.json (XT+XC; bridge optional/dead).
 '   Legacy: SD:/perform6-xt-playback.json still accepted.
-'   PlayFile: alias-hit first if .mp4 exists; else pool-direct; CopyFile alias only on fail.
+'   PlayFile: alias-hit first if .mp4 exists; else pool-direct (+ProbeString); CopyFile alias only on fail.
+'   Eager alias: JS queues SD:/perform6-mp4-alias-queue.json after pool mark; autorun drains off play path.
 ' Byte sizes: BrightSign-safe Float/Val/LongInteger — never 32-bit Integer for multi-GB files.
 ' Free space: GetFreeInMegabytes() (never freeMb*1048576 into Integer).
 ' Bridge led-cache-prefetch = last-resort fallback only (inbound bridge historically flaky).
@@ -1071,6 +1072,7 @@ End Function
 
 ' CopyFile → SD:/perform6-media/<leaf>.mp4 only when alias missing.
 ' BrightScript has no hardlink API; MoveFile would remove pool object — CopyFile once, reuse.
+' Prefer DrainMp4AliasQueue (download-time) so PlayLocalFile usually alias-hits.
 Function EnsureMp4PlayAlias(poolPath as String) as String
   poolPath = NormalizeLocalSrc(poolPath)
   dest = PoolMp4AliasPath(poolPath)
@@ -1104,6 +1106,68 @@ Function EnsureMp4PlayAlias(poolPath as String) as String
   return ""
 End Function
 
+' Drain one queued pool path per call (avoids multi-GB CopyFile stalling the event loop).
+Sub DrainMp4AliasQueueOne()
+  paths = CreateObject("roArray", 2, true)
+  paths.Push("SD:/perform6-mp4-alias-queue.json")
+  paths.Push("/storage/sd/perform6-mp4-alias-queue.json")
+  queuePath = ""
+  text = ""
+  for each p in paths
+    t = ReadAsciiFile(p)
+    if Len(t) > 0 then
+      queuePath = p
+      text = t
+      exit for
+    end if
+  end for
+  if Len(text) = 0 then return
+
+  parsed = ParseJSON(text)
+  if type(parsed) <> "roAssociativeArray" then
+    DeleteFile(queuePath)
+    return
+  end if
+  list = parsed.paths
+  if type(list) <> "roArray" then
+    DeleteFile(queuePath)
+    return
+  end if
+  if list.Count() = 0 then
+    DeleteFile(queuePath)
+    return
+  end if
+
+  nextPath = AsBrString(list[0])
+  rest = CreateObject("roArray", list.Count(), true)
+  i = 1
+  while i < list.Count()
+    rest.Push(list[i])
+    i = i + 1
+  end while
+
+  if Len(nextPath) > 0 then
+    alias = EnsureMp4PlayAlias(nextPath)
+    if Len(alias) > 0 then
+      LedLog("=== Perform6: alias-queue drained " + alias + " ===")
+    end if
+  end if
+
+  if rest.Count() = 0 then
+    DeleteFile("SD:/perform6-mp4-alias-queue.json")
+    DeleteFile("/storage/sd/perform6-mp4-alias-queue.json")
+    return
+  end if
+
+  out = CreateObject("roAssociativeArray")
+  out.type = "mp4-alias-queue"
+  out.paths = rest
+  json = FormatJSON(out)
+  if Len(json) = 0 then return
+  AtomicWriteAsciiFile("SD:/perform6-mp4-alias-queue.json", json)
+  AtomicWriteAsciiFile("/storage/sd/perform6-mp4-alias-queue.json", json)
+End Sub
+
 Function TryPlayFileOnce(vp as Object, p as String) as Boolean
   ok = vp.PlayFile(p)
   if ok = true then return true
@@ -1112,12 +1176,25 @@ Function TryPlayFileOnce(vp as Object, p as String) as Boolean
   aa.Filename = p
   ok = vp.PlayFile(aa)
   if ok = true then return true
+  ' Extensionless pool: ProbeString often unlocks PlayFile without CopyFile alias.
+  if IsExtensionlessPoolPath(p) then
+    aa2 = CreateObject("roAssociativeArray")
+    aa2.Filename = p
+    aa2.ProbeString = "mp4"
+    ok = vp.PlayFile(aa2)
+    if ok = true then return true
+    aa3 = CreateObject("roAssociativeArray")
+    aa3.Filename = p
+    aa3.ProbeString = ".mp4"
+    ok = vp.PlayFile(aa3)
+    if ok = true then return true
+  end if
   return false
 End Function
 
 ' Pool hash play order:
 '   1) alias-hit — if SD:/perform6-media/<leaf>.mp4 exists, PlayFile it first (skip fail tax)
-'   2) pool-direct — PlayFile extensionless GetPoolFilePath
+'   2) pool-direct — PlayFile extensionless GetPoolFilePath (+ ProbeString)
 '   3) alias-create — CopyFile once only if alias missing AND pool PlayFile failed
 Function PlayLocalFile(vp as Object, path as String) as Boolean
   path = NormalizeLocalSrc(path)
@@ -2736,6 +2813,8 @@ Sub HandleLedCacheClearAll(states as Object)
   WipeMediaDirectory(CacheDir())
   WipeMediaDirectory(MediaPoolDir())
   WipeMediaDirectory(LegacyCacheDir())
+  DeleteFile("SD:/perform6-mp4-alias-queue.json")
+  DeleteFile("/storage/sd/perform6-mp4-alias-queue.json")
   LedLog("=== Perform6: media store+pool cleared (OTA untouched) ===")
 End Sub
 
@@ -3184,6 +3263,73 @@ Function LoadLedStatusRootAA() as Object
   return invalid
 End Function
 
+Function LoadLedStatusSidecarEntry(roleKey as String) as Object
+  if Len(roleKey) = 0 then return invalid
+  paths = CreateObject("roArray", 2, true)
+  paths.Push("SD:/perform6-led-playback-status-" + roleKey + ".json")
+  paths.Push("/storage/sd/perform6-led-playback-status-" + roleKey + ".json")
+  for each path in paths
+    text = ReadAsciiFile(path)
+    if Len(text) > 0 then
+      parsed = ParseJSON(text)
+      if type(parsed) = "roAssociativeArray" then
+        migrated = RoleStatusEntryFromFlat(parsed)
+        if type(migrated) = "roAssociativeArray" then return migrated
+        return parsed
+      end if
+    end if
+  end for
+  return invalid
+End Function
+
+' Write via tmp + MoveFile so readers never see a half-written JSON body.
+Function AtomicWriteAsciiFile(path as String, content as String) as Boolean
+  if Len(path) = 0 then return false
+  tmp = path + ".tmp"
+  ok = WriteAsciiFile(tmp, content)
+  if ok <> true then return false
+  DeleteFile(path)
+  moved = MoveFile(tmp, path)
+  if moved = true then return true
+  ' Fallback: direct write if MoveFile fails (some firmwares).
+  ok2 = WriteAsciiFile(path, content)
+  DeleteFile(tmp)
+  return ok2 = true
+End Function
+
+' In-memory roles map — authoritative merge for this autorun process (no disk RMW race).
+Function LedStatusRolesAA() as Object
+  g = GetGlobalAA()
+  if type(g.p6LedStatusRoles) = "roAssociativeArray" then return g.p6LedStatusRoles
+
+  roles = CreateObject("roAssociativeArray")
+  existing = LoadLedStatusRootAA()
+  if type(existing) = "roAssociativeArray" then
+    if type(existing.roles) = "roAssociativeArray" then
+      roles = existing.roles
+    else
+      migrated = RoleStatusEntryFromFlat(existing)
+      if type(migrated) = "roAssociativeArray" then
+        roles.AddReplace(migrated.role, migrated)
+      end if
+    end if
+  end if
+
+  seedRoles = CreateObject("roArray", 3, true)
+  seedRoles.Push("led")
+  seedRoles.Push("led2")
+  seedRoles.Push("led3")
+  for each roleKey in seedRoles
+    side = LoadLedStatusSidecarEntry(roleKey)
+    if type(side) = "roAssociativeArray" then
+      roles.AddReplace(roleKey, side)
+    end if
+  end for
+
+  g.p6LedStatusRoles = roles
+  return roles
+End Function
+
 Function RoleStatusEntryFromFlat(aa as Object) as Object
   if type(aa) <> "roAssociativeArray" then return invalid
   role = AsBrString(aa.role)
@@ -3200,8 +3346,8 @@ Function RoleStatusEntryFromFlat(aa as Object) as Object
   return entry
 End Function
 
-' Per-role keys in one JSON (read-modify-write) so XC led2/led3 do not clobber.
-' Sidecar: SD:/perform6-led-playback-status-<role>.json
+' Per-role keys from in-memory map (not disk RMW). Sidecar written first (atomic);
+' unified JSON rebuilt from memory then atomic-replaced — multi-role safe under one autorun.
 Sub WriteLedPlaybackStatus(st as Object, detail as String, ended as Boolean)
   if type(st) <> "roAssociativeArray" then return
   okStr = "0"
@@ -3232,24 +3378,32 @@ Sub WriteLedPlaybackStatus(st as Object, detail as String, ended as Boolean)
   entry.detail = detail
   entry.ended = endedStr
 
+  roles = LedStatusRolesAA()
+  roles.AddReplace(roleKey, entry)
+
+  entryJson = FormatJSON(entry)
+  if type(entryJson) <> "roString" and type(entryJson) <> "String" then entryJson = ""
+  if Len(entryJson) = 0 then
+    q = Chr(34)
+    entryJson = "{"
+    entryJson = entryJson + q + "role" + q + ":" + q + roleKey + q + ","
+    entryJson = entryJson + q + "src" + q + ":" + q + st.playingUrl + q + ","
+    entryJson = entryJson + q + "wantUrl" + q + ":" + q + st.wantUrl + q + ","
+    entryJson = entryJson + q + "restartNonce" + q + ":" + q + IntToStr(st.nonce) + q + ","
+    entryJson = entryJson + q + "ok" + q + ":" + q + okStr + q + ","
+    entryJson = entryJson + q + "state" + q + ":" + q + state + q + ","
+    entryJson = entryJson + q + "detail" + q + ":" + q + detail + q + ","
+    entryJson = entryJson + q + "ended" + q + ":" + q + endedStr + q
+    entryJson = entryJson + "}"
+  end if
+
+  ' Sidecar first — JS prefers these; each role is independently atomic.
+  AtomicWriteAsciiFile("SD:/perform6-led-playback-status-" + roleKey + ".json", entryJson)
+  AtomicWriteAsciiFile("/storage/sd/perform6-led-playback-status-" + roleKey + ".json", entryJson)
+
   root = CreateObject("roAssociativeArray")
   root.type = "led-playback-status"
-  roles = CreateObject("roAssociativeArray")
-
-  existing = LoadLedStatusRootAA()
-  if type(existing) = "roAssociativeArray" then
-    if type(existing.roles) = "roAssociativeArray" then
-      roles = existing.roles
-    else
-      migrated = RoleStatusEntryFromFlat(existing)
-      if type(migrated) = "roAssociativeArray" then
-        roles.AddReplace(migrated.role, migrated)
-      end if
-    end if
-  end if
-  roles.AddReplace(roleKey, entry)
   root.roles = roles
-
   ' Flat mirror of the role just written (legacy XT / last-event probe).
   root.role = roleKey
   root.src = entry.src
@@ -3262,30 +3416,12 @@ Sub WriteLedPlaybackStatus(st as Object, detail as String, ended as Boolean)
 
   json = FormatJSON(root)
   if type(json) <> "roString" and type(json) <> "String" then json = ""
-  if Len(json) = 0 then
-    q = Chr(34)
-    json = "{"
-    json = json + q + "type" + q + ":" + q + "led-playback-status" + q + ","
-    json = json + q + "role" + q + ":" + q + roleKey + q + ","
-    json = json + q + "src" + q + ":" + q + st.playingUrl + q + ","
-    json = json + q + "wantUrl" + q + ":" + q + st.wantUrl + q + ","
-    json = json + q + "restartNonce" + q + ":" + q + IntToStr(st.nonce) + q + ","
-    json = json + q + "ok" + q + ":" + q + okStr + q + ","
-    json = json + q + "state" + q + ":" + q + state + q + ","
-    json = json + q + "detail" + q + ":" + q + detail + q + ","
-    json = json + q + "ended" + q + ":" + q + endedStr + q
-    json = json + "}"
-  end if
+  if Len(json) = 0 then json = entryJson
 
-  WriteAsciiFile("SD:/perform6-led-playback-status.json", json)
-  WriteAsciiFile("/storage/sd/perform6-led-playback-status.json", json)
-  WriteAsciiFile("SD:/perform6-xt-playback-status.json", json)
-  WriteAsciiFile("/storage/sd/perform6-xt-playback-status.json", json)
-
-  entryJson = FormatJSON(entry)
-  if Len(entryJson) = 0 then entryJson = json
-  WriteAsciiFile("SD:/perform6-led-playback-status-" + roleKey + ".json", entryJson)
-  WriteAsciiFile("/storage/sd/perform6-led-playback-status-" + roleKey + ".json", entryJson)
+  AtomicWriteAsciiFile("SD:/perform6-led-playback-status.json", json)
+  AtomicWriteAsciiFile("/storage/sd/perform6-led-playback-status.json", json)
+  AtomicWriteAsciiFile("SD:/perform6-xt-playback-status.json", json)
+  AtomicWriteAsciiFile("/storage/sd/perform6-xt-playback-status.json", json)
 End Sub
 
 Sub WriteLedBusHeartbeat(detail as String, src as String)
@@ -4355,6 +4491,7 @@ Sub Main()
     ev = wait(100, msgPort)
     FlushDeferredCacheComplete(ledStates)
     MaybeFlushLedLog()
+    DrainMp4AliasQueueOne()
     ' SD bus primary — poll XT + XC even if roTimer identity matching fails.
     if profile = "XT2145" or profile = "XC4055" then MaybePollLedPlaybackFile(ledStates, msgPort)
     if type(ev) = "roVideoEvent" then

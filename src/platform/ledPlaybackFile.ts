@@ -4,8 +4,8 @@
  * JS writes SD:/perform6-led-playback.json via Node fs.
  * autorun polls ~500ms and PlayFile(pool path) per target (led / led2 / led3).
  * Legacy dual-write: SD:/perform6-xt-playback.json (XT single-LED shape).
- * Status: SD:/perform6-led-playback-status.json with roles.{led,led2,led3}
- *   (+ per-role sidecars perform6-led-playback-status-<role>.json, xt alias).
+ * Status: per-role sidecars (authoritative) + unified roles map (memory-merged in autorun).
+ *   Prefer sidecar reads — safe if unified file is mid-replace.
  */
 import { getNodeFs, toNodeSdPath } from './brightSignNode';
 
@@ -50,7 +50,7 @@ export interface LedPlaybackStatus {
   role?: string;
   wantUrl?: string;
   restartNonce?: string;
-  /** Per-role map written by autorun 1.5.4+ (read-modify-write). */
+  /** Per-role map written by autorun (in-memory merge + atomic sidecars). */
   roles?: Partial<Record<LedPlaybackTarget, LedPlaybackStatus>>;
 }
 
@@ -251,20 +251,20 @@ export function readLedPlaybackStatus(): LedPlaybackStatus | null {
 }
 
 /**
- * Status for one LED role — roles map, then per-role sidecar, then flat if role matches.
+ * Status for one LED role — sidecar first (atomic per-role), then roles map, then flat.
  */
 export function readLedPlaybackStatusForRole(
   role: LedPlaybackTarget,
 ): LedPlaybackStatus | null {
+  const sidecar = asStatus(readJsonFile(statusRolePath(role)));
+  if (sidecar) {
+    return { ...sidecar, role: sidecar.role ?? role };
+  }
+
   const doc = readLedPlaybackStatus();
   const fromRoles = doc?.roles?.[role];
   if (fromRoles && typeof fromRoles === 'object') {
     return { ...fromRoles, type: doc?.type ?? fromRoles.type, role };
-  }
-
-  const sidecar = asStatus(readJsonFile(statusRolePath(role)));
-  if (sidecar) {
-    return { ...sidecar, role: sidecar.role ?? role };
   }
 
   if (doc?.role === role) return doc;

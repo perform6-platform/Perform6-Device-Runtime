@@ -22,6 +22,7 @@ import {
   MEDIA_STORE_SD,
   mediaStoreFileSdPath,
 } from './mediaStorePaths';
+import { enqueueMp4PlayAlias } from './mp4AliasQueue';
 
 const PREFETCH_MESSAGE = 'led-cache-prefetch';
 const KEEP_MESSAGE = 'led-cache-keep';
@@ -228,6 +229,8 @@ export function markMediaPoolPath(mediaVersionId: string, sdPath: string): void 
   const map = readMediaPoolPathMap();
   map[mediaVersionId] = sdPath;
   writeMediaPoolPathMap(map);
+  // Eager .mp4 alias (link/copy or autorun queue) so first PlayFile is alias-hit.
+  enqueueMp4PlayAlias(sdPath);
 }
 
 export function getMediaPoolPath(mediaVersionId: string): string | null {
