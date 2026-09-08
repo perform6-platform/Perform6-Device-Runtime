@@ -1,9 +1,9 @@
 /**
  * Single authoritative playable media store (BrightSign-aligned).
  *
- * - Playable files: /storage/sd/perform6-media/<name>.mp4  (SD:/perform6-media/…)
- * - AssetPool staging only: perform6-media-pool (deleted after realize)
- * - Legacy playable dir perform6-cache is wiped on clear; not written anymore
+ * - Playable: AssetPool GetPoolFilePath under perform6-media-pool (sha256-…, no copy)
+ * - Legacy playable: /storage/sd/perform6-media/<name>.mp4 if still present
+ * - Legacy dir perform6-cache is wiped on clear; not written anymore
  *
  * Node/JS always use /storage/sd/… ; BrightScript PlayFile uses SD:/…
  */

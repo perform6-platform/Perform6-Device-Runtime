@@ -4,7 +4,7 @@ import {
   readXtPlaybackStatus,
   writeXtPlaybackFile,
 } from './xtPlaybackFile';
-import { isNativeLedPlayableSrc, toLedPlayableSrc } from '../services/playbackSrc';
+import { toLedPlayableSrc } from '../services/playbackSrc';
 import { BridgeMsg } from '../services/bridgeProtocol';
 import { subscribeSdCacheProgress } from '../services/sdCacheBridge';
 import { useRuntimeStore } from '../stores/runtimeStore';

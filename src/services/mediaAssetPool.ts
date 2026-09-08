@@ -1,7 +1,7 @@
 /**
  * BrightSign asset-pool media delivery (separate from OTA).
- * Staging pool: /storage/sd/perform6-media-pool (OS 9.1); docs fallback sd/….
- * media.ts realizes once into SD:/perform6-media/*.mp4 via AssetRealizer.
+ * Staging + playable pool: /storage/sd/perform6-media-pool (OS 9.1); docs fallback sd/….
+ * LED plays GetPoolFilePath directly — no AssetRealizer / Node copy.
  * Autorun led-cache-prefetch is disabled (bridge-inbound unreliable).
  */
 import type { SyncMediaItem } from '../shared/types/api';
@@ -16,6 +16,7 @@ import {
   getMediaPoolPath,
   hasSdCachedMedia,
   markMediaPoolPath,
+  markSdDownloadConfirmed,
   clearMediaPoolPathMarks,
   emitSdCacheProgress,
   type SdDownloadProgress,
@@ -413,6 +414,7 @@ export async function downloadMediaItemsViaAssetPool(
       const verified = await resolvePoolPath(assetList, asset.name);
       if (verified) {
         markMediaPoolPath(item.mediaVersionId, verified);
+        markSdDownloadConfirmed(item.mediaVersionId);
         already.push(item);
         succeeded.push(item.mediaVersionId);
         continue;
@@ -664,8 +666,9 @@ export async function downloadMediaItemsViaAssetPool(
         clearSdCached([item.mediaVersionId]);
         continue;
       }
-      // Pool path only — media.ts realizes to perform6-media/*.mp4 then prunes staging.
+      // Pool path is playable — LED PlayFile(GetPoolFilePath); no Realizer/copy.
       markMediaPoolPath(item.mediaVersionId, poolPath);
+      markSdDownloadConfirmed(item.mediaVersionId);
       succeeded.push(item.mediaVersionId);
       downloaded.push(item.mediaVersionId);
       emitSdCacheProgress({

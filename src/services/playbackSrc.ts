@@ -73,26 +73,29 @@ function hasVideoExtension(src: string): boolean {
   );
 }
 
-/** Native LED PlayFile needs SD:/… with a real video extension (pool sha256 fails). */
+/**
+ * Native LED PlayFile:
+ * - SD:/perform6-media/*.mp4 (legacy realized files)
+ * - SD:/perform6-media-pool/…/sha256-… (AssetPool GetPoolFilePath — BrightAuthor pattern)
+ */
 export function isNativeLedPlayableSrc(src: string | null | undefined): boolean {
   if (!isLocalPlaybackSrc(src) || !src) return false;
   const sd = toBrightSignSdPath(src);
   const lower = sd.toLowerCase().split('?')[0] ?? '';
-  if (lower.includes(MEDIA_POOL_DIR_NAME)) return false;
+  if (!lower.startsWith('sd:/')) return false;
+  if (lower.includes(MEDIA_POOL_DIR_NAME)) {
+    return lower.length > `sd:/${MEDIA_POOL_DIR_NAME}/`.length;
+  }
+  void MEDIA_STORE_DIR_NAME;
   return hasVideoExtension(sd);
 }
 
 /**
- * LED / autorun PlayFile src — always SD:/perform6-media/….mp4 (never file:// or pool).
+ * LED / autorun PlayFile src — SD:/ path (pool hash or .mp4). Never file://.
  */
 export function toLedPlayableSrc(src: string | null | undefined): string {
   if (!isNativeLedPlayableSrc(src)) return '';
-  const sd = toBrightSignSdPath(src);
-  if (!sd || !hasVideoExtension(sd)) return '';
-  if (sd.toLowerCase().includes(MEDIA_POOL_DIR_NAME)) return '';
-  // Prefer single-store paths; allow legacy cache filenames still on disk.
-  void MEDIA_STORE_DIR_NAME;
-  return sd;
+  return toBrightSignSdPath(src);
 }
 
 /**

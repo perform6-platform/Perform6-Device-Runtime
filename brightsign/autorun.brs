@@ -1,9 +1,9 @@
 ' Perform6 BrightSign autorun - thin boot + deferred SD workers
 ' BOOT ONLY: identity, DWS, SetScreenModes, HtmlWidget Show, native LED idle/playback, reboot.
 ' DEFERRED (after Show / when JS asks): cache prefetch (legacy fallback), OTA install, clearCache.
-' MEDIA: AssetPoolFetcher + AssetRealizer → /storage/sd/perform6-media/*.mp4
-'   (JS never uses Node copyFile or autorun led-cache-prefetch for media).
-'   Prefetch progress file kept for diagnostics only if autorun still receives old msgs.
+' MEDIA: AssetPoolFetcher → play GetPoolFilePath (perform6-media-pool/sha256-…) on LED.
+'   No Node copyFile / AssetRealizer / second media store. Prefetch disabled for media.
+'   XT playback command: SD:/perform6-xt-playback.json (bridge optional).
 ' Byte sizes: BrightSign-safe Float/Val/LongInteger — never 32-bit Integer for multi-GB files.
 ' Free space: GetFreeInMegabytes() (never freeMb*1048576 into Integer).
 ' Bridge led-cache-prefetch = last-resort fallback only (inbound bridge historically flaky).
@@ -18,7 +18,7 @@
 '   4K/8K is hardware-capable but NOT the fleet default (load + media size).
 '   perform6-display.txt: MULTI (default) | MULTI_NOFULLRES only.
 ' SetScreenModes only when config differs. Do NOT call SetMode / trusted_iframes / roTouchScreen.Enable.
-' Shared media store: SD:/perform6-media (LED PlayFile + HtmlWidget).
+' Media store: SD:/perform6-media-pool (AssetPool). Legacy SD:/perform6-media/*.mp4 still playable.
 ' HOT PATH: idle first; BA-simple bridge (no auto recycle/heal); hello/ping/playback quiet.
 
 Sub SafePrint(msg as String)
@@ -518,8 +518,14 @@ Function IsPlayableNativeSrc(src as String) as Boolean
   low = LCase(src)
   if Left(low, 7) = "http://" then return false
   if Left(low, 8) = "https://" then return false
-  ' Asset-pool hash paths without extension fail PlayFile — require video ext.
-  if Instr(1, low, "perform6-media-pool") > 0 then return false
+  ' AssetPool GetPoolFilePath — PlayFile accepts hash pathnames (BrightAuthor plugin pattern).
+  if Instr(1, low, "perform6-media-pool") > 0 then
+    if Left(low, 4) = "sd:/" then return true
+    if Left(low, 12) = "/storage/sd/" then return true
+    if Left(low, 17) = "file:///sd:/" then return true
+    if Left(low, 23) = "file:///storage/sd/" then return true
+    return false
+  end if
   if not HasVideoExtension(src) then return false
   return true
 End Function
@@ -2159,7 +2165,7 @@ Sub HandleLedHello(payload as Object, states as Object)
   msg.AddReplace("type", "led-hello-ack")
   msg.AddReplace("protocolVersion", "2")
   msg.AddReplace("features", "ota-ping,ota-reboot,cache-cancel,bridge-heal,bridge-recycle,fs,playback-ack")
-  msg.AddReplace("autorunRelease", "1.4.1")
+  msg.AddReplace("autorunRelease", "1.5.0")
   PostJsMessage(html, msg)
   g = GetGlobalAA()
   lastJs = ""
@@ -2198,7 +2204,7 @@ Sub DiagEchoInbound(rxType as String, states as Object)
   msg.AddReplace("type", "led-diag-echo")
   msg.AddReplace("rxType", rxType)
   msg.AddReplace("rxCount", IntToStr(n))
-  msg.AddReplace("autorunRelease", "1.4.1")
+  msg.AddReplace("autorunRelease", "1.5.0")
   PostJsMessage(html, msg)
   if n = 1 or n mod 20 = 0 then
     LedLog("=== Perform6: DIAG echo #" + IntToStr(n) + " rx=" + rxType + " ===")
@@ -3056,7 +3062,7 @@ Sub MaybeResumePlaybackFromFile(states as Object, msgPort as Object, reason as S
   if sig = lastSig then return
   g.p6PbFileSig = sig
 
-  LedLog("=== Perform6: LED resume from file (" + reason + ") nonce " + IntToStr(PayloadInt(aa, "restartNonce", 0)) + " src " + PayloadString(aa, "src") + " ===")
+  LedLog("=== Perform6: XT playback command via SD file (" + reason + ") nonce " + IntToStr(PayloadInt(aa, "restartNonce", 0)) + " src " + PayloadString(aa, "src") + " ===")
   ApplyNativePlayback(st, aa, msgPort, states)
 
   ' If nothing is playing yet (media pool still filling), drop the signature so

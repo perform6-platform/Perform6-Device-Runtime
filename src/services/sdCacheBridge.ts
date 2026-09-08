@@ -288,12 +288,13 @@ export function getSdCachedUrl(mediaVersionId: string): string | null {
 }
 
 export function hasSdCachedMedia(mediaVersionId: string): boolean {
-  // Playable = perform6-media mark (pool sha256 alone is not LED-safe).
-  return Boolean(getSdCachedUrl(mediaVersionId));
+  // Playable = AssetPool path (GetPoolFilePath) or legacy perform6-media mark.
+  return Boolean(getSdCachedUrl(mediaVersionId) || getMediaPoolPath(mediaVersionId));
 }
 
 /** True when autorun/cache confirmed the file on SD — safe to skip re-download / play. */
 export function isMediaConfirmedOnSd(mediaVersionId: string): boolean {
+  if (getMediaPoolPath(mediaVersionId)) return true;
   return (
     readConfirmedSet().has(mediaVersionId) && Boolean(getSdCachedUrl(mediaVersionId))
   );
@@ -478,7 +479,7 @@ export function requestSdCachePrefetch(
 ): boolean {
   if (items.length === 0) return false;
   console.warn(
-    '[Perform6] SD cache prefetch disabled — AssetPool + AssetRealizer only',
+    '[Perform6] SD cache prefetch disabled — AssetPool GetPoolFilePath playback only',
     { count: items.length },
   );
   return false;
@@ -1104,7 +1105,7 @@ async function downloadMediaChunkToSd(
 
 /**
  * @deprecated Autorun HTTP media download disabled.
- * Use media.downloadMediaBatchToSd (AssetPool + AssetRealizer) only.
+ * Use media.downloadMediaBatchToSd (AssetPool → GetPoolFilePath play) only.
  */
 export async function downloadMediaItemsToSd(
   items: SyncMediaItem[],
@@ -1117,7 +1118,7 @@ export async function downloadMediaItemsToSd(
   failureReasons: Record<string, string>;
 }> {
   const reason =
-    'Autorun SD prefetch disabled — BrightSign AssetPool + AssetRealizer required';
+    'Autorun SD prefetch disabled — BrightSign AssetPool GetPoolFilePath required';
   console.warn('[Perform6]', reason, { count: items.length });
   const failed = items.map((i) => i.mediaVersionId);
   const failureReasons = Object.fromEntries(failed.map((id) => [id, reason]));
@@ -1125,8 +1126,8 @@ export async function downloadMediaItemsToSd(
 }
 
 /**
- * Verify playable file already in perform6-media (from AssetRealizer).
- * Never uses Node copyFileSync — field EPERM on AssetPool sha256 blobs.
+ * Legacy check: playable file already in perform6-media/*.mp4.
+ * Surgical path does not copy pool → media; returns true only if .mp4 already exists.
  */
 export function realizePoolPathToCache(
   mediaVersionId: string,
@@ -1151,24 +1152,34 @@ export function realizePoolPathToCache(
   return false;
 }
 
+function poolPathToFileUrl(sdPath: string): string {
+  if (sdPath.startsWith('file://')) return sdPath;
+  if (sdPath.startsWith('/storage/sd/')) {
+    return `file:///SD:/${sdPath.slice('/storage/sd/'.length)}`;
+  }
+  if (/^sd:/i.test(sdPath)) {
+    return `file:///${sdPath.replace(/^sd:/i, 'SD:')}`;
+  }
+  if (sdPath.startsWith('sd/')) {
+    return `file:///SD:/${sdPath.slice(3)}`;
+  }
+  return `file:///SD:/${sdPath.replace(/^\/+/, '')}`;
+}
+
 /**
- * Local playback URL only when we have perform6-media/*.mp4 (LED + Bluefin).
- * Never returns bare asset-pool sha256 paths — native PlayFile needs an extension.
+ * Local playback URL: prefer AssetPool GetPoolFilePath; else legacy perform6-media/*.mp4.
  */
 export function resolveSdPlaybackUrl(
   mediaVersionId: string,
   fallbackFileUrl?: string | null,
 ): string | null {
-  const cachedUrl = getSdCachedUrl(mediaVersionId);
   const poolPath = getMediaPoolPath(mediaVersionId);
+  if (poolPath) return poolPathToFileUrl(poolPath);
 
-  // Pool staging only: realize into single store before exposing a play URL.
-  if (poolPath && (cachedUrl || fallbackFileUrl)) {
-    realizePoolPathToCache(
-      mediaVersionId,
-      cachedUrl ?? fallbackFileUrl!,
-      poolPath,
-    );
+  // Optional: if a legacy realized .mp4 already exists, use it.
+  if (fallbackFileUrl && realizePoolPathToCache(mediaVersionId, fallbackFileUrl)) {
+    const ready = getSdCachedUrl(mediaVersionId);
+    if (ready) return sdCacheFileUrl(ready);
   }
 
   const readyUrl = getSdCachedUrl(mediaVersionId);
