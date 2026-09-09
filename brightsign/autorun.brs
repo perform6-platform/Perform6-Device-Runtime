@@ -1012,7 +1012,7 @@ Sub HandleLedHello(payload as Object, states as Object)
   msg.AddReplace("type", "led-hello-ack")
   msg.AddReplace("protocolVersion", "2")
   msg.AddReplace("features", "ota-ping,ota-reboot,playback-ack,sd-led-bus")
-  msg.AddReplace("autorunRelease", "1.5.8")
+  msg.AddReplace("autorunRelease", "1.5.12")
   PostJsMessage(html, msg)
   g = GetGlobalAA()
   lastJs = ""
@@ -2172,20 +2172,14 @@ Function OpsFilePath() as String
 End Function
 
 Function ReadRawFile(path as String) as String
-  f = CreateObject("roReadFile", path)
-  if type(f) <> "roReadFile" then
-    return ""
+  ' BrightSign: ReadLine() at EOF returns "" (still String/roString) — a type-only
+  ' exit never fires and boots hang forever (see docs + BrightAuthor AtEof samples).
+  ' ReadAsciiFile matches WriteAsciiFile and is the safe whole-file path.
+  text = ReadAsciiFile(path)
+  if type(text) = "roString" or type(text) = "String" then
+    return text
   end if
-  out = ""
-  while true
-    line = f.ReadLine()
-    if type(line) <> "roString" and type(line) <> "String" then
-      exit while
-    end if
-    if Len(out) > 0 then out = out + Chr(10)
-    out = out + line
-  end while
-  return out
+  return ""
 End Function
 
 Sub WriteRawFile(path as String, content as String)
@@ -2221,10 +2215,16 @@ Function OpsJsonSetFieldFalse(json as String, field as String) as String
 End Function
 
 Sub ProcessOpsOnBoot(states as Object)
+  ' Heartbeat before ops read — if ReadRawFile ever hangs again, Admin still sees alive.
+  LedLog("=== Perform6: ProcessOpsOnBoot start ===")
+  WriteMainHeartbeat()
+  FlushLedLog()
   content = ReadRawFile(OpsFilePath())
   if Len(content) = 0 then
     SetTraceVerbose(false)
     TraceLog("OPS|missing-ops|trace=off-default")
+    LedLog("=== Perform6: ProcessOpsOnBoot done (no ops file) ===")
+    FlushLedLog()
     return
   end if
 
@@ -2255,6 +2255,9 @@ Sub ProcessOpsOnBoot(states as Object)
     WriteRawFile(OpsFilePath(), content)
     LedLog("=== Perform6: perform6-ops.json one-shot flags consumed ===")
   end if
+  LedLog("=== Perform6: ProcessOpsOnBoot done ===")
+  WriteMainHeartbeat()
+  FlushLedLog()
 End Sub
 
 Sub HandleLedOpsReload(payload as Object, states as Object)

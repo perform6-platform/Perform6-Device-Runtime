@@ -67,6 +67,8 @@ function assertAutorun() {
     'DeleteTreeBudgeted',
     'WriteBootCanary',
     'WriteMainHeartbeat',
+    'ReadAsciiFile(path)',
+    'ProcessOpsOnBoot start',
     'roNodeJsEvent',
     'led-cache-prefetch ignored',
     'led-ota-install ignored',
@@ -89,6 +91,13 @@ function assertAutorun() {
     'DiagEchoInbound',
   ]) {
     if (text.includes(banned)) fail(`thin autorun must not contain ${banned}`);
+  }
+  // EOF hang: type-only ReadLine exit never fires on BrightSign ("" is still String).
+  if (/while true[\s\S]{0,120}ReadLine\(\)/.test(text) && text.includes('type(line) <> "roString"')) {
+    fail('ReadRawFile must not use type-only ReadLine EOF exit (hangs on BrightSign)');
+  }
+  if (!text.includes('Function ReadRawFile') || !/Function ReadRawFile[\s\S]{0,400}ReadAsciiFile/.test(text)) {
+    fail('ReadRawFile must use ReadAsciiFile (BrightSign-safe whole-file read)');
   }
   if (!text.includes('profile = "XT2145" or profile = "XC4055"')) {
     fail('autorun must poll LED fallback bus for XT+XC');
