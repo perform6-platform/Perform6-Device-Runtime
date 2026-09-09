@@ -13,6 +13,7 @@ export interface DeviceLogUploadEntry {
 
 let lastAutorunLine = '';
 let flushInFlight = false;
+const lastCanaryValue = new Map<string, string>();
 
 const CANARY_FILES = [
   'SD:/perform6-boot-canary.txt',
@@ -29,6 +30,9 @@ function readCanaryEntries(): DeviceLogUploadEntry[] {
     try {
       const nodePath = toNodeSdPath(sd);
       if (!fs.existsSync(nodePath)) {
+        const value = '<missing>';
+        if (lastCanaryValue.get(sd) === value) continue;
+        lastCanaryValue.set(sd, value);
         out.push({
           level: 'WARN',
           source: 'AUTORUN',
@@ -39,13 +43,19 @@ function readCanaryEntries(): DeviceLogUploadEntry[] {
       }
       const raw = fs.readFileSync(nodePath, 'utf8');
       const text = (typeof raw === 'string' ? raw : String(raw)).trim().slice(0, 2000);
+      const value = text || '(empty)';
+      if (lastCanaryValue.get(sd) === value) continue;
+      lastCanaryValue.set(sd, value);
       out.push({
         level: 'INFO',
         source: 'AUTORUN',
-        message: `CANARY|${sd}|${text || '(empty)'}`,
+        message: `CANARY|${sd}|${value}`,
         loggedAt: now,
       });
     } catch {
+      const value = '<read-fail>';
+      if (lastCanaryValue.get(sd) === value) continue;
+      lastCanaryValue.set(sd, value);
       out.push({
         level: 'WARN',
         source: 'AUTORUN',
@@ -105,14 +115,6 @@ async function collectLogEntries(): Promise<DeviceLogUploadEntry[]> {
   const canaryEntries = readCanaryEntries();
 
   const merged = [...jsEntries, ...autorunEntries, ...canaryEntries];
-  if (merged.length > 0) {
-    console.info('[Perform6] Log upload batch', {
-      js: jsEntries.length,
-      autorun: autorunEntries.length,
-      canary: canaryEntries.length,
-      total: merged.length,
-    });
-  }
   return merged.slice(0, 500);
 }
 

@@ -15,6 +15,10 @@ let urgentFlushHandler: (() => void) | null = null;
 
 function shouldSkipMessage(message: string): boolean {
   if (!message) return true;
+  // Transport bookkeeping must never be fed back into the same transport.
+  // Otherwise every successful upload creates the next upload forever.
+  if (message.startsWith('[Perform6] Log upload batch')) return true;
+  if (message.startsWith('[Perform6] Device logs flushed')) return true;
   if (message.length > 8000) return false;
   return false;
 }
