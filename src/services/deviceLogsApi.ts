@@ -3,6 +3,8 @@ import { apiFetchData } from './api';
 import { drainDeviceLogs, type BufferedDeviceLog } from './deviceLogCollector';
 import { fetchAutorunLogTail } from './ledLogBridge';
 import { getNodeFs, toNodeSdPath } from '../platform/brightSignNode';
+import { runtimeConfig } from '../config/runtime';
+import { useRuntimeStore } from '../stores/runtimeStore';
 
 export interface DeviceLogUploadEntry {
   level: BufferedDeviceLog['level'];
@@ -131,6 +133,41 @@ export async function uploadDeviceLogs(
   });
 }
 
+async function mirrorDiagnostics(
+  entries: DeviceLogUploadEntry[],
+  serialOverride?: string,
+): Promise<void> {
+  const base = runtimeConfig.diagnosticsBaseUrl.replace(/\/+$/, '');
+  const key = runtimeConfig.diagnosticsIngestKey;
+  if (!base || !key || entries.length === 0) return;
+  const info = useRuntimeStore.getState().deviceInfo;
+  const serialNumber = serialOverride?.trim() || info?.serialNumber?.trim();
+  if (!serialNumber) return;
+
+  try {
+    const response = await fetch(`${base}/diagnostics/logs`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Diagnostics-Key': key,
+      },
+      body: JSON.stringify({
+        serialNumber,
+        model: info?.model ?? runtimeConfig.hardwareProfile,
+        firmwareVersion: info?.firmwareVersion,
+        runtimeVersion: runtimeConfig.runtimeVersion,
+        entries: entries.slice(0, 400),
+      }),
+    });
+    if (!response.ok) {
+      console.warn('[Perform6] Atlas diagnostic mirror rejected', response.status);
+    }
+  } catch (error) {
+    // The mirror is observability-only: never disturb production sync/playback.
+    console.warn('[Perform6] Atlas diagnostic mirror unavailable', error);
+  }
+}
+
 export async function flushDeviceLogs(auth: DeviceAuthContext): Promise<number> {
   if (flushInFlight) return 0;
   flushInFlight = true;
@@ -138,6 +175,7 @@ export async function flushDeviceLogs(auth: DeviceAuthContext): Promise<number> 
     const entries = await collectLogEntries();
     if (entries.length === 0) return 0;
     await uploadDeviceLogs(auth, entries);
+    await mirrorDiagnostics(entries);
     return entries.length;
   } finally {
     flushInFlight = false;
@@ -163,6 +201,7 @@ export async function flushPairingLogs(
         entries: entries.slice(0, 400),
       }),
     });
+    await mirrorDiagnostics(entries, serialNumber);
     return entries.length;
   } finally {
     flushInFlight = false;

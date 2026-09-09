@@ -63,6 +63,8 @@ function readXcOutputRole(): XcOutputRole {
 
 export interface RuntimeConfig {
   apiBaseUrl: string;
+  diagnosticsBaseUrl: string;
+  diagnosticsIngestKey: string;
   runtimeMode: RuntimeMode;
   hardwareProfile: HardwareProfile;
   deploymentType: DeploymentType;
@@ -88,6 +90,8 @@ export interface RuntimeConfig {
 
 export const runtimeConfig: RuntimeConfig = {
   apiBaseUrl: env('VITE_API_BASE_URL', 'http://localhost:3000/api/v1'),
+  diagnosticsBaseUrl: env('VITE_DIAGNOSTICS_BASE_URL'),
+  diagnosticsIngestKey: env('VITE_DIAGNOSTICS_INGEST_KEY'),
   runtimeMode: parseEnum(env('VITE_RUNTIME_MODE', 'SIMULATOR'), RUNTIME_MODES, 'SIMULATOR'),
   hardwareProfile: parseEnum(
     env('VITE_HARDWARE_PROFILE', 'XT2145'),

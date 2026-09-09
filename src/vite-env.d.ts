@@ -2,6 +2,8 @@
 
 interface ImportMetaEnv {
   readonly VITE_API_BASE_URL: string;
+  readonly VITE_DIAGNOSTICS_BASE_URL: string;
+  readonly VITE_DIAGNOSTICS_INGEST_KEY: string;
   readonly VITE_RUNTIME_MODE: string;
   readonly VITE_HARDWARE_PROFILE: string;
   readonly VITE_DEPLOYMENT_TYPE: string;
