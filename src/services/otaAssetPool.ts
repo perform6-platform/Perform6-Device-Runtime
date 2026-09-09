@@ -55,28 +55,33 @@ type AssetPoolFetcherInstance = {
   ) => void;
 };
 
-type AssetPoolFilesInstance = {
-  getPath: (name: string) => Promise<string> | string;
-};
-
 type AssetPoolCtor = new (path: string) => AssetPoolInstance;
 type AssetPoolFetcherCtor = new (pool: AssetPoolInstance) => AssetPoolFetcherInstance;
-type AssetPoolFilesCtor = new (
+
+type AssetRealizerInstance = {
+  realize: (assets: OtaAsset[]) => Promise<void>;
+  validateFiles: (
+    assets: OtaAsset[],
+    options: { deleteCorrupt: boolean },
+  ) => Promise<Array<{ name?: string; reason?: string }>>;
+};
+type AssetRealizerCtor = new (
   pool: AssetPoolInstance,
-  list: OtaAsset[],
-) => AssetPoolFilesInstance;
+  destinationPath: string,
+) => AssetRealizerInstance;
 
 type NodeFs = {
   copyFileSync: (src: string, dest: string) => void;
   mkdirSync: (path: string, opts?: { recursive?: boolean }) => void;
   existsSync: (path: string) => boolean;
   statSync: (path: string) => { size: number };
+  writeFileSync: (path: string, data: string, encoding?: string) => void;
 };
 
 let pool: AssetPoolInstance | null = null;
 let fetcher: AssetPoolFetcherInstance | null = null;
 let FetcherClassRef: AssetPoolFetcherCtor | null = null;
-let AssetPoolFilesClass: AssetPoolFilesCtor | null = null;
+let AssetRealizerClass: AssetRealizerCtor | null = null;
 let modulesLoaded = false;
 let modulesAvailable = false;
 let activeFetch: AssetPoolFetcherInstance | null = null;
@@ -180,13 +185,9 @@ function loadModules(): boolean {
         : new Error('OTA asset pool unavailable');
     }
     try {
-      AssetPoolFilesClass = req('@brightsign/assetpoolfiles') as AssetPoolFilesCtor;
+      AssetRealizerClass = req('@brightsign/assetrealizer') as AssetRealizerCtor;
     } catch {
-      try {
-        AssetPoolFilesClass = req('@brightsign/assetfiles') as AssetPoolFilesCtor;
-      } catch {
-        AssetPoolFilesClass = null;
-      }
+      AssetRealizerClass = null;
     }
     modulesAvailable = true;
   } catch (e) {
@@ -231,6 +232,7 @@ export async function cancelOtaAssetPoolFetch(): Promise<void> {
 }
 
 function assetNameForPath(relPath: string): string {
+  // Asset names cannot contain slashes. The activation map restores paths.
   return relPath.replace(/^\/+/, '').replace(/\//g, '--');
 }
 
@@ -291,60 +293,67 @@ function ensureParentDir(fs: NodeFs, filePath: string): void {
   }
 }
 
-async function resolvePoolPath(
-  assetList: OtaAsset[],
-  assetName: string,
-): Promise<string | null> {
-  if (!pool || !AssetPoolFilesClass) return null;
-  try {
-    const files = new AssetPoolFilesClass(pool, assetList);
-    const path = await Promise.resolve(files.getPath(assetName));
-    return path && String(path).length > 0 ? String(path) : null;
-  } catch {
-    return null;
-  }
+function safeVersionDir(version: string): string {
+  return version.replace(/[^a-zA-Z0-9._-]/g, '_') || 'unknown';
 }
 
-function copyPoolFileToSd(poolPath: string, relPath: string): void {
+function activateStagedPackage(
+  files: OtaManifestFile[],
+  stageRoot: string,
+  version: string,
+): string[] {
   const fs = getNodeFs();
-  if (!fs) {
-    throw new Error('Node fs unavailable — cannot realize OTA from asset pool');
-  }
-  if (typeof fs.copyFileSync !== 'function') {
-    throw new Error('Node fs.copyFileSync unavailable — cannot realize OTA');
-  }
+  if (!fs) throw new Error('Node fs unavailable for OTA activation');
+  const backupRoot = `/storage/sd/perform6-recovery/${safeVersionDir(version)}`;
+  const activated: string[] = [];
+  const attempted: string[] = [];
 
-  // Node fs only: /storage/sd/… (never mkdir/copy with SD:/ — ENOENT on device)
-  const destNode = toNodeSdPath(`SD:/${relPath.replace(/^\/+/, '')}`);
-  const srcNodes = [
-    ...new Set(
-      [
-        poolPath.startsWith('/storage/sd') ? poolPath.replace(/\\/g, '/') : null,
-        toNodeSdPath(poolPath),
-        poolPath.replace(/\\/g, '/'),
-      ].filter((p): p is string => Boolean(p && p.length > 0)),
-    ),
-  ];
-
-  let lastError: unknown;
-  for (const src of srcNodes) {
-    try {
-      if (!fs.existsSync(src)) continue;
-      ensureParentDir(fs, destNode);
-      fs.copyFileSync(src, destNode);
-      const st = fs.statSync(destNode);
-      if (!st || st.size <= 0) {
-        throw new Error(`Copied OTA file empty: ${destNode}`);
+  try {
+    for (const file of files) {
+      const rel = file.path.replace(/^\/+/, '');
+      const staged = `${stageRoot}/${assetNameForPath(rel)}`;
+      const active = `/storage/sd/${rel}`;
+      const backup = `${backupRoot}/${rel}`;
+      attempted.push(rel);
+      if (!fs.existsSync(staged)) throw new Error(`OTA staged file missing: ${rel}`);
+      const stagedSize = fs.statSync(staged).size;
+      if (file.sizeBytes > 0 && stagedSize !== file.sizeBytes) {
+        throw new Error(
+          `OTA staged size mismatch: ${rel} expected ${file.sizeBytes}, got ${stagedSize}`,
+        );
       }
-      console.info('[Perform6] OTA realized', { from: src, to: destNode, bytes: st.size });
-      return;
-    } catch (e) {
-      lastError = e;
+      ensureParentDir(fs, active);
+      if (fs.existsSync(active)) {
+        ensureParentDir(fs, backup);
+        fs.copyFileSync(active, backup);
+      }
+      fs.copyFileSync(staged, active);
+      if (fs.statSync(active).size !== stagedSize) {
+        throw new Error(`OTA activation size mismatch: ${rel}`);
+      }
+      activated.push(rel);
     }
+    fs.writeFileSync(
+      '/storage/sd/perform6-ota-pending.json',
+      JSON.stringify({
+        version,
+        backupRoot,
+        paths: activated,
+        activatedAt: new Date().toISOString(),
+      }),
+      'utf8',
+    );
+  } catch (error) {
+    for (const rel of attempted.reverse()) {
+      const backup = `${backupRoot}/${rel}`;
+      if (!fs.existsSync(backup)) continue;
+      const active = `/storage/sd/${rel}`;
+      ensureParentDir(fs, active);
+      fs.copyFileSync(backup, active);
+    }
+    throw error;
   }
-  throw lastError instanceof Error
-    ? lastError
-    : new Error(`OTA realize copy failed for ${relPath}`);
+  return activated;
 }
 
 function sdFileSize(relPath: string): number | null {
@@ -492,22 +501,30 @@ export async function installOtaViaAssetPool(
       };
     }
 
-    const realized: string[] = [];
-    for (const file of files) {
-      const rel = file.path.replace(/^\/+/, '');
-      const name = assetNameForPath(rel);
-      if (failed[file.path]) {
-        return { ok: false, error: failed[file.path] };
-      }
-      const poolPath = await resolvePoolPath(assetList, name);
-      if (!poolPath) {
-        return {
-          ok: false,
-          error: `OTA pool path missing after fetch: ${rel}`,
-        };
-      }
-      copyPoolFileToSd(poolPath, rel);
-      realized.push(rel);
+    if (!AssetRealizerClass) {
+      return {
+        ok: false,
+        error: 'BrightSign AssetRealizer unavailable — refusing unsafe pool copy',
+      };
+    }
+
+    const stageRoot = `/storage/sd/perform6-ota-stage/${safeVersionDir(targetVersion)}`;
+    const fs = getNodeFs();
+    if (!fs) return { ok: false, error: 'Node fs unavailable for OTA staging' };
+    if (!fs.existsSync(stageRoot)) fs.mkdirSync(stageRoot, { recursive: true });
+    const realizer = new AssetRealizerClass(pool, stageRoot);
+    await realizer.realize(assetList);
+    const invalid = await realizer.validateFiles(assetList, { deleteCorrupt: false });
+    if (invalid.length > 0) {
+      const first = invalid[0];
+      return {
+        ok: false,
+        error: `OTA staged validation failed: ${first?.name ?? '?'} ${first?.reason ?? ''}`.trim(),
+      };
+    }
+
+    const realized = activateStagedPackage(files, stageRoot, targetVersion);
+    for (const rel of realized) {
       reportOtaStatusSafe(auth, {
         status: 'DOWNLOADING',
         targetVersion,

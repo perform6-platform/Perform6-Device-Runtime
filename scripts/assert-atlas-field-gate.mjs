@@ -11,6 +11,8 @@ const allowedRuntimeFiles = new Set([
   'brightsign/autorun.brs',
   'src/platform/ledPlaybackFile.ts',
   'src/platform/xtOutputBridge.ts',
+  'src/services/otaApply.ts',
+  'src/services/otaAssetPool.ts',
 ]);
 
 function fail(message) {
@@ -54,6 +56,9 @@ for (const marker of [
   'if g.p6Profile = "XT2145" then return',
   'BRIDGE|ack-via-sd',
   'outbound boot post skipped',
+  'Function RollbackPendingOta',
+  'RollbackPendingOta("html-load-error")',
+  'DeleteFile("SD:/perform6-ota-pending.json")',
 ]) {
   if (!autorun.includes(marker)) fail(`autorun invariant missing: ${marker}`);
 }
@@ -64,6 +69,21 @@ if (!env.includes('https://perform6-api-atlas-production.up.railway.app/api/v1')
 }
 if (env.includes('https://portal.perform6.com/api/v1')) {
   fail('XT candidate still contains the production API endpoint');
+}
+
+const otaApply = fs.readFileSync(path.join(root, 'src/services/otaApply.ts'), 'utf8');
+const otaPool = fs.readFileSync(path.join(root, 'src/services/otaAssetPool.ts'), 'utf8');
+for (const marker of [
+  "if (p === 'autorun.brs') return 3",
+  "req('@brightsign/assetrealizer')",
+  'validateFiles(assetList, { deleteCorrupt: false })',
+  'perform6-ota-pending.json',
+  'perform6-recovery',
+  'refusing unsafe pool copy',
+]) {
+  if (!otaApply.includes(marker) && !otaPool.includes(marker)) {
+    fail(`recoverable OTA invariant missing: ${marker}`);
+  }
 }
 
 console.log('[atlas-field-gate] PASS: protected 1.5.8 behavior is unchanged');

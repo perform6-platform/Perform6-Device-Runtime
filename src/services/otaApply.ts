@@ -516,10 +516,12 @@ export async function installOtaFromManifest(
   const files = [...(manifest.files ?? [])].sort((a, b) => {
     const rank = (path: string) => {
       const p = path.replace(/^\/+/, '').toLowerCase();
-      if (p === 'autorun.brs') return 0;
-      if (p === 'index.html') return 1;
-      if (p.startsWith('assets/')) return 3;
-      return 2;
+      // autorun.brs is the boot commit record: activate it last. A failed web
+      // asset therefore leaves the already-proven autorun in place.
+      if (p === 'autorun.brs') return 3;
+      if (p.startsWith('assets/')) return 0;
+      if (p === 'index.html') return 2;
+      return 1;
     };
     return rank(a.path) - rank(b.path) || a.path.localeCompare(b.path);
   });
