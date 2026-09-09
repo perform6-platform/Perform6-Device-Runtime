@@ -1,7 +1,7 @@
 /**
  * XT2145 LED = video zone in the same autorun "presentation" as touch HtmlWidget.
- * BrightAuthor-style: PostBSMessage → autorun PlayFile is the NORMAL path.
- * SD JSON file is fallback only (no port / ack timeout / one-way bridge).
+ * The SD command file is authoritative on XT2145/BOS 9.1; PostBSMessage is an
+ * optional low-latency hint. This survives a one-way or blocked widget bridge.
  */
 import { runtimeConfig } from '../config/runtime';
 import {
@@ -118,8 +118,12 @@ function postTouchPlayback(port: BrightSignMessagePort | null, force = false): v
   pendingSdFallback = false;
   clearAckTimer();
 
+  // Persist before touching the widget bridge. Field logs from 1.5.8 showed the
+  // native autorun never receiving the message while this same Node write was
+  // reliable. Autorun polls this file independently every two seconds.
+  writeSdFallback(payload, 'authoritative-sd-command', force);
+
   if (!port) {
-    writeSdFallback(payload, 'no-messageport', force);
     return;
   }
 
@@ -137,7 +141,7 @@ function postTouchPlayback(port: BrightSignMessagePort | null, force = false): v
     return;
   }
 
-  // DOM port on Node widget is often one-way — schedule SD fallback unless ack arrives.
+  // Observe acknowledgement for diagnostics; the command is already durable.
   pendingSdFallback = true;
   const nonce = payload.restartNonce;
   ackTimer = window.setTimeout(() => {

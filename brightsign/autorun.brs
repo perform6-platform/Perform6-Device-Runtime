@@ -1486,6 +1486,15 @@ Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, stat
 End Sub
 
 Sub PostPlaybackAck(states as Object, st as Object, payload as Object, ok as Boolean, detail as String)
+  ' XT/XC field evidence on BOS 9.1.93.2 shows roHtmlWidget.PostJSMessage can
+  ' block the autorun thread before Main reaches its event loop.  The SD status
+  ' files are the authoritative duplex acknowledgement and are polled by React.
+  ' Never risk stopping native playback/command polling for an optional ack.
+  g = GetGlobalAA()
+  if g.p6Profile = "XT2145" or g.p6Profile = "XC4055" then
+    TraceLog("BRIDGE|ack-via-sd|" + st.key + "|" + detail)
+    return
+  end if
   html = ResolveBridgeHtml(states)
   msg = CreateObject("roAssociativeArray")
   profileHint = PayloadString(payload, "type")
@@ -1959,6 +1968,10 @@ Sub PlayIdleClip(st as Object)
 End Sub
 
 Sub PostLedReady(html as Object, msgType as String, role as String)
+  ' On multi-output players readiness is represented by the SD heartbeat/status
+  ' bus.  A boot-time PostJSMessage can block before the poll loop is entered.
+  g = GetGlobalAA()
+  if g.p6Profile = "XT2145" or g.p6Profile = "XC4055" then return
   if type(html) <> "roHtmlWidget" then
     return
   end if
@@ -2640,6 +2653,8 @@ Sub Main()
 
   identity = CollectDeviceIdentity()
   profile = ResolveHardwareProfile(identity)
+  gProfile = GetGlobalAA()
+  gProfile.p6Profile = profile
   LedLog("=== Perform6: hardware profile " + profile + " ===")
   TraceLog("MAIN|profile|" + profile)
 
@@ -2860,8 +2875,13 @@ Sub Main()
     ProcessOpsOnBoot(ledStates)
   end if
 
-  ' Running from SD — tell JS so Admin starts as Present until a detach event.
-  PostStorageHotplug(ledStates, true, "SD:")
+  ' Running from SD. XT/XC React can observe the SD mount directly; do not make
+  ' entry into the native playback loop depend on outbound HtmlWidget messaging.
+  if profile <> "XT2145" and profile <> "XC4055" then
+    PostStorageHotplug(ledStates, true, "SD:")
+  else
+    LedLog("=== Perform6: SD present (native bus; outbound boot post skipped) ===")
+  end if
 
   ' DWS already enabled early (before SetScreenModes) for field recovery.
 

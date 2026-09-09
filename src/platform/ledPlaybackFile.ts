@@ -1,7 +1,6 @@
 /**
- * LED SD playback file — FALLBACK when BA-style bridge cannot confirm play.
- * Normal path: PostBSMessage(xt-playback / xc-playback) → autorun PlayFile.
- * JS still may write SD:/perform6-led-playback.json after ack timeout.
+ * LED SD playback file. On XT2145 this is the authoritative command transport;
+ * PostBSMessage is only a low-latency hint. XC retains the same durable fallback.
  */
 import { getNodeFs, toNodeSdPath } from './brightSignNode';
 import { toLedPlayableSrc } from '../services/playbackSrc';

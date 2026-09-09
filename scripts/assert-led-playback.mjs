@@ -73,6 +73,8 @@ function assertAutorun() {
     'led-log-tail',
     'load-error after HTML/bridge — reboot (no SetUrl)',
     'AtomicWriteAsciiFile',
+    'BRIDGE|ack-via-sd',
+    'outbound boot post skipped',
     'Sub Main(',
     'FALLBACK',
   ]) {
@@ -92,6 +94,13 @@ function assertAutorun() {
   if (!text.includes('profile = "XT2145" or profile = "XC4055"')) {
     fail('autorun must poll LED fallback bus for XT+XC');
   }
+  const mainStart = text.indexOf('Sub Main()');
+  const loopStart = text.indexOf('while true', mainStart);
+  const bootSection = text.slice(mainStart, loopStart);
+  if (bootSection.includes('PostStorageHotplug(ledStates, true, "SD:")') &&
+      !bootSection.includes('if profile <> "XT2145" and profile <> "XC4055"')) {
+    fail('XT/XC boot must not depend on outbound PostJSMessage before the poll loop');
+  }
   ok(`autorun BA-style zones (${lines} lines)`);
 }
 
@@ -99,7 +108,9 @@ function assertJs() {
   const led = fs.readFileSync(path.join(root, 'src', 'platform', 'ledPlaybackFile.ts'), 'utf8');
   if (!led.includes('writeLedPlaybackFile')) fail('ledPlaybackFile missing writer');
   if (!led.includes('toLedPlayableSrc')) fail('ledPlaybackFile must normalize via toLedPlayableSrc');
-  if (!led.includes('FALLBACK')) fail('ledPlaybackFile must document SD as fallback');
+  if (!led.includes('authoritative command transport')) {
+    fail('ledPlaybackFile must document the authoritative XT SD command transport');
+  }
 
   const aliasQ = fs.readFileSync(path.join(root, 'src', 'services', 'mp4AliasQueue.ts'), 'utf8');
   if (!aliasQ.includes('intentionally empty') && !aliasQ.includes('Do NOT enqueue autorun CopyFile')) {
@@ -111,6 +122,7 @@ function assertJs() {
 
   const xt = fs.readFileSync(path.join(root, 'src', 'platform', 'xtOutputBridge.ts'), 'utf8');
   if (!xt.includes('writeXtPlaybackFile')) fail('XT bridge must write SD bus');
+  if (!xt.includes('authoritative-sd-command')) fail('XT command must be durable before bridge post');
   if (!xt.includes('PostBSMessage')) fail('XT bridge must PostBSMessage');
   if (!xt.includes('BA-style') && !xt.includes('BA bridge')) {
     fail('XT bridge must be BA-style (PostBSMessage primary)');
