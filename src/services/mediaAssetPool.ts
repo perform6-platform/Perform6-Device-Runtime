@@ -28,9 +28,25 @@ import {
 } from './downloadProgress';
 import { labelForMediaVersionId } from './touchProgramGate';
 import { probeBrightSignAssetPool } from './assetPoolProbe';
+import { getNodeFs } from '../platform/brightSignNode';
 
 /** AssetPool constructor path (/storage/sd/perform6-media-pool on OS 9.1). */
 export const MEDIA_POOL_PATH = MEDIA_ASSET_POOL_DIR;
+
+/** Ensure pool dir exists in Node before AssetPool ctor (autorun no longer mkdir on Main). */
+function ensureMediaPoolDir(): void {
+  const fs = getNodeFs();
+  if (!fs) return;
+  try {
+    fs.mkdirSync(MEDIA_POOL_PATH, { recursive: true });
+  } catch (e) {
+    console.warn(
+      '[Perform6] Media pool mkdir failed',
+      MEDIA_POOL_PATH,
+      e instanceof Error ? e.message : e,
+    );
+  }
+}
 
 /**
  * No progressevent/fileevent after start → abort fast so media.ts can fall
@@ -185,6 +201,8 @@ function loadModules(): boolean {
 
   // XT2145 / OS 9.1: /storage/sd/… works. Docs `sd/…` fallback only.
   // Never probe SD: or sd:/ — those become "/SD:" / "/sd:/…" and spam the log.
+  // Create pool dir in JS — thin autorun must not CreateDirectory on Main.
+  ensureMediaPoolDir();
   const pathCandidates = [MEDIA_POOL_PATH, MEDIA_ASSET_POOL_DIR_DOCS];
 
   try {
@@ -213,9 +231,10 @@ function loadModules(): boolean {
     }
 
     if (!pool || !fetcher) {
-      // Folder may not exist yet — allow retry after autorun CreateDirectory.
+      // Dir may still be mounting — allow one retry after JS mkdir.
       const msg = lastErr instanceof Error ? lastErr.message : String(lastErr ?? '');
       if (/not accessible|not found|no such/i.test(msg)) {
+        ensureMediaPoolDir();
         modulesLoaded = false;
         modulesAvailable = false;
         console.warn(

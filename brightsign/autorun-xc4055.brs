@@ -195,6 +195,11 @@ End Sub
 Function TryCreateHtmlWidget(rect as Object, msgPort as Object, url as String) as Object
   html = invalid
 
+  ' Official Node HtmlWidget: nodejs_enabled on EVERY create path.
+  ' Without it @brightsign/messageport + AssetPool require() are unavailable
+  ' and DOM BSMessagePort is outbound-only (one-way bridge).
+  ' Never classic CreateObject(rect)+SetUrl — orphans duplex after load.
+
   cfg = CreateObject("roAssociativeArray")
   cfg.url = url
   cfg.port = msgPort
@@ -214,35 +219,28 @@ Function TryCreateHtmlWidget(rect as Object, msgPort as Object, url as String) a
   cfg2.port = msgPort
   cfg2.brightsign_js_objects_enabled = true
   cfg2.javascript_enabled = true
+  cfg2.nodejs_enabled = true
   html = CreateObject("roHtmlWidget", rect, cfg2)
   if type(html) = "roHtmlWidget" then
     AttachHtmlWidgetPort(html, msgPort)
-    SafePrint("=== Perform6: HtmlWidget minimal config OK ===")
+    SafePrint("=== Perform6: HtmlWidget minimal+nodejs OK ===")
     return html
   end if
 
-  ' Never create a widget without msgPort + JS objects (orphan / mute bridge).
   cfg3 = CreateObject("roAssociativeArray")
   cfg3.url = url
   cfg3.port = msgPort
   cfg3.brightsign_js_objects_enabled = true
   cfg3.javascript_enabled = true
+  cfg3.nodejs_enabled = true
   html = CreateObject("roHtmlWidget", rect, cfg3)
   if type(html) = "roHtmlWidget" then
     AttachHtmlWidgetPort(html, msgPort)
-    SafePrint("=== Perform6: HtmlWidget url+port config OK ===")
+    SafePrint("=== Perform6: HtmlWidget url+port+nodejs OK ===")
     return html
   end if
 
-  html = CreateObject("roHtmlWidget", rect)
-  if type(html) = "roHtmlWidget" then
-    SafePrint("=== Perform6: HtmlWidget classic constructor OK ===")
-    AttachHtmlWidgetPort(html, msgPort)
-    html.EnableJavascript(true)
-    html.SetUrl(url)
-    return html
-  end if
-
+  SafePrint("=== Perform6: HtmlWidget create FAILED (need nodejs_enabled) ===")
   return invalid
 End Function
 
@@ -768,19 +766,7 @@ Function PathLeafName(path as String) as String
   return leaf
 End Function
 
-' Expected .mp4 alias path for an extensionless pool leaf (no I/O).
-' Alias presence on SD is the persist signal that this hash needs .mp4 PlayFile.
-Function PoolMp4AliasPath(poolPath as String) as String
-  poolPath = NormalizeLocalSrc(poolPath)
-  if not IsExtensionlessPoolPath(poolPath) then return ""
-  leaf = PathLeafName(poolPath)
-  if Len(leaf) = 0 then return ""
-  if Right(LCase(leaf), 4) = ".mp4" then return ""
-  return CacheDir() + "/" + leaf + ".mp4"
-End Function
-
-' Pool play: existing .mp4 alias-hit if present, else pool-direct + ProbeString (no CopyFile).
-
+' Pool-direct PlayFile only — no .mp4 alias Stat/CopyFile on Main.
 Function TryPlayFileOnce(vp as Object, p as String) as Boolean
   TraceFnEnter("TryPlayFileOnce", p)
   WritePlayfileCanary("trying", p, "?")
@@ -801,22 +787,11 @@ Function TryPlayFileOnce(vp as Object, p as String) as Boolean
   return false
 End Function
 
-' Pool play: existing .mp4 alias-hit, else pool-direct + ProbeString (no CopyFile).
+' Pool play: pool-direct + ProbeString (no alias LocalMediaExists / CopyFile).
 Function PlayLocalFile(vp as Object, path as String) as Boolean
   TraceFnEnter("PlayLocalFile", path)
   path = NormalizeLocalSrc(path)
   isPool = IsExtensionlessPoolPath(path)
-
-  if isPool then
-    existingAlias = PoolMp4AliasPath(path)
-    if Len(existingAlias) > 0 and LocalMediaExists(existingAlias) then
-      if TryPlayFileOnce(vp, existingAlias) then
-        LedLog("=== Perform6: PlayLocalFile alias-hit " + existingAlias + " ===")
-        TraceFnExit("PlayLocalFile", "alias-hit")
-        return true
-      end if
-    end if
-  end if
 
   if TryPlayFileOnce(vp, path) then
     if isPool then
@@ -1523,12 +1498,25 @@ Sub WriteLedPlaybackStatus(st as Object, detail as String, ended as Boolean)
 End Sub
 
 Sub WriteLedBusHeartbeat(detail as String, src as String)
+  ' Rate-limit: dual SD writes every poll tick hang Main (same class as led.log ReadAsciiFile).
+  g = GetGlobalAA()
+  nowMs = ProgressNowMs()
+  lastDetail = ""
+  lastSrc = ""
+  lastAt = 0
+  if type(g.p6LedBusHbDetail) = "roString" or type(g.p6LedBusHbDetail) = "String" then lastDetail = g.p6LedBusHbDetail
+  if type(g.p6LedBusHbSrc) = "roString" or type(g.p6LedBusHbSrc) = "String" then lastSrc = g.p6LedBusHbSrc
+  if type(g.p6LedBusHbAt) = "roInteger" or type(g.p6LedBusHbAt) = "Integer" then lastAt = g.p6LedBusHbAt
+  if detail = lastDetail and src = lastSrc and (nowMs - lastAt) < 15000 then return
+  g.p6LedBusHbDetail = detail
+  g.p6LedBusHbSrc = src
+  g.p6LedBusHbAt = nowMs
   q = Chr(34)
   json = "{"
   json = json + q + "type" + q + ":" + q + "led-bus" + q + ","
   json = json + q + "detail" + q + ":" + q + detail + q + ","
   json = json + q + "src" + q + ":" + q + src + q + ","
-  json = json + q + "ts" + q + ":" + q + IntToStr(ProgressNowMs()) + q
+  json = json + q + "ts" + q + ":" + q + IntToStr(nowMs) + q
   json = json + "}"
   WriteAsciiFile("SD:/perform6-led-bus.json", json)
   WriteAsciiFile("SD:/perform6-xt-bus.json", json)
@@ -1645,19 +1633,10 @@ Sub MaybeResumePlaybackFromFile(states as Object, msgPort as Object, reason as S
   WriteLedBusHeartbeat("bad-type", reason)
 End Sub
 
-' Fallback SD poll — BA-style bridge is primary; keep this slow to avoid fighting zone msgs.
+' Fallback SD poll — timer owns resume; loop stub avoids dual Main SD I/O.
 Sub MaybePollLedPlaybackFile(states as Object, msgPort as Object)
-  if type(states) <> "roArray" then return
-  if states.Count() = 0 then return
-  g = GetGlobalAA()
-  if type(g.p6PbPollSpan) <> "roTimespan" then
-    g.p6PbPollSpan = CreateObject("roTimespan")
-    if type(g.p6PbPollSpan) = "roTimespan" then g.p6PbPollSpan.Mark()
-  end if
-  if type(g.p6PbPollSpan) <> "roTimespan" then return
-  if g.p6PbPollSpan.TotalMilliseconds() < 2000 then return
-  g.p6PbPollSpan.Mark()
-  MaybeResumePlaybackFromFile(states, msgPort, "loop")
+  ' No-op: pbFileTimer (2s) is the sole SD LED resume path.
+  return
 End Sub
 
 ' ---------------------------------------------------------------------------
@@ -2319,12 +2298,12 @@ Sub Main()
     WriteAsciiFile("SD:/perform6-debug-f6ed41.txt", gLoop.p6DebugTrail)
   end if
   LedLog("=== Perform6: bridge observe-only (no recycle/reboot on silence) ===")
-  LedLog("=== Perform6: SD LED PRIMARY poll 1s (bridge optional) ===")
+  LedLog("=== Perform6: SD LED PRIMARY poll 2s (bridge optional) ===")
 
   pbFileTimer = CreateObject("roTimer")
   if type(pbFileTimer) = "roTimer" then
     pbFileTimer.SetPort(msgPort)
-    pbFileTimer.SetElapsed(1, 0)
+    pbFileTimer.SetElapsed(2, 0)
     pbFileTimer.Start()
   end if
 
@@ -2399,7 +2378,7 @@ Sub Main()
         MaybeResumePlaybackFromFile(ledStates, msgPort, "poll")
         MaybeFlushLedLog()
         if type(pbFileTimer) = "roTimer" then
-          pbFileTimer.SetElapsed(1, 0)
+          pbFileTimer.SetElapsed(2, 0)
           pbFileTimer.Start()
         end if
       else
@@ -2421,30 +2400,9 @@ Sub Main()
             LedLog("=== Perform6: load-error after HTML/bridge — soft-alive (no SetUrl, no auto-reboot) ===")
             FlushLedLog()
             WriteMainHeartbeat()
-          else if profile = "XT2145" then
-            if Instr(1, failedUrl, "bs_output=touch") > 0 and touchFallbackTried = false and type(htmlTouch) = "roHtmlWidget" then
-              touchFallbackTried = true
-              touchUrl = BuildAppUrl("file:///SD:/index.html", identity, profile, "touch")
-              LedLog("=== Perform6: HDMI-1 pre-JS SetUrl fallback (no port yet) ===")
-              htmlTouch.SetUrl(touchUrl)
-            else
-              LedLog("=== Perform6: HTML load-error — soft-alive (no auto-reboot) ===")
-              FlushLedLog()
-              WriteMainHeartbeat()
-            end if
-          else if profile = "XC4055" then
-            if Instr(1, failedUrl, "bs_output=primary") > 0 and primaryFallbackTried = false and type(htmlPrimary) = "roHtmlWidget" then
-              primaryFallbackTried = true
-              primaryUrl = BuildAppUrl("file:///SD:/index.html", identity, profile, "primary")
-              LedLog("=== Perform6: HDMI-1 pre-JS SetUrl fallback (no port yet) ===")
-              htmlPrimary.SetUrl(primaryUrl)
-            else
-              LedLog("=== Perform6: HTML load-error — soft-alive (no auto-reboot) ===")
-              FlushLedLog()
-              WriteMainHeartbeat()
-            end if
           else
-            LedLog("=== Perform6: HTML load-error — soft-alive (no auto-reboot) ===")
+            ' URL fallbacks at create (file:/// then file:///SD:/) — never SetUrl after load.
+            LedLog("=== Perform6: HTML load-error — soft-alive (no SetUrl, no auto-reboot) ===")
             FlushLedLog()
             WriteMainHeartbeat()
           end if

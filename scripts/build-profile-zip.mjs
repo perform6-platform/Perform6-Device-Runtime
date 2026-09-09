@@ -108,7 +108,6 @@ function assertLedPlaybackBus(autorunPath, profileKey) {
     const required = [
       'perform6-led-playback.json',
       'MaybePollLedPlaybackFile',
-      'PoolMp4AliasPath',
       'IsExtensionlessPoolPath',
       'ApplyOneLedPlaybackCommand',
       'PlayLocalFile pool-direct OK',
@@ -118,18 +117,27 @@ function assertLedPlaybackBus(autorunPath, profileKey) {
       'LoadLedStatusRootAA',
       'LED PRIMARY',
       'NO on-demand HTTPS stream',
+      'nodejs_enabled = true',
+      'cfg2.nodejs_enabled = true',
     ];
     for (const needle of required) {
       if (!text.includes(needle)) {
         fail(`${path.basename(autorunPath)} missing LED SD bus requirement: ${needle}`);
       }
     }
-    for (const banned of ['Sub DrainMp4AliasQueueOne', 'Function EnsureMp4PlayAlias']) {
+    for (const banned of [
+      'Sub DrainMp4AliasQueueOne',
+      'Function EnsureMp4PlayAlias',
+      'Function PoolMp4AliasPath',
+      'PlayLocalFile alias-hit',
+      'htmlTouch.SetUrl(',
+      'htmlPrimary.SetUrl(',
+    ]) {
       if (text.includes(banned)) {
         fail(`thin autorun must not contain ${banned}`);
       }
     }
-    console.log('[release:zip] LED SD bus assert OK (pool-direct, SD-primary)');
+    console.log('[release:zip] LED SD bus assert OK (pool-direct, SD-primary, nodejs)');
   }
   const jsLed = path.join(root, 'src', 'platform', 'ledPlaybackFile.ts');
   const jsXc = path.join(root, 'src', 'platform', 'xcOutputBridge.ts');

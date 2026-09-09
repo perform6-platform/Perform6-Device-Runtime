@@ -78,6 +78,10 @@ const LED_NEEDLES = [
   'Single BA-style attempt',
   'BootSleepSlices',
   'No CreateDirectory here',
+  'cfg2.nodejs_enabled = true',
+  'cfg3.nodejs_enabled = true',
+  'SD LED PRIMARY poll 2s',
+  'pbFileTimer (2s) is the sole SD LED resume path',
 ];
 
 const BANNED = [
@@ -86,6 +90,8 @@ const BANNED = [
   'Sub StartCacheDownload',
   'Sub DrainMp4AliasQueueOne',
   'Function EnsureMp4PlayAlias',
+  'Function PoolMp4AliasPath',
+  'PlayLocalFile alias-hit',
   'Sub RecycleHtmlWidget',
   'DiagEchoInbound',
   'ScheduleDeferredLedReady',
@@ -94,6 +100,9 @@ const BANNED = [
   'FATAL - auto reboot once',
   '/storage/sd/perform6-led-playback.json',
   'Sleep(500)',
+  'htmlTouch.SetUrl(',
+  'htmlPrimary.SetUrl(',
+  'HtmlWidget classic constructor',
 ];
 
 function assertOneAutorun(relPath, { led = true } = {}) {
@@ -118,6 +127,8 @@ function assertOneAutorun(relPath, { led = true } = {}) {
         'DrainOnePostJs',
         'EnqueuePostJs',
         'BootSleepSlices',
+        'cfg2.nodejs_enabled = true',
+        'cfg3.nodejs_enabled = true',
       ];
 
   for (const needle of needles) {
@@ -186,6 +197,14 @@ function assertJs() {
   const port = fs.readFileSync(path.join(root, 'src', 'platform', 'bsMessagePort.ts'), 'utf8');
   if (!port.includes('isBridgeDuplexTransport')) {
     fail('bsMessagePort must expose isBridgeDuplexTransport');
+  }
+  if (!port.includes('@brightsign/messageport')) {
+    fail('bsMessagePort must prefer Node @brightsign/messageport');
+  }
+
+  const mediaPool = fs.readFileSync(path.join(root, 'src', 'services', 'mediaAssetPool.ts'), 'utf8');
+  if (!mediaPool.includes('ensureMediaPoolDir') || !mediaPool.includes('mkdirSync')) {
+    fail('mediaAssetPool must mkdir pool dir in JS before AssetPool ctor');
   }
 
   const keepalive = fs.readFileSync(path.join(root, 'src', 'services', 'bridgeKeepalive.ts'), 'utf8');

@@ -13,6 +13,20 @@ import { reportOtaStatusSafe } from './otaStatusApi';
 /** Docs-style pool root (sd/perform6-ota-pool). Realize still copies to SD:/{path}. */
 export const OTA_POOL_PATH = OTA_ASSET_POOL_DIR;
 
+function ensureOtaPoolDir(): void {
+  const fs = getNodeFs();
+  if (!fs) return;
+  try {
+    fs.mkdirSync(OTA_POOL_PATH, { recursive: true });
+  } catch (e) {
+    console.warn(
+      '[Perform6] OTA pool mkdir failed',
+      OTA_POOL_PATH,
+      e instanceof Error ? e.message : e,
+    );
+  }
+}
+
 type BrightSignRequire = (id: string) => unknown;
 
 type AssetHash = { method: string; hex: string };
@@ -154,6 +168,7 @@ function loadModules(): boolean {
     const PoolClass = req('@brightsign/assetpool') as AssetPoolCtor;
     const FetcherClass = req('@brightsign/assetpoolfetcher') as AssetPoolFetcherCtor;
     FetcherClassRef = FetcherClass;
+    ensureOtaPoolDir();
     const pathCandidates = [OTA_POOL_PATH, OTA_ASSET_POOL_DIR_DOCS];
     let lastErr: unknown = null;
     for (const path of pathCandidates) {
@@ -175,6 +190,7 @@ function loadModules(): boolean {
       }
     }
     if (!pool || !fetcher) {
+      ensureOtaPoolDir();
       throw lastErr instanceof Error
         ? lastErr
         : new Error('OTA asset pool unavailable');

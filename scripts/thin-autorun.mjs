@@ -8,6 +8,12 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const autorunPath = path.join(root, 'brightsign', 'autorun.brs');
+if (!fs.existsSync(autorunPath)) {
+  console.error(
+    '[thin-autorun] brightsign/autorun.brs godfile removed — edit autorun-{xt2145,xc4055,hd226}.brs directly (or hang-harden-autorun.mjs).',
+  );
+  process.exit(1);
+}
 let text = fs.readFileSync(autorunPath, 'utf8');
 const origLen = text.split(/\r?\n/).length;
 

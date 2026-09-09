@@ -86,22 +86,11 @@ const PLAY = `Function TryPlayFileOnce(vp as Object, p as String) as Boolean
   return false
 End Function
 
-' Pool play: existing .mp4 alias-hit, else pool-direct + ProbeString (no CopyFile).
+' Pool play: pool-direct + ProbeString (no alias LocalMediaExists / CopyFile).
 Function PlayLocalFile(vp as Object, path as String) as Boolean
   TraceFnEnter("PlayLocalFile", path)
   path = NormalizeLocalSrc(path)
   isPool = IsExtensionlessPoolPath(path)
-
-  if isPool then
-    existingAlias = PoolMp4AliasPath(path)
-    if Len(existingAlias) > 0 and LocalMediaExists(existingAlias) then
-      if TryPlayFileOnce(vp, existingAlias) then
-        LedLog("=== Perform6: PlayLocalFile alias-hit " + existingAlias + " ===")
-        TraceFnExit("PlayLocalFile", "alias-hit")
-        return true
-      end if
-    end if
-  end if
 
   if TryPlayFileOnce(vp, path) then
     if isPool then
@@ -209,7 +198,7 @@ function patchFile(name) {
 
   t = replaceOnce(
     t,
-    /Function TryPlayFileOnce\(vp as Object, p as String\) as Boolean[\s\S]*?End Function\r?\n\r?\n' Pool play: existing \.mp4 alias-hit, else pool-direct \+ ProbeString \(no CopyFile\)\.\r?\nFunction PlayLocalFile\(vp as Object, path as String\) as Boolean[\s\S]*?End Function/,
+    /Function TryPlayFileOnce\(vp as Object, p as String\) as Boolean[\s\S]*?End Function\r?\n\r?\n' Pool play:.*\r?\nFunction PlayLocalFile\(vp as Object, path as String\) as Boolean[\s\S]*?End Function/,
     PLAY,
     'PlayFile',
   );

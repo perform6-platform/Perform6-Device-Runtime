@@ -1,6 +1,6 @@
 {
   "name": "perform6-touchscreen",
-  "version": "1.5.8",
+  "version": "1.5.10",
   "private": true,
   "description": "Perform6 BrightSign app — BA-style zones, offline SD play (no on-demand HTTPS)",
   "type": "module",
