@@ -59,8 +59,7 @@ function assertAutorun() {
     'perform6-led-playback.json',
     'MaybePollLedPlaybackFile',
     'ApplyNativePlayback',
-    'PlayLocalFile pool-direct OK',
-    'ProbeString',
+    'roVideoEvent Playing is the authoritative transition',
     'NO on-demand HTTPS stream',
     'media wipe DEFERRED',
     'FATAL soft-alive',
@@ -151,7 +150,37 @@ function assertJs() {
     fail('playbackSrc must document no on-demand HTTPS');
   }
 
-  ok('JS BA-style bridge primary + SD fallback + no-on-demand gates');
+  const mediaPool = fs.readFileSync(path.join(root, 'src', 'services', 'mediaAssetPool.ts'), 'utf8');
+  for (const needle of [
+    "req('@brightsign/assetrealizer')",
+    'realizer.realize(assetsToRealize)',
+    'markSdCached(item.mediaVersionId, item.fileUrl)',
+    'setMaximumPoolSize(0)',
+  ]) {
+    if (!mediaPool.includes(needle)) fail(`media pipeline missing ${needle}`);
+  }
+
+  const telemetry = fs.readFileSync(path.join(root, 'src', 'platform', 'xtOutputBridge.ts'), 'utf8');
+  for (const needle of ['requestId', "output: 'HDMI-2'", "source: 'NATIVE_HDMI'", 'reportScreenPlayback']) {
+    if (!telemetry.includes(needle)) fail(`native HDMI telemetry missing ${needle}`);
+  }
+
+  const ota = fs.readFileSync(path.join(root, 'src', 'services', 'otaAssetPool.ts'), 'utf8');
+  for (const needle of [
+    "req('@brightsign/assetrealizer')",
+    'perform6-ota-stage',
+    'perform6-recovery',
+    'perform6-ota-pending.json',
+  ]) {
+    if (!ota.includes(needle)) fail(`recoverable OTA missing ${needle}`);
+  }
+  for (const needle of ['RollbackPendingOta', 'html-load-error', 'perform6-ota-pending.json']) {
+    if (!fs.readFileSync(path.join(root, 'brightsign', 'autorun.brs'), 'utf8').includes(needle)) {
+      fail(`autorun OTA rollback missing ${needle}`);
+    }
+  }
+
+  ok('JS bridge + named media realization + correlated native telemetry');
 }
 
 assertPathRules();

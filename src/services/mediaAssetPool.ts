@@ -16,6 +16,7 @@ import {
   getMediaPoolPath,
   hasSdCachedMedia,
   markMediaPoolPath,
+  markSdCached,
   markSdDownloadConfirmed,
   clearMediaPoolPathMarks,
   emitSdCacheProgress,
@@ -28,6 +29,8 @@ import {
 } from './downloadProgress';
 import { labelForMediaVersionId } from './touchProgramGate';
 import { probeBrightSignAssetPool } from './assetPoolProbe';
+import { MEDIA_STORE_DIR_NAME } from './mediaStorePaths';
+import { getNodeFs } from '../platform/brightSignNode';
 
 /** AssetPool constructor path (/storage/sd/perform6-media-pool on OS 9.1). */
 export const MEDIA_POOL_PATH = MEDIA_ASSET_POOL_DIR;
@@ -60,6 +63,8 @@ export type MediaAsset = {
 
 type AssetPoolInstance = {
   protectAssets: (name: string, list: MediaAsset[]) => Promise<void> | void;
+  unprotectAssets?: (name: string) => Promise<void> | void;
+  setMaximumPoolSize?: (bytes: number | null) => Promise<void> | void;
 };
 
 type ProgressEvent = {
@@ -102,6 +107,13 @@ type AssetPoolFilesCtor = new (
   pool: AssetPoolInstance,
   list: MediaAsset[],
 ) => AssetPoolFilesInstance;
+type AssetRealizerInstance = {
+  realize: (assets: MediaAsset[]) => Promise<void> | void;
+};
+type AssetRealizerCtor = new (
+  pool: AssetPoolInstance,
+  destinationPath: string,
+) => AssetRealizerInstance;
 
 let pool: AssetPoolInstance | null = null;
 let fetcher: AssetPoolFetcherInstance | null = null;
@@ -110,6 +122,7 @@ let activeFetch: AssetPoolFetcherInstance | null = null;
 let modulesLoaded = false;
 let modulesAvailable = false;
 let AssetPoolFilesClass: AssetPoolFilesCtor | null = null;
+let AssetRealizerClass: AssetRealizerCtor | null = null;
 let downloadInProgress = false;
 let downloadStartedAtMs = 0;
 /** Active listener pair — removed before each new fetch to avoid MaxListeners leaks. */
@@ -237,6 +250,11 @@ function loadModules(): boolean {
       } catch {
         AssetPoolFilesClass = null;
       }
+    }
+    try {
+      AssetRealizerClass = req('@brightsign/assetrealizer') as AssetRealizerCtor;
+    } catch {
+      AssetRealizerClass = null;
     }
 
     modulesLoaded = true;
@@ -651,6 +669,24 @@ export async function downloadMediaItemsViaAssetPool(
       stallReject = null;
     }
 
+    // AssetPool hash objects are download storage, not the playback filename.
+    // BrightSign documents AssetRealizer as the supported extraction path.
+    // Realize to named *.mp4 files so both HTML video and roVideoPlayer consume
+    // the same deterministic SD path without copying a protected pool object.
+    if (!AssetRealizerClass) {
+      throw new Error('BrightSign AssetRealizer unavailable');
+    }
+    const storePath = `/storage/sd/${MEDIA_STORE_DIR_NAME}`;
+    const fs = getNodeFs();
+    if (!fs) throw new Error('Node fs unavailable for realized media validation');
+    if (!fs.existsSync(storePath)) fs.mkdirSync(storePath, { recursive: true });
+    const assetsToRealize = needFetch.filter((asset) => {
+      const item = byName.get(asset.name);
+      return Boolean(item && !failureReasons[item.mediaVersionId]);
+    });
+    const realizer = new AssetRealizerClass(pool, storePath);
+    await Promise.resolve(realizer.realize(assetsToRealize));
+
     for (const asset of needFetch) {
       const item = byName.get(asset.name)!;
       if (failureReasons[item.mediaVersionId]) {
@@ -658,16 +694,27 @@ export async function downloadMediaItemsViaAssetPool(
         clearSdCached([item.mediaVersionId]);
         continue;
       }
-      const poolPath = await resolvePoolPath(assetList, asset.name);
-      if (!poolPath) {
+      const realizedPath = `${storePath}/${asset.name}`;
+      let realizedBytes = 0;
+      try {
+        realizedBytes = fs.existsSync(realizedPath)
+          ? fs.statSync(realizedPath).size
+          : 0;
+      } catch {
+        realizedBytes = 0;
+      }
+      const expectedBytes = item.fileSize != null ? Number(item.fileSize) : 0;
+      if (
+        realizedBytes <= 0 ||
+        (expectedBytes > 0 && realizedBytes !== expectedBytes)
+      ) {
         failed.push(item.mediaVersionId);
         failureReasons[item.mediaVersionId] =
-          'Asset pool fetch finished but path missing';
+          `AssetRealizer output invalid (${realizedBytes}/${expectedBytes || '?'})`;
         clearSdCached([item.mediaVersionId]);
         continue;
       }
-      // Pool path is playable — LED PlayFile(GetPoolFilePath); no Realizer/copy.
-      markMediaPoolPath(item.mediaVersionId, poolPath);
+      markSdCached(item.mediaVersionId, item.fileUrl);
       markSdDownloadConfirmed(item.mediaVersionId);
       succeeded.push(item.mediaVersionId);
       downloaded.push(item.mediaVersionId);
@@ -676,10 +723,22 @@ export async function downloadMediaItemsViaAssetPool(
         url: resolveMediaFileUrl(item.fileUrl),
         name: asset.name,
         mediaVersionId: item.mediaVersionId,
-        destPath: poolPath,
+        destPath: realizedPath,
         bytesDownloaded: item.fileSize != null ? Number(item.fileSize) : 0,
         bytesTotal: item.fileSize != null ? Number(item.fileSize) : undefined,
       });
+    }
+    // Realized media is now the authoritative single store. Release pool
+    // protection and ask BrightSign to prune transient hash objects so the
+    // 35–45GB schedule is not duplicated permanently on the 128GB SD card.
+    try {
+      await Promise.resolve(pool.unprotectAssets?.('perform6-media'));
+      if (typeof pool.setMaximumPoolSize === 'function') {
+        await Promise.resolve(pool.setMaximumPoolSize(0));
+        await Promise.resolve(pool.setMaximumPoolSize(null));
+      }
+    } catch (error) {
+      console.warn('[Perform6] Media pool prune deferred', error);
     }
     emitSdCacheProgress({
       status: 'complete',

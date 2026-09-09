@@ -17,7 +17,7 @@ function ok(msg) {
   console.log(`[assert:program-led] OK: ${msg}`);
 }
 
-/** Mirror src/services/playbackSrc.ts toLedPlayableSrc (pool / .mp4 only). */
+/** Mirror src/services/playbackSrc.ts toLedPlayableSrc. */
 function toLedPlayableSrc(src) {
   if (!src || src.startsWith('blob:')) return '';
   const lower = src.toLowerCase();
@@ -92,8 +92,8 @@ function assertSourceGuards() {
   if (zipScript.includes('Eager alias:') || zipScript.includes('CopyFile only on fail')) {
     fail('build-profile-zip README-SD text still describes removed alias/CopyFile');
   }
-  if (!zipScript.includes('pool-direct PlayFile + ProbeString')) {
-    fail('build-profile-zip README-SD must document pool-direct');
+  if (!zipScript.includes('named .mp4 files produced by BrightSign AssetRealizer')) {
+    fail('build-profile-zip README-SD must document named realized media');
   }
 
   ok('source guards (Home idle race, nonce, no JS alias copy, README)');
@@ -105,20 +105,19 @@ function assertProgramReplacesDefault() {
   const gymDefaultId = 'mv-fitness-default-001';
   const gymStartId = 'mv-fitness-start-here-002';
 
-  const pool = (leaf) =>
-    `SD:/perform6-media-pool/ab/sha256-${leaf}`;
+  const media = (name) => `SD:/perform6-media/${name}.mp4`;
 
   const idleGolf = buildLedCommand({
     slot: 'touch-default',
     mediaVersionId: golfDefaultId,
     title: 'Golf Default',
-    src: pool('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
+    src: media('golf-default'),
   });
   const startGolf = buildLedCommand({
     slot: 'start-here',
     mediaVersionId: startHereId,
     title: 'Start Here',
-    src: pool('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'),
+    src: media('golf-start-here'),
   });
 
   if (idleGolf.mediaVersionId === startGolf.mediaVersionId) {
@@ -132,13 +131,13 @@ function assertProgramReplacesDefault() {
     slot: 'touch-default',
     mediaVersionId: gymDefaultId,
     title: 'Fitness Default',
-    src: pool('cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'),
+    src: media('fitness-default'),
   });
   const startGym = buildLedCommand({
     slot: 'start-here',
     mediaVersionId: gymStartId,
     title: 'Start Here',
-    src: pool('dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'),
+    src: media('fitness-start-here'),
   });
 
   if (idleGym.mediaVersionId === startGym.mediaVersionId) {

@@ -2407,6 +2407,38 @@ Function VideoEventName(code as Integer) as String
   return "code=" + IntToStr(code)
 End Function
 
+' Restore the previous active package when a newly activated OTA cannot load
+' its HtmlWidget. The pending marker is written only after all staged files
+' pass AssetRealizer/size validation; a successful load removes it.
+Function RollbackPendingOta(reason as String) as Boolean
+  text = ReadAsciiFile("SD:/perform6-ota-pending.json")
+  if Len(text) = 0 then return false
+  pending = ParseJSON(text)
+  if type(pending) <> "roAssociativeArray" then return false
+  backupRoot = AsBrString(pending.backupRoot)
+  paths = pending.paths
+  if Len(backupRoot) = 0 or type(paths) <> "roArray" then return false
+
+  restored = 0
+  for each relValue in paths
+    rel = AsBrString(relValue)
+    if Len(rel) > 0 then
+      backup = backupRoot + "/" + rel
+      active = "SD:/" + rel
+      if PartFileBytes(backup) > 0 then
+        if CopyFile(backup, active) then restored = restored + 1
+      end if
+    end if
+  end for
+  LedLog("=== Perform6: OTA rollback " + reason + " restored=" + IntToStr(restored) + " ===")
+  FlushLedLog()
+  if restored > 0 then
+    DeleteFile("SD:/perform6-ota-pending.json")
+    return true
+  end if
+  return false
+End Function
+
 Function VideoModeMatches(actualMode as Dynamic, expectedMode as String) as Boolean
   if type(actualMode) <> "roString" and type(actualMode) <> "String" then
     return false
@@ -2938,6 +2970,9 @@ Sub Main()
           if Len(msg) = 0 then msg = AsBrString(data.message)
           SafePrint("=== Perform6: HTML load-error: " + msg + " ===")
           LedLog("=== Perform6: HTML load-error: " + msg + " ===")
+          if RollbackPendingOta("html-load-error") then
+            RebootDeviceAfterOta()
+          end if
           failedUrl = AsBrString(EventLookup(data, "url"))
           if Len(failedUrl) = 0 then failedUrl = AsBrString(data.url)
           gLoad = GetGlobalAA()
@@ -2973,6 +3008,7 @@ Sub Main()
           end if
         else if reason = "load-finished" then
           htmlLoadFinished = true
+          DeleteFile("SD:/perform6-ota-pending.json")
           DeleteFile("SD:/perform6-html-load-fail")
           SafePrint("=== Perform6: HTML load-finished ===")
           LedLog("=== Perform6: HTML load-finished ===")

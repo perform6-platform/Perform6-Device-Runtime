@@ -90,19 +90,28 @@ async function assertCapacityForDownload(
   if (!snap || snap.freeBytes <= 0) return null;
 
   const required = needBytes + MEDIA_CAPACITY_RESERVE_BYTES;
-  if (snap.freeBytes >= required) return null;
+  // AssetRealizer briefly needs both the transient pool object and the named
+  // playback file. Downloads are processed one-at-a-time, so reserve only the
+  // largest file rather than duplicating the full 35–45GB schedule.
+  const largestFileBytes = items.reduce((max, item) => {
+    if (hasSdCachedMedia(item.mediaVersionId)) return max;
+    const n = item.fileSize != null ? Number(item.fileSize) : 0;
+    return Number.isFinite(n) && n > max ? n : max;
+  }, 0);
+  const peakRequired = required + largestFileBytes;
+  if (snap.freeBytes >= peakRequired) return null;
 
   return (
-    `SD capacity: need ~${Math.ceil(required / 1048576)} MB ` +
-    `(download ${Math.ceil(needBytes / 1048576)} MB + reserve) ` +
+    `SD capacity: need ~${Math.ceil(peakRequired / 1048576)} MB ` +
+    `(content ${Math.ceil(needBytes / 1048576)} MB + largest-file staging + reserve) ` +
     `but only ${snap.freeMb} MB free`
   );
 }
 
 /**
  * BrightSign surgical media path:
- * AssetPoolFetcher → mark GetPoolFilePath → LED PlayFile(pool path).
- * No AssetRealizer / Node copy (field EPERM). Autorun prefetch disabled.
+ * AssetPoolFetcher → AssetRealizer → named .mp4 in perform6-media.
+ * One item at a time bounds peak space while preserving resumable downloads.
  */
 export async function downloadMediaBatchToSd(
   items: SyncMediaItem[],
@@ -157,7 +166,19 @@ export async function downloadMediaBatchToSd(
     };
   }
 
-  const result = await downloadMediaItemsViaAssetPool(items, onProgress, options);
+  const result = {
+    succeeded: [] as string[],
+    downloaded: [] as string[],
+    failed: [] as string[],
+    failureReasons: {} as Record<string, string>,
+  };
+  for (const item of items) {
+    const one = await downloadMediaItemsViaAssetPool([item], onProgress, options);
+    result.succeeded.push(...one.succeeded);
+    result.downloaded.push(...one.downloaded);
+    result.failed.push(...one.failed);
+    Object.assign(result.failureReasons, one.failureReasons);
+  }
 
   const missing = items.filter(
     (item) =>

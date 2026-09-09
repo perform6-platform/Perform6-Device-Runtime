@@ -9,9 +9,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "assert:brightscript": "bsc --no-project --root-dir brightsign --files autorun.brs --create-package false --copy-to-staging false --diagnostic-level error",
     "assert:led-playback": "node scripts/assert-led-playback.mjs",
     "assert:program-led": "node scripts/assert-program-led-command.mjs",
-    "assert:playback": "node scripts/assert-led-playback.mjs && node scripts/assert-program-led-command.mjs",
+    "assert:playback": "npm run assert:brightscript && node scripts/assert-led-playback.mjs && node scripts/assert-program-led-command.mjs",
     "release:zip": "node scripts/build-profile-zip.mjs XT2145",
     "release:zip:xt2145": "node scripts/build-profile-zip.mjs XT2145",
     "release:zip:xc4055": "node scripts/build-profile-zip.mjs XC4055",
@@ -26,10 +27,11 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.1.0",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
-    "@tailwindcss/vite": "^4.1.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "brighterscript": "^0.73.3",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.7.2",
     "vite": "^6.0.6"
