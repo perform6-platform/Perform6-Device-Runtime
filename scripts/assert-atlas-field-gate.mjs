@@ -66,8 +66,16 @@ for (const marker of [
   'RollbackPendingOta("html-load-error")',
   'DeleteFile("SD:/perform6-ota-pending.json")',
   'MAIN|xt|workers-ready',
+  'while not f.AtEof()',
 ]) {
   if (!autorun.includes(marker)) fail(`autorun invariant missing: ${marker}`);
+}
+
+const readRawFile = autorun.match(
+  /Function ReadRawFile\(path as String\) as String([\s\S]*?)End Function/,
+)?.[1];
+if (!readRawFile || readRawFile.includes('while true')) {
+  fail('ReadRawFile must terminate with roReadFile.AtEof()');
 }
 
 
@@ -100,6 +108,8 @@ for (const marker of [
   'perform6-ota-pending.json',
   'perform6-recovery',
   'refusing unsafe pool copy',
+  'rebootViaBrightSignSystem()',
+  'fs.renameSync(temporary, destination)',
 ]) {
   if (!otaApply.includes(marker) && !otaPool.includes(marker)) {
     fail(`recoverable OTA invariant missing: ${marker}`);

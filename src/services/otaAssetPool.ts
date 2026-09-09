@@ -34,12 +34,14 @@ type ProgressEvent = {
   filename?: string;
   currentFileTransferred?: number;
   currentFileTotal?: number;
+  detail?: ProgressEvent;
 };
 
 type FileEvent = {
   filename?: string;
   responseCode?: number;
   error?: string;
+  detail?: FileEvent;
 };
 
 type AssetPoolFetcherInstance = {
@@ -71,11 +73,17 @@ type AssetRealizerCtor = new (
 ) => AssetRealizerInstance;
 
 type NodeFs = {
-  copyFileSync: (src: string, dest: string) => void;
+  readFileSync: (path: string) => Uint8Array;
   mkdirSync: (path: string, opts?: { recursive?: boolean }) => void;
   existsSync: (path: string) => boolean;
   statSync: (path: string) => { size: number };
-  writeFileSync: (path: string, data: string, encoding?: string) => void;
+  writeFileSync: (
+    path: string,
+    data: string | Uint8Array,
+    encoding?: string,
+  ) => void;
+  unlinkSync: (path: string) => void;
+  renameSync: (from: string, to: string) => void;
 };
 
 let pool: AssetPoolInstance | null = null;
@@ -159,6 +167,12 @@ function loadModules(): boolean {
     const PoolClass = req('@brightsign/assetpool') as AssetPoolCtor;
     const FetcherClass = req('@brightsign/assetpoolfetcher') as AssetPoolFetcherCtor;
     FetcherClassRef = FetcherClass;
+    // AssetPool does not create a missing pool directory on every BOS build.
+    // Create the canonical Node mount path before constructing it.
+    const nodeFs = getNodeFs();
+    if (nodeFs && !nodeFs.existsSync(OTA_POOL_PATH)) {
+      nodeFs.mkdirSync(OTA_POOL_PATH, { recursive: true });
+    }
     const pathCandidates = [OTA_POOL_PATH, OTA_ASSET_POOL_DIR_DOCS];
     let lastErr: unknown = null;
     for (const path of pathCandidates) {
@@ -293,6 +307,18 @@ function ensureParentDir(fs: NodeFs, filePath: string): void {
   }
 }
 
+function replaceFile(
+  fs: NodeFs,
+  destination: string,
+  data: string | Uint8Array,
+): void {
+  ensureParentDir(fs, destination);
+  const temporary = `${destination}.perform6-new`;
+  fs.writeFileSync(temporary, data);
+  if (fs.existsSync(destination)) fs.unlinkSync(destination);
+  fs.renameSync(temporary, destination);
+}
+
 function safeVersionDir(version: string): string {
   return version.replace(/[^a-zA-Z0-9._-]/g, '_') || 'unknown';
 }
@@ -325,9 +351,9 @@ function activateStagedPackage(
       ensureParentDir(fs, active);
       if (fs.existsSync(active)) {
         ensureParentDir(fs, backup);
-        fs.copyFileSync(active, backup);
+        replaceFile(fs, backup, fs.readFileSync(active));
       }
-      fs.copyFileSync(staged, active);
+      replaceFile(fs, active, fs.readFileSync(staged));
       if (fs.statSync(active).size !== stagedSize) {
         throw new Error(`OTA activation size mismatch: ${rel}`);
       }
@@ -349,7 +375,7 @@ function activateStagedPackage(
       if (!fs.existsSync(backup)) continue;
       const active = `/storage/sd/${rel}`;
       ensureParentDir(fs, active);
-      fs.copyFileSync(backup, active);
+      replaceFile(fs, active, fs.readFileSync(backup));
     }
     throw error;
   }
@@ -438,13 +464,14 @@ export async function installOtaViaAssetPool(
     }
 
     const onFile = (event: FileEvent) => {
-      const name = String(event.filename ?? '');
+      const payload = event.detail ?? event;
+      const name = String(payload.filename ?? '');
       const file = byName.get(name);
-      const code = event.responseCode;
+      const code = payload.responseCode;
       const ok = code === 200 || code === 226 || code === 0;
       if (!ok && file) {
         failed[file.path] =
-          event.error || `OTA asset fetch failed (code ${String(code ?? '?')})`;
+          payload.error || `OTA asset fetch failed (code ${String(code ?? '?')})`;
       }
       if (file) {
         reportOtaStatusSafe(auth, {
@@ -460,7 +487,8 @@ export async function installOtaViaAssetPool(
     };
 
     const onProgress = (event: ProgressEvent) => {
-      const name = String(event.filename ?? '');
+      const payload = event.detail ?? event;
+      const name = String(payload.filename ?? '');
       const file = byName.get(name);
       if (!file) return;
       reportOtaStatusSafe(auth, {
@@ -469,8 +497,8 @@ export async function installOtaViaAssetPool(
         doneCount: alreadyDone,
         totalCount: packageTotal,
         currentPath: file.path,
-        bytesDownloaded: event.currentFileTransferred,
-        bytesTotal: event.currentFileTotal ?? file.sizeBytes,
+        bytesDownloaded: payload.currentFileTransferred,
+        bytesTotal: payload.currentFileTotal ?? file.sizeBytes,
         runtimeVersion: runtimeConfig.runtimeVersion,
       });
     };

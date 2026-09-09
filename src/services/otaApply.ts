@@ -28,6 +28,7 @@ import {
   probeAutorunCapabilities,
 } from './autorunCapabilities';
 import { requestBridgeSelfHeal } from './bridgeKeepalive';
+import { rebootViaBrightSignSystem } from '../platform/brightSignNode';
 
 const OTA_INSTALL_MESSAGE = 'led-ota-install';
 const OTA_AUTH_MESSAGE = 'led-ota-auth';
@@ -457,9 +458,6 @@ async function commitOtaWaveAndReboot(
   },
 ): Promise<{ ok: boolean; error?: string }> {
   const port = getSharedMessagePort();
-  if (!port) {
-    return { ok: false, error: 'BSMessagePort unavailable for reboot' };
-  }
 
   try {
     await flushDeviceLogs(auth);
@@ -505,8 +503,15 @@ async function commitOtaWaveAndReboot(
   console.info(
     `[Perform6] OTA wave committed (${opts.currentPath ?? 'ok'}) — rebooting`,
   );
-  port.PostBSMessage({ type: OTA_REBOOT_MESSAGE });
-  return { ok: true };
+  // The XT autorun loop may be the component being repaired, so OTA must not
+  // depend on that same loop consuming a PostBSMessage. The Node system path
+  // is independent and is also the proven remote-reboot path on the field unit.
+  if (rebootViaBrightSignSystem()) return { ok: true };
+  if (port) {
+    port.PostBSMessage({ type: OTA_REBOOT_MESSAGE });
+    return { ok: true };
+  }
+  return { ok: false, error: 'OTA committed but no reboot transport accepted' };
 }
 
 export async function installOtaFromManifest(

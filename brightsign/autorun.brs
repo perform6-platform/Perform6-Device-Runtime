@@ -2188,7 +2188,10 @@ Function ReadRawFile(path as String) as String
     return ""
   end if
   out = ""
-  while true
+  ' BrightSign roReadFile.ReadLine() can keep returning an empty roString at EOF.
+  ' The previous type-based exit therefore trapped Main here forever while
+  ' reading perform6-ops.json, after the HDMI-2 logo but before the event loop.
+  while not f.AtEof()
     line = f.ReadLine()
     if type(line) <> "roString" and type(line) <> "String" then
       exit while
@@ -2743,10 +2746,13 @@ Sub Main()
     end if
 
     TraceLog("MAIN|xt|post-idle")
+    FlushLedLog()
     EnsureDeferredWorkers(ledStates, htmlTouch)
     TraceLog("MAIN|xt|workers-ready")
+    FlushLedLog()
     ProcessOpsOnBoot(ledStates)
     TraceLog("MAIN|xt|ops-ready")
+    FlushLedLog()
     ' Resume last known content immediately — do not wait for the JS bridge.
     FlushLedLog()
     MaybeResumePlaybackFromFile(ledStates, msgPort, "boot")
