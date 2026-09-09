@@ -1,5 +1,5 @@
 /**
- * Offline asserts: per-profile docs-style autoruns + JS SD-primary LED path.
+ * Offline asserts: per-profile docs-style autoruns + JS zone-primary LED path.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -51,7 +51,7 @@ function assertPathRules() {
 
 /** Docs-critical: zones + SD PlayFile + hang-proof + soft-alive. */
 const LED_NEEDLES = [
-  'LED PRIMARY',
+  'ZONE PRIMARY',
   'perform6-led-playback.json',
   'MaybePollLedPlaybackFile',
   'ApplyNativePlayback',
@@ -75,9 +75,10 @@ const LED_NEEDLES = [
   'no auto-reboot',
   'DrainOnePostJs',
   'EnqueuePostJs',
-  'Single BA-style attempt',
+  'BrightAuthor on-demand',
   'BootSleepSlices',
   'No CreateDirectory here',
+  'SD resume-only',
 ];
 
 const BANNED = [
@@ -160,7 +161,7 @@ function assertJs() {
   const led = fs.readFileSync(path.join(root, 'src', 'platform', 'ledPlaybackFile.ts'), 'utf8');
   if (!led.includes('writeLedPlaybackFile')) fail('ledPlaybackFile missing writer');
   if (!led.includes('toLedPlayableSrc')) fail('ledPlaybackFile must normalize via toLedPlayableSrc');
-  if (!led.includes('PRIMARY path')) fail('ledPlaybackFile must document SD as PRIMARY path');
+  if (!led.includes('RESUME path')) fail('ledPlaybackFile must document SD as RESUME path');
 
   const aliasQ = fs.readFileSync(path.join(root, 'src', 'services', 'mp4AliasQueue.ts'), 'utf8');
   if (!aliasQ.includes('intentionally empty') && !aliasQ.includes('Do NOT enqueue autorun CopyFile')) {
@@ -173,13 +174,15 @@ function assertJs() {
   const xt = fs.readFileSync(path.join(root, 'src', 'platform', 'xtOutputBridge.ts'), 'utf8');
   if (!xt.includes('writeXtPlaybackFile')) fail('XT bridge must write SD bus');
   if (!xt.includes('PostBSMessage')) fail('XT bridge must PostBSMessage');
-  if (!xt.includes('SD-primary')) fail('XT LED must be SD-primary');
+  if (!xt.includes('zone-primary')) fail('XT LED must be zone-primary');
+  if (!xt.includes('SD-resume')) fail('XT LED must keep SD-resume');
   if (xt.includes('ack-timeout')) fail('XT must not wait on ack-timeout for LED');
   if (!xt.includes('no auto-reboot')) fail('XT must not auto-reboot on LED miss');
 
   const xc = fs.readFileSync(path.join(root, 'src', 'platform', 'xcOutputBridge.ts'), 'utf8');
   if (!xc.includes('PostBSMessage')) fail('XC bridge must PostBSMessage');
-  if (!xc.includes('SD-primary')) fail('XC LED must be SD-primary');
+  if (!xc.includes('zone-primary')) fail('XC LED must be zone-primary');
+  if (!xc.includes('SD-resume')) fail('XC LED must keep SD-resume');
   if (xc.includes('ack-timeout')) fail('XC must not wait on ack-timeout for LED');
   if (!xc.includes('no auto-reboot')) fail('XC must not auto-reboot on LED miss');
 
@@ -206,7 +209,7 @@ function assertJs() {
     fail('playbackSrc must document no on-demand HTTPS');
   }
 
-  ok('JS SD-primary LED + docs-style optional messageport');
+  ok('JS zone-primary LED + SD-resume + docs-style optional messageport');
 }
 
 assertPathRules();

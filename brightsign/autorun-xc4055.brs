@@ -1,7 +1,7 @@
 ' Perform6 BrightSign autorun — XC4055 (BrightAuthor-style zones)
-' LED PRIMARY: SD:/perform6-led-playback.json poll → PlayFile. No boot PostJSMessage.
+' ZONE PRIMARY: PostBSMessage → PlayFile (BA zone). SD resume-only. No boot PostJSMessage.
 ' LED OPTIONAL: JS PostBSMessage(xc-playback). Never required. No auto-reboot on silence.
-' Media: sync/AssetPool to SD first, then PlayFile — NO on-demand HTTPS stream.
+' Media: AssetPool GetPoolFilePath → PlayFile({Filename, ProbeString}) — NO on-demand HTTPS stream.
 ' Never SetUrl-recycle HtmlWidget after load-finished.
 ' Docs-style thin: zones + SD PlayFile + hang-proof Main. No wipe/FS/heal. No recovery auto-reboot.
 ' hang-harden: queued PostJS, single PlayFile, SD-only bus read, no mkdir/Sleep on hot path.
@@ -781,18 +781,21 @@ End Function
 
 ' Pool play: existing .mp4 alias-hit if present, else pool-direct + ProbeString (no CopyFile).
 
+' BrightAuthor on-demand: GetPoolFilePath → PlayFile({Filename[, ProbeString]}).
+' One attempt only — no alias-first / dual-mount / string+AA stack (hang risk).
+
 Function TryPlayFileOnce(vp as Object, p as String) as Boolean
   TraceFnEnter("TryPlayFileOnce", p)
   WritePlayfileCanary("trying", p, "?")
-  ' Single BA-style attempt — stacked PlayFile variants can stall Main.
   aa = CreateObject("roAssociativeArray")
   aa.Filename = p
   if IsExtensionlessPoolPath(p) then
+    ' BA Connected / AssetPool: extensionless hash needs ProbeString media type.
     aa.ProbeString = "mp4"
   end if
   ok = vp.PlayFile(aa)
   if ok = true then
-    WritePlayfileCanary("ok-filename", p, "1")
+    WritePlayfileCanary("ok-ba-filename", p, "1")
     TraceFnExit("TryPlayFileOnce", "ok")
     return true
   end if
@@ -801,26 +804,17 @@ Function TryPlayFileOnce(vp as Object, p as String) as Boolean
   return false
 End Function
 
-' Pool play: existing .mp4 alias-hit, else pool-direct + ProbeString (no CopyFile).
+' BA on-demand play of local/pool path (JS already resolved GetPoolFilePath → SD:/…).
 Function PlayLocalFile(vp as Object, path as String) as Boolean
   TraceFnEnter("PlayLocalFile", path)
   path = NormalizeLocalSrc(path)
   isPool = IsExtensionlessPoolPath(path)
 
-  if isPool then
-    existingAlias = PoolMp4AliasPath(path)
-    if Len(existingAlias) > 0 and LocalMediaExists(existingAlias) then
-      if TryPlayFileOnce(vp, existingAlias) then
-        LedLog("=== Perform6: PlayLocalFile alias-hit " + existingAlias + " ===")
-        TraceFnExit("PlayLocalFile", "alias-hit")
-        return true
-      end if
-    end if
-  end if
-
   if TryPlayFileOnce(vp, path) then
     if isPool then
       LedLog("=== Perform6: PlayLocalFile pool-direct OK " + path + " ===")
+    else
+      LedLog("=== Perform6: PlayLocalFile BA-OK " + path + " ===")
     end if
     TraceFnExit("PlayLocalFile", "ok|" + path)
     return true
@@ -1176,13 +1170,9 @@ Sub PlayNativeSrc(st as Object, src as String, msgPort as Object, states as Obje
       st.idleShown = false
       WaitMsgSlices(msgPort, 1)
     end if
-    if LocalMediaExists(src) or IsExtensionlessPoolPath(src) then
-      ok = PlayLocalFile(st.vp, src)
-    else
-      TraceFnBreak("PlayNativeSrc", "media-missing")
-      LedLog("=== Perform6: LED " + st.key + " media missing " + src + " ===")
-      ok = false
-    end if
+    ' BA: PlayFile immediately — no Exists pre-check (false negatives delay on-demand).
+    st.vp.SetLoopMode(st.loopMode)
+    ok = PlayLocalFile(st.vp, src)
   end if
 
   if ok then
@@ -1222,8 +1212,10 @@ Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, stat
 
   src = PayloadString(payload, "src")
   fallbackSrc = PayloadString(payload, "fallbackSrc")
+  assetName = PayloadString(payload, "assetName")
   mediaId = PayloadString(payload, "mediaVersionId")
-  TraceLog("PLAY|ApplyNative|src=" + src + "|fb=" + fallbackSrc + "|id=" + mediaId)
+  ' src = JS GetPoolFilePath (AssetPoolFiles.getPath) — BA media path.
+  TraceLog("PLAY|ApplyNative|src=" + src + "|asset=" + assetName + "|fb=" + fallbackSrc + "|id=" + mediaId)
   if not IsPlayableNativeSrc(src) then
     TraceLog("PLAY|gate|primary-not-playable")
     src = fallbackSrc
@@ -1299,12 +1291,11 @@ Sub PostPlaybackAck(states as Object, st as Object, payload as Object, ok as Boo
   PostJsMessage(html, msg)
 End Sub
 
-' --- LED playback SD bus (FALLBACK when bridge one-way / no port) --------------
-' NORMAL path: JS PostBSMessage xt-playback / xc-playback (BA HTML↔zone style).
-' Fallback: JS writes SD:/perform6-led-playback.json; autorun polls ~2s.
-' JS writes SD:/perform6-led-playback.json (commands[] per LED target).
+' --- LED Option A (BA zone semantics, no BSN) -----------------------------------
+' ZONE PRIMARY: JS PostBSMessage(xt/xc-playback) → ApplyNativePlayback → PlayFile.
+' src = JS AssetPool getPath (GetPoolFilePath equivalent). ProbeString for pool.
+' SD RESUME-ONLY: perform6-led-playback.json on boot / 15s backup if bridge one-way.
 ' Legacy SD:/perform6-xt-playback.json still accepted (maps to target "led").
-' Bridge PostBSMessage is best-effort only — never required for LED play.
 
 Function LoadLedPlaybackFileAA() as Object
   ' SD:/ only — dual /storage/sd reads double Main I/O risk.
@@ -1645,7 +1636,7 @@ Sub MaybeResumePlaybackFromFile(states as Object, msgPort as Object, reason as S
   WriteLedBusHeartbeat("bad-type", reason)
 End Sub
 
-' Fallback SD poll — BA-style bridge is primary; keep this slow to avoid fighting zone msgs.
+' SD resume-only backup — zone PostBSMessage is primary; poll must stay slow.
 Sub MaybePollLedPlaybackFile(states as Object, msgPort as Object)
   if type(states) <> "roArray" then return
   if states.Count() = 0 then return
@@ -1655,7 +1646,7 @@ Sub MaybePollLedPlaybackFile(states as Object, msgPort as Object)
     if type(g.p6PbPollSpan) = "roTimespan" then g.p6PbPollSpan.Mark()
   end if
   if type(g.p6PbPollSpan) <> "roTimespan" then return
-  if g.p6PbPollSpan.TotalMilliseconds() < 2000 then return
+  if g.p6PbPollSpan.TotalMilliseconds() < 15000 then return
   g.p6PbPollSpan.Mark()
   MaybeResumePlaybackFromFile(states, msgPort, "loop")
 End Sub
@@ -2319,12 +2310,12 @@ Sub Main()
     WriteAsciiFile("SD:/perform6-debug-f6ed41.txt", gLoop.p6DebugTrail)
   end if
   LedLog("=== Perform6: bridge observe-only (no recycle/reboot on silence) ===")
-  LedLog("=== Perform6: SD LED PRIMARY poll 1s (bridge optional) ===")
+  LedLog("=== Perform6: zone-primary PostBSMessage; SD resume-only 15s ===")
 
   pbFileTimer = CreateObject("roTimer")
   if type(pbFileTimer) = "roTimer" then
     pbFileTimer.SetPort(msgPort)
-    pbFileTimer.SetElapsed(1, 0)
+    pbFileTimer.SetElapsed(15, 0)
     pbFileTimer.Start()
   end if
 
@@ -2399,7 +2390,7 @@ Sub Main()
         MaybeResumePlaybackFromFile(ledStates, msgPort, "poll")
         MaybeFlushLedLog()
         if type(pbFileTimer) = "roTimer" then
-          pbFileTimer.SetElapsed(1, 0)
+          pbFileTimer.SetElapsed(15, 0)
           pbFileTimer.Start()
         end if
       else
@@ -2455,6 +2446,7 @@ Sub Main()
           DeleteFile("SD:/perform6-html-load-fail")
           SafePrint("=== Perform6: HTML load-finished ===")
           LedLog("=== Perform6: HTML load-finished ===")
+          if profile = "XT2145" or profile = "XC4055" then MaybeResumePlaybackFromFile(ledStates, msgPort, "load-finished")
         else if reason = "message" or Len(reason) = 0 then
           payload = ExtractJsPayload(data)
           if type(payload) <> "roAssociativeArray" then

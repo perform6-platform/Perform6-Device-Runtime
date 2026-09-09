@@ -116,7 +116,8 @@ function assertLedPlaybackBus(autorunPath, profileKey) {
       'AtomicWriteAsciiFile',
       'LedStatusRolesAA',
       'LoadLedStatusRootAA',
-      'LED PRIMARY',
+      'ZONE PRIMARY',
+      'SD resume-only',
       'NO on-demand HTTPS stream',
     ];
     for (const needle of required) {
@@ -129,7 +130,7 @@ function assertLedPlaybackBus(autorunPath, profileKey) {
         fail(`thin autorun must not contain ${banned}`);
       }
     }
-    console.log('[release:zip] LED SD bus assert OK (pool-direct, SD-primary)');
+    console.log('[release:zip] LED zone assert OK (pool-direct, zone-primary, SD-resume)');
   }
   const jsLed = path.join(root, 'src', 'platform', 'ledPlaybackFile.ts');
   const jsXc = path.join(root, 'src', 'platform', 'xcOutputBridge.ts');

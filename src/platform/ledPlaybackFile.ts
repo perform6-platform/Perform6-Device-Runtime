@@ -1,6 +1,6 @@
 /**
- * LED SD playback file — PRIMARY path for native LED PlayFile.
- * Bridge PostBSMessage is optional. JS writes SD:/perform6-led-playback.json.
+ * LED SD playback file — RESUME path for native LED PlayFile (boot / bridge down).
+ * Zone PRIMARY: PostBSMessage. JS still writes SD:/perform6-led-playback.json for resume.
  */
 import { getNodeFs, toNodeSdPath } from './brightSignNode';
 import { toLedPlayableSrc } from '../services/playbackSrc';

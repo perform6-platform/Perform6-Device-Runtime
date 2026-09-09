@@ -1,7 +1,8 @@
 /**
- * XT2145 LED = native roVideoPlayer in autorun.
- * PRIMARY: write SD:/perform6-led-playback.json (autorun polls).
- * OPTIONAL: PostBSMessage if port exists — never wait for ack, never reboot.
+ * XT2145 LED = native roVideoPlayer zone (Option A / BA-style).
+ * PRIMARY: PostBSMessage(xt-playback) → autorun ApplyNativePlayback → PlayFile.
+ * RESUME:  SD:/perform6-led-playback.json for boot / one-way bridge backup.
+ * src = JS AssetPool getPath (GetPoolFilePath equivalent). No auto-reboot.
  */
 import { runtimeConfig } from '../config/runtime';
 import {
@@ -42,13 +43,20 @@ function nativePlayableSrc(
   return toLedPlayableSrc(fallbackSrc);
 }
 
-function writeSdPrimary(
+/** Leaf name for autorun logging / future BRS GetPoolFilePath. */
+function assetNameFromSrc(src: string): string {
+  const cleaned = src.replace(/^SD:\//i, '').replace(/^\/storage\/sd\//i, '');
+  const slash = cleaned.lastIndexOf('/');
+  return slash >= 0 ? cleaned.slice(slash + 1) : cleaned;
+}
+
+function writeSdResume(
   payload: ReturnType<typeof buildPayload>,
   reason: string,
   force = false,
 ): void {
   const fileOk = writeXtPlaybackFile(payload, { immediate: true, force });
-  console.info('[Perform6] XT LED SD-primary', {
+  console.info('[Perform6] XT LED SD-resume', {
     reason,
     ok: fileOk,
     src: payload.src,
@@ -56,19 +64,32 @@ function writeSdPrimary(
   });
 }
 
-/** SD file first so autorun can PlayFile without a live bridge. */
+/**
+ * BA zone event first; SD file second (boot resume / bridge down).
+ * Never waits on ack. Never reboots.
+ */
 function postTouchPlayback(port: BrightSignMessagePort | null, force = false): void {
   const payload = buildPayload();
   if (!payload.src) return;
 
-  writeSdPrimary(payload, force ? 'reassert' : 'play', force);
-
-  if (!port) return;
-  try {
-    port.PostBSMessage(payload);
-  } catch (error) {
-    console.warn('[Perform6] XT PostBSMessage failed (SD already written)', error);
+  let posted = false;
+  if (port) {
+    try {
+      port.PostBSMessage(payload);
+      posted = true;
+      console.info('[Perform6] XT LED zone-primary PostBSMessage', {
+        reason: force ? 'reassert' : 'play',
+        src: payload.src,
+        restartNonce: payload.restartNonce,
+      });
+    } catch (error) {
+      console.warn('[Perform6] XT PostBSMessage failed — SD resume still written', error);
+    }
+  } else {
+    console.warn('[Perform6] BSMessagePort missing — XT LED SD-resume only');
   }
+
+  writeSdResume(payload, posted ? 'resume-after-zone' : 'resume-no-port', force);
 }
 
 function buildPayload(): {
@@ -76,6 +97,7 @@ function buildPayload(): {
   role: string;
   src: string;
   fallbackSrc: string;
+  assetName: string;
   mediaVersionId: string;
   mediaTitle: string;
   screenKey: string;
@@ -95,6 +117,7 @@ function buildPayload(): {
     role: 'touch',
     src,
     fallbackSrc: toLedPlayableSrc(meta?.fallbackSrc),
+    assetName: assetNameFromSrc(src),
     mediaVersionId: meta?.mediaVersionId ?? '',
     mediaTitle: meta?.title ?? '',
     screenKey: meta?.screenKey ?? 'SCREEN_1',
@@ -138,7 +161,7 @@ function pollPlaybackStatus(port: BrightSignMessagePort | null): void {
   const now = Date.now();
   if (now - lastReassertAt < REASSERT_MS) return;
   lastReassertAt = now;
-  console.info('[Perform6] XT LED SD reassert (no reboot)', {
+  console.info('[Perform6] XT LED zone reassert (no reboot)', {
     status: status?.state ?? null,
     detail: status?.detail ?? null,
     bus: bus?.detail ?? null,
@@ -162,7 +185,7 @@ export function initXtOutputBridge(): void {
 
   const port = getSharedMessagePort();
   if (!port) {
-    console.warn('[Perform6] BSMessagePort missing — XT LED uses SD file only');
+    console.warn('[Perform6] BSMessagePort missing — XT LED uses SD-resume only');
   } else {
     subscribeBsMessages((event) => {
       const type = asString(event.data.type);
@@ -173,7 +196,7 @@ export function initXtOutputBridge(): void {
         const ok = asString(event.data.ok) !== '0';
         if (ok) {
           lastBridgeAckNonce = nonce || lastPostedNonce;
-          console.info('[Perform6] XT playback ack (optional bridge)', { nonce });
+          console.info('[Perform6] XT playback ack (zone)', { nonce });
         }
       } else if (type === BridgeMsg.XT_LED_ENDED) {
         if (Date.now() < ignoreLedEndedUntil) {
@@ -210,9 +233,9 @@ export function initXtOutputBridge(): void {
     }
   });
 
-  window.setInterval(() => pollPlaybackStatus(port), 2000);
   postTouchPlayback(port);
-  console.info('[Perform6] XT LED armed (SD-primary, bridge optional, no auto-reboot)', {
+  window.setInterval(() => pollPlaybackStatus(port), 2000);
+  console.info('[Perform6] XT LED armed (zone-primary, SD-resume, no auto-reboot)', {
     transport: getBridgeTransport(),
   });
 }

@@ -1,6 +1,8 @@
 /**
- * XC4055 LED2/LED3 = native roVideoPlayer zones.
- * PRIMARY: SD:/perform6-led-playback.json. Bridge optional. No auto-reboot.
+ * XC4055 LED2/LED3 = native roVideoPlayer zones (Option A / BA-style).
+ * PRIMARY: PostBSMessage(xc-playback) → autorun PlayFile.
+ * RESUME: SD:/perform6-led-playback.json for boot / one-way bridge.
+ * No auto-reboot.
  */
 import { runtimeConfig } from '../config/runtime';
 import {
@@ -68,9 +70,9 @@ function buildCommand(
   };
 }
 
-function writeSdPrimary(cmds: LedPlaybackCommand[], reason: string, force = false): void {
+function writeSdResume(cmds: LedPlaybackCommand[], reason: string, force = false): void {
   const fileOk = writeLedPlaybackFile(cmds, { immediate: true, force });
-  console.info('[Perform6] XC LED SD-primary', {
+  console.info('[Perform6] XC LED SD-resume', {
     reason,
     ok: fileOk,
     targets: cmds.map((c) => c.target),
@@ -90,30 +92,43 @@ function publishSecondaryScreens(
   if (cmds.length === 0) return;
   if (sequence !== publishSequence && !force) return;
 
-  writeSdPrimary(cmds, force ? 'reassert' : 'play', force);
-
-  if (!port) return;
-  for (const cmd of cmds) {
-    try {
-      port.PostBSMessage({
-        type: BridgeMsg.XC_PLAYBACK,
-        role: 'primary',
-        target: cmd.target,
-        src: cmd.src,
-        fallbackSrc: cmd.fallbackSrc,
-        mediaVersionId: cmd.mediaVersionId,
-        mediaTitle: cmd.mediaTitle,
-        screenKey: cmd.screenKey,
-        loop: cmd.loop,
-        paused: cmd.paused,
-        muted: cmd.muted,
-        volumePercent: cmd.volumePercent,
-        restartNonce: cmd.restartNonce,
-      });
-    } catch (error) {
-      console.warn('[Perform6] XC PostBSMessage failed (SD already written)', cmd.target, error);
+  let posted = 0;
+  if (port) {
+    for (const cmd of cmds) {
+      try {
+        port.PostBSMessage({
+          type: BridgeMsg.XC_PLAYBACK,
+          role: 'primary',
+          target: cmd.target,
+          src: cmd.src,
+          fallbackSrc: cmd.fallbackSrc,
+          assetName: cmd.src.replace(/^SD:\//i, '').split('/').pop() ?? '',
+          mediaVersionId: cmd.mediaVersionId,
+          mediaTitle: cmd.mediaTitle,
+          screenKey: cmd.screenKey,
+          loop: cmd.loop,
+          paused: cmd.paused,
+          muted: cmd.muted,
+          volumePercent: cmd.volumePercent,
+          restartNonce: cmd.restartNonce,
+        });
+        posted += 1;
+      } catch (error) {
+        console.warn('[Perform6] XC PostBSMessage failed — SD resume still written', cmd.target, error);
+      }
     }
+    if (posted > 0) {
+      console.info('[Perform6] XC LED zone-primary PostBSMessage', {
+        reason: force ? 'reassert' : 'play',
+        posted,
+        targets: cmds.map((c) => c.target),
+      });
+    }
+  } else {
+    console.warn('[Perform6] BSMessagePort missing — XC LED SD-resume only');
   }
+
+  writeSdResume(cmds, posted > 0 ? 'resume-after-zone' : 'resume-no-port', force);
 }
 
 function pollPlaybackStatus(port: BrightSignMessagePort | null): void {
@@ -140,7 +155,7 @@ function pollPlaybackStatus(port: BrightSignMessagePort | null): void {
   const now = Date.now();
   if (now - lastReassertAt < REASSERT_MS) return;
   lastReassertAt = now;
-  console.info('[Perform6] XC LED SD reassert (no reboot)', {
+  console.info('[Perform6] XC LED zone reassert (no reboot)', {
     led2: statusLed2?.state ?? null,
     led3: statusLed3?.state ?? null,
     bus: bus?.detail ?? null,
@@ -164,7 +179,7 @@ export function initXcOutputBridge(): void {
 
   const port = getSharedMessagePort();
   if (!port) {
-    console.warn('[Perform6] BSMessagePort missing — XC LED uses SD file only');
+    console.warn('[Perform6] BSMessagePort missing — XC LED uses SD-resume only');
   } else {
     subscribeBsMessages((event) => {
       const type = asString(event.data.type);
@@ -172,7 +187,7 @@ export function initXcOutputBridge(): void {
         publishSecondaryScreens(port);
       } else if (type === BridgeMsg.XC_PLAYBACK_ACK) {
         lastBridgeAckAt = Date.now();
-        console.info('[Perform6] XC playback ack (optional bridge)', {
+        console.info('[Perform6] XC playback ack (zone)', {
           role: asString(event.data.role),
         });
       }
@@ -193,7 +208,7 @@ export function initXcOutputBridge(): void {
 
   window.setInterval(() => pollPlaybackStatus(port), 2000);
   publishSecondaryScreens(port);
-  console.info('[Perform6] XC LED armed (SD-primary, bridge optional, no auto-reboot)', {
+  console.info('[Perform6] XC LED armed (zone-primary, SD-resume, no auto-reboot)', {
     transport: getBridgeTransport(),
   });
 }
