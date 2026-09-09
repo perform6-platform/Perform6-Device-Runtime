@@ -2078,9 +2078,26 @@ Function UrlSafeToken(raw as String) as String
   return out
 End Function
 
+Function ReleaseVersionToken() as String
+  raw = ReadRawFile("SD:/perform6-release.json")
+  if Len(raw) = 0 then raw = ReadRawFile("perform6-release.json")
+  if Len(raw) = 0 then return ""
+
+  release = ParseJson(raw)
+  if type(release) <> "roAssociativeArray" then return ""
+  version = release.version
+  if type(version) <> "roString" and type(version) <> "String" then return ""
+  return UrlSafeToken(version)
+End Function
+
 Function BuildAppUrl(basePath as String, identity as Object, profile as String, outputRole as String) as String
   q = ""
+  releaseVersion = ReleaseVersionToken()
+  if Len(releaseVersion) > 0 then
+    q = "p6v=" + releaseVersion
+  end if
   if Len(identity.serial) > 0 then
+    if Len(q) > 0 then q = q + "&"
     q = q + "bs_serial=" + UrlSafeToken(identity.serial)
   end if
   if Len(identity.model) > 0 then

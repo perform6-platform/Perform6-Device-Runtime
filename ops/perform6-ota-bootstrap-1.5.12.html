@@ -1,0 +1,188 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Perform6 OTA 1.5.12</title>
+  <style>body{background:#07111f;color:#e5eefb;font:18px monospace;padding:28px}pre{white-space:pre-wrap}</style>
+</head>
+<body>
+  <h1>Perform6 remote update</h1>
+  <pre id="status">Starting verified 1.5.12 activation…</pre>
+  <script>
+  (function () {
+    'use strict';
+
+    var TARGET = '1.5.12';
+    var FROM = '1.5.11';
+    var STAGE = '/storage/sd/perform6-ota-stage/' + TARGET;
+    var BACKUP = '/storage/sd/perform6-recovery/' + FROM + '-to-' + TARGET;
+    var STATUS = '/storage/sd/perform6-ota-bootstrap-status.json';
+    var FILES = [
+      ['assets/app.js',412536,'0677a36003e6be7c5c882c91e92464f73cd17deb9ec9da796284a7db1a69a490'],
+      ['assets/Inter-Bold-Sckx8rpT.woff2',24352,'aac638f7503cebb084ec494cf00f75f7d8260d50c2f4e7820bccabba09626a3a'],
+      ['assets/Inter-Medium-D2bGa7uu.woff2',24368,'b0e7558f4710a1e255b93e3deefe3aebb19f3bb41c150f685a74d3b1a1c79e87'],
+      ['assets/Inter-Regular-BOOGhInR.woff2',23692,'dd05e326cf8eac3b55acecf29c842ed73e6e6dd06491cf47f7e8800680ab3e33'],
+      ['assets/Inter-SemiBold-D273HNI0.woff2',24304,'62553d159189834af73c9a6264704be5b2bee9a08da66a14768d8e5c6ffd2cdb'],
+      ['assets/Perform_6_trademark-ClFD9aGP.png',60341,'4393a54e48e265ae8504e9331883045a1c7febb4fcb0ddcfcd01f60e4a1b666b'],
+      ['assets/style.css',78608,'e0ae8f63592da0fccd4b3f38d5b713de7d1cc2b19c81df3b3677574060f826f0'],
+      ['led-idle.png',219309,'c7bc667bfc40d4800bba819de8ef5c6ec5f64b98a29a115c932b9baee25d1309'],
+      ['perform6-display.txt',6,'be1bdeb2aada129aba2a1db26bff7dae6d5af6f7b7c1e40786c10eccd3ace755'],
+      ['perform6-ops.emergency.json',150,'ffe9fe1afc7743ca657ffc05154f19ec75303e0f094f22f21c1b4a0dd3ba3da8'],
+      ['perform6-ops.json',315,'e78dcb57330098b91b1608933d1237f67114ed5c10e9142999fa1f5acb2f7b73'],
+      ['perform6-profile.txt',7,'6302424b76c6cf890cd4279ee49c09f5d78c189cc7ebb828449365b625da5f58'],
+      ['perform6-release.json',1486,'6b7c7ac25b85e69a96cf9f90fca7a1fa568310d66409546beab6ebbb82dd8286'],
+      ['README-SD.txt',4221,'68e379bd83fe3138eab9611c947cc09d918f5e57ce37f25f1894e1fb6b589cc3'],
+      ['autorun.brs',109109,'03dab5abe5ff388239356cb3dd887880e20dd02467ac37859dfd11ecb3c37bda'],
+      ['index.html',3598,'f502b4dce2af5117aaad66634dac5a2276e046434f976291689cec796c25165d']
+    ];
+
+    var fs = window.require('fs');
+    var crypto = window.require('crypto');
+    var activated = [];
+    var statusEl = document.getElementById('status');
+
+    function show(message) {
+      statusEl.textContent += '\n' + message;
+    }
+
+    function parent(path) {
+      return path.slice(0, path.lastIndexOf('/'));
+    }
+
+    function ensureDir(path) {
+      if (!fs.existsSync(path)) fs.mkdirSync(path, { recursive: true });
+    }
+
+    function remove(path) {
+      if (fs.existsSync(path)) fs.unlinkSync(path);
+    }
+
+    function hash(data) {
+      return crypto.createHash('sha256').update(data).digest('hex');
+    }
+
+    function verify(path, size, sha) {
+      if (!fs.existsSync(path)) throw new Error('missing ' + path);
+      var data = fs.readFileSync(path);
+      if (data.length !== size) throw new Error('size mismatch ' + path + ': ' + data.length + '/' + size);
+      var actual = hash(data);
+      if (actual !== sha) throw new Error('sha256 mismatch ' + path);
+      return data;
+    }
+
+    function atomicWrite(path, data) {
+      ensureDir(parent(path));
+      var temp = path + '.atlas-tmp';
+      remove(temp);
+      fs.writeFileSync(temp, data);
+      remove(path);
+      fs.renameSync(temp, path);
+    }
+
+    function writeStatus(state, detail) {
+      try {
+        atomicWrite(STATUS, JSON.stringify({
+          state: state,
+          detail: detail || null,
+          from: FROM,
+          to: TARGET,
+          activated: activated.slice(),
+          at: new Date().toISOString()
+        }));
+      } catch (_) {}
+    }
+
+    function stagedPath(rel) {
+      return STAGE + '/' + rel.replace(/\//g, '--');
+    }
+
+    function preflightExfatMutation() {
+      var probe = '/storage/sd/perform6-ota-stage/.atlas-rename-probe';
+      var moved = probe + '.moved';
+      remove(probe);
+      remove(moved);
+      fs.writeFileSync(probe, 'atlas-1.5.12');
+      fs.renameSync(probe, moved);
+      if (String(fs.readFileSync(moved, 'utf8')) !== 'atlas-1.5.12') {
+        throw new Error('exFAT rename preflight readback failed');
+      }
+      remove(moved);
+      show('exFAT write/rename/unlink preflight passed.');
+    }
+
+    function activate(rel, size, sha) {
+      var source = stagedPath(rel);
+      var active = '/storage/sd/' + rel;
+      var backup = BACKUP + '/' + rel;
+      var data = verify(source, size, sha);
+
+      ensureDir(parent(active));
+      ensureDir(parent(backup));
+      if (fs.existsSync(active)) atomicWrite(backup, fs.readFileSync(active));
+
+      atomicWrite(active, data);
+      verify(active, size, sha);
+      activated.push(rel);
+      show('Verified ' + activated.length + '/' + FILES.length + ': ' + rel);
+      writeStatus('ACTIVATING', rel);
+    }
+
+    function rollback(reason) {
+      for (var i = activated.length - 1; i >= 0; i -= 1) {
+        var rel = activated[i];
+        var backup = BACKUP + '/' + rel;
+        var active = '/storage/sd/' + rel;
+        try {
+          if (fs.existsSync(backup)) atomicWrite(active, fs.readFileSync(backup));
+        } catch (_) {}
+      }
+      writeStatus('ROLLED_BACK', reason);
+      show('Activation rolled back: ' + reason);
+      setTimeout(function () {
+        window.location.replace('file:///sd:/index.html?atlasRollback=' + Date.now());
+      }, 1000);
+    }
+
+    function reboot() {
+      try {
+        var SystemModule = window.require('@brightsign/system');
+        var SystemCtor = typeof SystemModule === 'function'
+          ? SystemModule
+          : SystemModule && (SystemModule.System || SystemModule.default);
+        if (typeof SystemCtor !== 'function') throw new Error('BrightSign System constructor unavailable');
+        writeStatus('REBOOTING', 'activation verified');
+        show('Activation verified. Rebooting into 1.5.12…');
+        var system = new SystemCtor();
+        system.reboot();
+        setTimeout(function () {
+          writeStatus('REBOOT_TIMEOUT', 'launching installed runtime without reboot');
+          window.location.replace('file:///sd:/index.html?atlasInstalled=' + Date.now());
+        }, 15000);
+      } catch (error) {
+        writeStatus('REBOOT_FAILED', String(error));
+        show('Reboot call failed; launching installed runtime: ' + String(error));
+        setTimeout(function () {
+          window.location.replace('file:///sd:/index.html?atlasInstalled=' + Date.now());
+        }, 1000);
+      }
+    }
+
+    try {
+      writeStatus('VERIFYING', 'checking 16 staged files');
+      preflightExfatMutation();
+      for (var i = 0; i < FILES.length; i += 1) {
+        verify(stagedPath(FILES[i][0]), FILES[i][1], FILES[i][2]);
+      }
+      show('All 16 staged files passed SHA-256 and size checks.');
+      for (var j = 0; j < FILES.length; j += 1) {
+        activate(FILES[j][0], FILES[j][1], FILES[j][2]);
+      }
+      writeStatus('ACTIVATED', 'all files verified');
+      reboot();
+    } catch (error) {
+      rollback(String(error));
+    }
+  }());
+  </script>
+</body>
+</html>

@@ -12,6 +12,7 @@
     "assert:led-playback": "node scripts/assert-led-playback.mjs",
     "assert:program-led": "node scripts/assert-program-led-command.mjs",
     "assert:atlas-field": "node scripts/assert-atlas-field-gate.mjs",
+    "assert:ota-bootstrap": "node scripts/assert-ota-bootstrap.mjs",
     "assert:playback": "node scripts/assert-led-playback.mjs && node scripts/assert-program-led-command.mjs",
     "release:zip": "node scripts/build-profile-zip.mjs XT2145",
     "release:zip:xt2145": "node scripts/build-profile-zip.mjs XT2145",

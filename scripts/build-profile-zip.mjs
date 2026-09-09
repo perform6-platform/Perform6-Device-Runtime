@@ -308,7 +308,21 @@ function main() {
   fs.mkdirSync(outFolder, { recursive: true });
 
   fs.copyFileSync(autorun, path.join(outFolder, 'autorun.brs'));
-  fs.copyFileSync(distIndex, path.join(outFolder, 'index.html'));
+  // BrightSign Chromium can retain stable local asset URLs across a soft reboot.
+  // Give each release a distinct subresource URL so a successful OTA cannot
+  // boot the newly written index.html while executing the previous app.js.
+  const cacheTag = encodeURIComponent(version);
+  const packagedIndex = fs
+    .readFileSync(distIndex, 'utf8')
+    .replace(/\.\/assets\/app\.js(?=["'])/g, `./assets/app.js?p6v=${cacheTag}`)
+    .replace(/\.\/assets\/style\.css(?=["'])/g, `./assets/style.css?p6v=${cacheTag}`);
+  if (
+    !packagedIndex.includes(`./assets/app.js?p6v=${cacheTag}`) ||
+    !packagedIndex.includes(`./assets/style.css?p6v=${cacheTag}`)
+  ) {
+    fail('Release index missing versioned app.js/style.css cache-bust URLs');
+  }
+  fs.writeFileSync(path.join(outFolder, 'index.html'), packagedIndex);
   fs.cpSync(distAssets, path.join(outFolder, 'assets'), { recursive: true });
 
   // XT/XC: Perform6 logo on LED until the first deployment video arrives.
