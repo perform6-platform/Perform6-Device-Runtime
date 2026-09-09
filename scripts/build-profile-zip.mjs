@@ -99,7 +99,7 @@ function assertAutorunPlayerAllocation(autorunPath) {
 }
 
 /**
- * Guard: XT+XC LED = BA bridge + SD fallback; pool PlayFile (no multi-GB CopyFile alias).
+ * Guard: XT+XC LED = BA bridge + SD fallback; AssetRealizer .mp4 playback.
  */
 function assertLedPlaybackBus(autorunPath) {
   const text = fs.readFileSync(autorunPath, 'utf8');
@@ -151,7 +151,7 @@ function assertLedPlaybackBus(autorunPath) {
   if (!xcText.includes('readLedPlaybackStatusForRole')) {
     fail('xcOutputBridge.ts must read per-role LED status');
   }
-  console.log('[release:zip] LED SD bus assert OK (pool-direct, BA bridge, JS write)');
+  console.log('[release:zip] LED SD bus assert OK (realized .mp4, BA bridge, JS write)');
 }
 
 function run(command, args, env = {}) {
@@ -382,13 +382,13 @@ function main() {
         displayMode,
         storageEncryption: {
           enabled: false,
-          note: 'Plaintext SD — HtmlWidget requires readable index.html. Authoritative media: SD:/perform6-media-pool (AssetPool).',
+          note: 'Plaintext SD — HtmlWidget requires readable index.html. Media downloads use AssetPool and playback uses AssetRealizer .mp4 paths.',
         },
         mediaCache: {
-          path: 'SD:/perform6-media-pool',
-          naming: 'AssetPool GetPoolFilePath (sha256-… hash objects)',
+          path: 'SD:/perform6-media',
+          naming: 'stable .mp4 names realized from AssetPool objects',
           usedBy: ['native roVideoPlayer LEDs via PlayFile', 'JS led-playback SD bus'],
-          legacyPath: 'SD:/perform6-media (optional realized .mp4 if present)',
+          backingPath: 'SD:/perform6-media-pool (sha256 objects; not the native playback target)',
         },
         displayModeFile: 'perform6-display.txt',
         displayModeOptions: ['MULTI', 'MULTI_NOFULLRES'],
@@ -399,7 +399,7 @@ function main() {
                 canvas: 'HDMI-1 HtmlWidget + HDMI-2 native roVideoPlayer',
                 outputMap: 'HDMI-1 x=0; HDMI-2 x=1920',
                 mode: displayMode === 'MULTI_NOFULLRES' ? '1920x1080x60p' : '1920x1080x60p:fullres',
-                ledPlayback: 'PlayFile(GetPoolFilePath) under SD:/perform6-media-pool; command via perform6-led-playback.json',
+                ledPlayback: 'PlayFile of AssetRealizer .mp4 under SD:/perform6-media; command via perform6-led-playback.json',
                 ledIdleClip: 'led-idle.png (packaged) or led-idle.mp4 override',
                 audioRoute: 'HDMI-1 touch silent; native video audio to HDMI-2',
                 ledLog: 'SD:/perform6-led.log',
@@ -410,7 +410,7 @@ function main() {
                   canvas: 'HDMI-1 HtmlWidget + HDMI-2/3 native roVideoPlayer',
                   outputMap: 'HDMI-1 x=0; HDMI-2 x=1920; HDMI-3 x=3840',
                   mode: displayMode === 'MULTI_NOFULLRES' ? '1920x1080x60p' : '1920x1080x60p:fullres',
-                  ledPlayback: 'PlayFile(GetPoolFilePath) under SD:/perform6-media-pool; command via perform6-led-playback.json',
+                  ledPlayback: 'PlayFile of AssetRealizer .mp4 under SD:/perform6-media; command via perform6-led-playback.json',
                   ledIdleClip: 'led-idle.png (packaged) or led-idle.mp4 override',
                   audioRoute: 'SCREEN_1 to HDMI-1; SCREEN_2 to HDMI-2; SCREEN_3 to HDMI-3',
                   ledLog: 'SD:/perform6-led.log',
@@ -442,9 +442,9 @@ function main() {
       '',
       'Supported firmwares: BrightSign OS 8.2+ and 9.x (Series 5: XT/XC/HD).',
       'Storage: plaintext SD (no EncryptStorage). App files stay readable for HtmlWidget.',
-      'Media store: SD:/perform6-media-pool/ — AssetPool GetPoolFilePath (authoritative for XT/XC LED PlayFile).',
+      'Media playback store: SD:/perform6-media/ — extension-bearing files created with BrightSign AssetRealizer.',
       '  LED NORMAL: JS PostBSMessage(xt/xc-playback) → autorun PlayFile. SD JSON = fallback if bridge one-way.',
-      '  Extensionless sha256 pool: pool-direct PlayFile + ProbeString (no BrightScript CopyFile, no JS alias copy).',
+      '  Backing downloads: SD:/perform6-media-pool sha256 objects; never copied with Node/BrightScript CopyFile.',
       '  Content is deployment/sync driven (Fitness/Golf libraries) — slots are generic (idle/start-here/…).',
       '  Status: per-role sidecars (atomic) + unified roles map from in-memory merge (no disk RMW).',
       '  Legacy SD:/perform6-media/*.mp4 and perform6-xt-playback.json still accepted. clearCache wipes pool + media.',
@@ -462,9 +462,9 @@ function main() {
           ? 'Layout: HDMI-1 = React primary; HDMI-2/3 = native video for SCREEN_2/SCREEN_3.'
           : 'Canvas follows the player native resolution.',
       profileKey === 'XT2145'
-        ? 'Bluefin UI on HDMI-1; LED plays from SD:/perform6-media-pool via autorun PlayFile (led-playback.json bus).'
+        ? 'Bluefin UI on HDMI-1; LED plays realized SD:/perform6-media/*.mp4 via autorun PlayFile.'
         : profileKey === 'XC4055'
-          ? 'HDMI-1 React; HDMI-2/3 LEDs play from pool via autorun PlayFile (same led-playback.json bus).'
+          ? 'HDMI-1 React; HDMI-2/3 LEDs play realized .mp4 files via autorun PlayFile.'
           : 'Each HD226 player caches assigned media and plays local file:// where available.',
       profileKey === 'XT2145'
         ? 'Audio: Bluefin HDMI-1 is silent; programme audio is routed only to LED HDMI-2.'
@@ -478,7 +478,7 @@ function main() {
       ...(profileKey === 'XT2145' || profileKey === 'XC4055'
         ? [
             'LED video playback:',
-            '  Authoritative: SD:/perform6-media-pool hash paths (GetPoolFilePath) → PlayFile.',
+            '  Authoritative playback: SD:/perform6-media/*.mp4 (AssetRealizer output) → PlayFile.',
             '  Command bus: SD:/perform6-led-playback.json (JS → autorun poll; bridge optional).',
             '  XT target=led (HDMI-2); XC targets=led2+led3 (HDMI-2/3). Legacy xt-playback.json OK.',
             '  Default idle: led-idle.png (Perform6 logo) is packaged on the SD root and loops',

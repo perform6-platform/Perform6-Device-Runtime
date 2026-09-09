@@ -17,7 +17,7 @@ function ok(msg) {
   console.log(`[assert:program-led] OK: ${msg}`);
 }
 
-/** Mirror src/services/playbackSrc.ts toLedPlayableSrc (pool / .mp4 only). */
+/** Mirror src/services/playbackSrc.ts toLedPlayableSrc (realized .mp4 preferred). */
 function toLedPlayableSrc(src) {
   if (!src || src.startsWith('blob:')) return '';
   const lower = src.toLowerCase();
@@ -32,9 +32,6 @@ function toLedPlayableSrc(src) {
   }
   const pathLower = sd.toLowerCase().split('?')[0] ?? '';
   if (!pathLower.startsWith('sd:/')) return '';
-  if (pathLower.includes('perform6-media-pool')) {
-    return pathLower.length > 'sd:/perform6-media-pool/'.length ? sd : '';
-  }
   if (
     pathLower.endsWith('.mp4') ||
     pathLower.endsWith('.mov') ||
@@ -92,8 +89,8 @@ function assertSourceGuards() {
   if (zipScript.includes('Eager alias:') || zipScript.includes('CopyFile only on fail')) {
     fail('build-profile-zip README-SD text still describes removed alias/CopyFile');
   }
-  if (!zipScript.includes('pool-direct PlayFile + ProbeString')) {
-    fail('build-profile-zip README-SD must document pool-direct');
+  if (!zipScript.includes('AssetRealizer')) {
+    fail('build-profile-zip README-SD must document AssetRealizer playback');
   }
 
   ok('source guards (Home idle race, nonce, no JS alias copy, README)');
@@ -105,20 +102,19 @@ function assertProgramReplacesDefault() {
   const gymDefaultId = 'mv-fitness-default-001';
   const gymStartId = 'mv-fitness-start-here-002';
 
-  const pool = (leaf) =>
-    `SD:/perform6-media-pool/ab/sha256-${leaf}`;
+  const realized = (leaf) => `SD:/perform6-media/${leaf}.mp4`;
 
   const idleGolf = buildLedCommand({
     slot: 'touch-default',
     mediaVersionId: golfDefaultId,
     title: 'Golf Default',
-    src: pool('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
+    src: realized('111111-101'),
   });
   const startGolf = buildLedCommand({
     slot: 'start-here',
     mediaVersionId: startHereId,
     title: 'Start Here',
-    src: pool('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'),
+    src: realized('222222-202'),
   });
 
   if (idleGolf.mediaVersionId === startGolf.mediaVersionId) {
@@ -132,13 +128,13 @@ function assertProgramReplacesDefault() {
     slot: 'touch-default',
     mediaVersionId: gymDefaultId,
     title: 'Fitness Default',
-    src: pool('cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'),
+    src: realized('333333-303'),
   });
   const startGym = buildLedCommand({
     slot: 'start-here',
     mediaVersionId: gymStartId,
     title: 'Start Here',
-    src: pool('dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'),
+    src: realized('444444-404'),
   });
 
   if (idleGym.mediaVersionId === startGym.mediaVersionId) {

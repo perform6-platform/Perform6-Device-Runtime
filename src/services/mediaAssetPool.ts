@@ -1,7 +1,8 @@
 /**
  * BrightSign asset-pool media delivery (separate from OTA).
  * Staging + playable pool: /storage/sd/perform6-media-pool (OS 9.1); docs fallback sd/….
- * LED plays GetPoolFilePath directly — no AssetRealizer / Node copy.
+ * Pool objects are subsequently exposed as extension-bearing playback files by
+ * BrightSign AssetRealizer. Node copyFile must never be used for pool objects.
  * Autorun led-cache-prefetch is disabled (bridge-inbound unreliable).
  */
 import type { SyncMediaItem } from '../shared/types/api';
@@ -686,7 +687,8 @@ export async function downloadMediaItemsViaAssetPool(
         clearSdCached([item.mediaVersionId]);
         continue;
       }
-      // Pool path is playable — LED PlayFile(GetPoolFilePath); no Realizer/copy.
+      // Record the backing object. media.ts realizes it under its .mp4 asset name
+      // before declaring the item playable.
       markMediaPoolPath(item.mediaVersionId, poolPath);
       markSdDownloadConfirmed(item.mediaVersionId);
       succeeded.push(item.mediaVersionId);

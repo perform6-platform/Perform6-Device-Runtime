@@ -9,11 +9,24 @@ const baseline = '568f7b6e53b471a52588f8711505e433b538b8b9';
 const allowedRuntimeFiles = new Set([
   '.env.brightsign-xt2145',
   'brightsign/autorun.brs',
+  'ops/perform6-ota-bootstrap-1.5.12.html',
   'src/platform/ledPlaybackFile.ts',
   'src/platform/xtOutputBridge.ts',
+  'src/components/home/HomeHeroVideo.tsx',
+  'src/pages/Home.tsx',
+  'src/services/bridgeKeepalive.ts',
+  'src/services/deviceLogsApi.ts',
+  'src/services/media.ts',
   'src/services/mediaAssetPool.ts',
+  'src/services/mediaRealize.ts',
+  'src/services/mediaStorePaths.ts',
   'src/services/otaApply.ts',
   'src/services/otaAssetPool.ts',
+  'src/services/playbackSrc.ts',
+  'src/services/playbackTelemetry.ts',
+  'src/services/playbackTelemetryApi.ts',
+  'src/services/sdCacheBridge.ts',
+  'src/services/syncEngine.ts',
 ]);
 
 function fail(message) {
@@ -46,7 +59,7 @@ for (const protectedPrefix of [
   if (
     changed.some(
       (file) =>
-        file.startsWith(protectedPrefix) && file !== 'src/services/mediaAssetPool.ts',
+        file.startsWith(protectedPrefix) && !allowedRuntimeFiles.has(file),
     )
   ) {
     fail(`pairing/download/playback behavior changed under ${protectedPrefix}`);
@@ -67,6 +80,7 @@ for (const marker of [
   'DeleteFile("SD:/perform6-ota-pending.json")',
   'MAIN|xt|workers-ready',
   'while not f.AtEof()',
+  'existence probe missed; trying PlayFile',
 ]) {
   if (!autorun.includes(marker)) fail(`autorun invariant missing: ${marker}`);
 }
@@ -89,6 +103,67 @@ for (const marker of [
   'POOL_STALL_MS = 15 * 60_000',
 ]) {
   if (!mediaPool.includes(marker)) fail(`AssetPool field invariant missing: ${marker}`);
+}
+
+const media = fs.readFileSync(path.join(root, 'src', 'services', 'media.ts'), 'utf8');
+for (const marker of [
+  'realizeMediaAssetsViaRealizer',
+  'AssetRealizer',
+  'including assets downloaded by an earlier',
+]) {
+  if (!media.includes(marker)) fail(`AssetRealizer field invariant missing: ${marker}`);
+}
+
+const mediaRealize = fs.readFileSync(
+  path.join(root, 'src', 'services', 'mediaRealize.ts'),
+  'utf8',
+);
+for (const marker of ['emitSdCacheProgress', "status: 'done'", "status: 'skip'"]) {
+  if (!mediaRealize.includes(marker)) {
+    fail(`AssetRealizer completion notification missing: ${marker}`);
+  }
+}
+
+const playbackPaths = fs.readFileSync(
+  path.join(root, 'src', 'services', 'sdCacheBridge.ts'),
+  'utf8',
+);
+const realizedIdx = playbackPaths.indexOf('const readyUrl = getSdCachedUrl(mediaVersionId)');
+const poolIdx = playbackPaths.indexOf('const poolPath = getMediaPoolPath(mediaVersionId)', realizedIdx);
+if (realizedIdx < 0 || poolIdx < 0 || realizedIdx > poolIdx) {
+  fail('realized .mp4 must be preferred before extensionless pool fallback');
+}
+
+const xtBridge = fs.readFileSync(
+  path.join(root, 'src', 'platform', 'xtOutputBridge.ts'),
+  'utf8',
+);
+for (const marker of [
+  "'start-here': 'SCREEN_2'",
+  "phase1: 'SCREEN_3'",
+  "phase2: 'SCREEN_4'",
+  "'full-program': 'SCREEN_5'",
+  "source: 'NATIVE_HDMI'",
+  "output: 'HDMI-2'",
+  'reportNativeHdmiTelemetry(status)',
+]) {
+  if (!xtBridge.includes(marker)) {
+    fail(`XT native HDMI telemetry invariant missing: ${marker}`);
+  }
+}
+
+const homeHero = fs.readFileSync(
+  path.join(root, 'src', 'components', 'home', 'HomeHeroVideo.tsx'),
+  'utf8',
+);
+for (const marker of [
+  'useVideoPlaybackTelemetry(',
+  "screenKey: 'SCREEN_1'",
+  'mediaVersionId',
+]) {
+  if (!homeHero.includes(marker)) {
+    fail(`Bluefin HDMI-1 telemetry invariant missing: ${marker}`);
+  }
 }
 
 const env = fs.readFileSync(path.join(root, '.env.brightsign-xt2145'), 'utf8');

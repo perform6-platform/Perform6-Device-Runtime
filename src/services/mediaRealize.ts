@@ -9,7 +9,11 @@ import { MEDIA_ASSET_POOL_DIR, MEDIA_ASSET_POOL_DIR_DOCS } from './brightSignPoo
 import { MEDIA_STORE_DIR_NAME } from './mediaStorePaths';
 import { resolveMediaFileUrl } from './manifest';
 import { cacheNameFor } from './sdCacheName';
-import { markSdCached, markSdDownloadConfirmed } from './sdCacheBridge';
+import {
+  emitSdCacheProgress,
+  markSdCached,
+  markSdDownloadConfirmed,
+} from './sdCacheBridge';
 import { mediaItemToAsset, type MediaAsset } from './mediaAssetPool';
 
 type BrightSignRequire = (id: string) => unknown;
@@ -159,6 +163,15 @@ export async function realizeMediaAssetsViaRealizer(
     if (mediaFileExists(name)) {
       markSdCached(item.mediaVersionId, item.fileUrl);
       markSdDownloadConfirmed(item.mediaVersionId);
+      emitSdCacheProgress({
+        status: 'skip',
+        url: resolveMediaFileUrl(item.fileUrl),
+        name,
+        mediaVersionId: item.mediaVersionId,
+        destPath: `${MEDIA_STORE_NODE}/${name}`,
+        bytesDownloaded: item.fileSize != null ? Number(item.fileSize) : 0,
+        bytesTotal: item.fileSize != null ? Number(item.fileSize) : undefined,
+      });
       alreadyReady.push(item);
       succeeded.push(item.mediaVersionId);
     } else {
@@ -202,6 +215,15 @@ export async function realizeMediaAssetsViaRealizer(
     if (mediaFileExists(name)) {
       markSdCached(item.mediaVersionId, item.fileUrl);
       markSdDownloadConfirmed(item.mediaVersionId);
+      emitSdCacheProgress({
+        status: 'done',
+        url: resolveMediaFileUrl(item.fileUrl),
+        name,
+        mediaVersionId: item.mediaVersionId,
+        destPath: `${MEDIA_STORE_NODE}/${name}`,
+        bytesDownloaded: item.fileSize != null ? Number(item.fileSize) : 0,
+        bytesTotal: item.fileSize != null ? Number(item.fileSize) : undefined,
+      });
       succeeded.push(item.mediaVersionId);
       console.info('[Perform6] Pool→media realized (AssetRealizer)', {
         mediaVersionId: item.mediaVersionId,

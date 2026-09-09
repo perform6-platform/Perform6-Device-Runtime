@@ -30,9 +30,6 @@ function isNativeLedPlayableSrc(src) {
   }
   const pathLower = sd.toLowerCase().split('?')[0] ?? '';
   if (!pathLower.startsWith('sd:/')) return false;
-  if (pathLower.includes('perform6-media-pool')) {
-    return pathLower.length > 'sd:/perform6-media-pool/'.length;
-  }
   return (
     pathLower.endsWith('.mp4') ||
     pathLower.endsWith('.mov') ||
@@ -42,9 +39,11 @@ function isNativeLedPlayableSrc(src) {
 }
 
 function assertPathRules() {
+  const realized = 'SD:/perform6-media/1234567-99.mp4';
+  if (!isNativeLedPlayableSrc(realized)) fail('realized SD:/ .mp4 path must be playable');
   const pool =
     'SD:/perform6-media-pool/ab/sha256-abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
-  if (!isNativeLedPlayableSrc(pool)) fail('extensionless pool SD:/ path must be playable');
+  if (isNativeLedPlayableSrc(pool)) fail('extensionless pool path must not be the asserted native route');
   if (isNativeLedPlayableSrc('https://cdn.example/v.mp4')) fail('HTTPS must not be native LED playable');
   ok('path playability rules');
 }
@@ -59,6 +58,7 @@ function assertAutorun() {
     'perform6-led-playback.json',
     'MaybePollLedPlaybackFile',
     'ApplyNativePlayback',
+    'existence probe missed; trying PlayFile',
     'PlayLocalFile pool-direct OK',
     'ProbeString',
     'NO on-demand HTTPS stream',

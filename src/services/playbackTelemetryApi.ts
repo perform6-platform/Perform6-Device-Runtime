@@ -39,6 +39,13 @@ export async function sendPlaybackTelemetry(
         positionMs: s.positionMs,
         durationMs: s.durationMs ?? null,
         isPlaying: s.isPlaying,
+        output: s.output ?? null,
+        source: s.source ?? null,
+        requestId: s.requestId ?? null,
+        stage: s.stage ?? null,
+        error: s.error ?? null,
+        path: s.path ?? null,
+        updatedAt: s.updatedAt ?? null,
       })),
     }),
   });

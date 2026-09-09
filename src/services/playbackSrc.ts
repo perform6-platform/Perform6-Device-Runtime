@@ -80,9 +80,9 @@ function hasVideoExtension(src: string): boolean {
 
 /**
  * Native LED PlayFile:
- * - SD:/perform6-media/*.mp4 (legacy realized files)
- * - SD:/perform6-media-pool/…/sha256-… (AssetPool GetPoolFilePath — BrightAuthor
- *   PlayFile({Filename}) pattern; extensionless is valid; autorun aliases .mp4 on fail)
+ * - SD:/perform6-media/*.mp4 (AssetRealizer output; field-proven native shape)
+ * - SD:/perform6-media-pool/…/sha256-… only as a migration fallback. The
+ *   XT2145 field player rejected this extensionless shape in PlayFile.
  */
 export function isNativeLedPlayableSrc(src: string | null | undefined): boolean {
   if (!isLocalPlaybackSrc(src) || !src) return false;
@@ -97,7 +97,7 @@ export function isNativeLedPlayableSrc(src: string | null | undefined): boolean 
 }
 
 /**
- * LED / autorun PlayFile src — SD:/ path (pool hash or .mp4). Never file://.
+ * LED / autorun PlayFile src — SD:/ path, normally perform6-media/*.mp4.
  */
 export function toLedPlayableSrc(src: string | null | undefined): string {
   if (!isNativeLedPlayableSrc(src)) return '';

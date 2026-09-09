@@ -91,6 +91,10 @@ export default function Home() {
   const setDisplayVolume = useRuntimeStore((s) => s.setDisplayVolume);
   const setDisplayVideoEndedHandler = useRuntimeStore((s) => s.setDisplayVideoEndedHandler);
   const touchVideos = useTouchVideos(playbackState.manifest);
+  const idleTelemetryMedia = getTouchSlotMedia(
+    playbackState.manifest,
+    'touch-default',
+  );
   const {
     showDownloadOverlay,
     downloadUi,
@@ -373,6 +377,8 @@ export default function Home() {
         src={touchVideos.idle}
         paused={sessionOpen}
         overlay={overviewOpen || sessionOpen ? 'overview' : 'home'}
+        mediaVersionId={idleTelemetryMedia.mediaVersionId}
+        mediaTitle={idleTelemetryMedia.title ?? 'Main menu'}
       />
 
       <div className="p6-home__grid">

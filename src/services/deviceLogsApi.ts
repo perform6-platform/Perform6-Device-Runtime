@@ -30,9 +30,9 @@ function readCanaryEntries(): DeviceLogUploadEntry[] {
       const nodePath = toNodeSdPath(sd);
       if (!fs.existsSync(nodePath)) {
         out.push({
-          level: 'WARN',
+          level: 'INFO',
           source: 'AUTORUN',
-          message: `CANARY|missing|${sd}`,
+          message: `CANARY|not-observed|${sd}`,
           loggedAt: now,
         });
         continue;
@@ -78,7 +78,7 @@ function autorunTailToNewEntries(tail: string): DeviceLogUploadEntry[] {
     level:
       message.includes('ERROR') || message.includes('FAILED') || message.includes('FN|break')
         ? 'ERROR'
-        : message.includes('unparsed') || message.includes('ping — no') || message.includes('CANARY|missing')
+        : message.includes('unparsed') || message.includes('ping — no')
           ? 'WARN'
           : 'INFO',
     source: 'AUTORUN' as const,

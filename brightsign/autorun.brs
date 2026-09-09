@@ -1369,13 +1369,14 @@ Sub PlayNativeSrc(st as Object, src as String, msgPort as Object, states as Obje
       st.idleShown = false
       Sleep(100)
     end if
+    ' AssetRealizer files are visible to the HTML/Node filesystem immediately,
+    ' while roFileSystem Stat/Exists can report a false negative on exFAT. The
+    ' precheck is advisory only; roVideoPlayer.PlayFile is authoritative.
     if not LocalMediaExists(src) then
-      TraceFnBreak("PlayNativeSrc", "media-missing")
-      LedLog("=== Perform6: LED " + st.key + " media missing " + src + " ===")
-      ok = false
-    else
-      ok = PlayLocalFile(st.vp, src)
+      TraceLog("PLAY|existence-probe-miss|trying-PlayFile|" + src)
+      LedLog("=== Perform6: LED " + st.key + " existence probe missed; trying PlayFile " + src + " ===")
     end if
+    ok = PlayLocalFile(st.vp, src)
   end if
 
   if ok then

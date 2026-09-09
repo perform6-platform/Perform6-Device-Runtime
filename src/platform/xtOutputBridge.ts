@@ -18,6 +18,11 @@ import {
 import { toLedPlayableSrc } from '../services/playbackSrc';
 import { BridgeMsg } from '../services/bridgeProtocol';
 import { subscribeSdCacheProgress } from '../services/sdCacheBridge';
+import {
+  clearScreenPlayback,
+  reportScreenPlayback,
+} from '../services/playbackTelemetry';
+import { getTouchUiState } from '../services/touchUiTelemetry';
 import { useRuntimeStore } from '../stores/runtimeStore';
 
 const ACK_WAIT_MS = 2_500;
@@ -31,6 +36,9 @@ let lastReassertAt = 0;
 let lastBridgeAckNonce = '';
 let ackTimer: number | null = null;
 let pendingSdFallback = false;
+let nativeTelemetrySignature = '';
+let nativeTelemetryStartedAt = 0;
+let nativeTelemetryScreenKey = '';
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
@@ -97,11 +105,72 @@ function writeSdFallback(
   force = false,
 ): void {
   const fileOk = writeXtPlaybackFile(payload, { immediate: true, force });
-  console.warn('[Perform6] XT LED SD fallback (BA bridge primary)', {
+  const detail = {
     reason,
     ok: fileOk,
     src: payload.src,
     restartNonce: payload.restartNonce,
+  };
+  if (fileOk) {
+    console.info('[Perform6] XT HDMI-2 command persisted (native SD transport)', detail);
+  } else {
+    console.warn('[Perform6] XT HDMI-2 command persistence failed', detail);
+  }
+}
+
+/**
+ * Native XT playback has no HTMLVideoElement to sample. Mirror the autorun
+ * status sidecar into the existing CMS telemetry registry. SCREEN_2 is the
+ * physical HDMI-2 output; SCREEN_1 remains the Bluefin touch output.
+ */
+function reportNativeHdmiTelemetry(status: ReturnType<typeof readXtPlaybackStatus>): void {
+  if (!status) return;
+
+  const state = useRuntimeStore.getState();
+  const meta = state.displayPlaybackMeta;
+  const src = asString(status.src) || nativePlayableSrc(
+    state.displayVideoSrc,
+    meta?.fallbackSrc,
+  );
+  if (!src) return;
+
+  const nonce = asString(status.restartNonce) || String(state.displayRestartNonce);
+  const signature = `${nonce}|${src}`;
+  if (signature !== nativeTelemetrySignature) {
+    nativeTelemetrySignature = signature;
+    nativeTelemetryStartedAt = Date.now();
+  }
+
+  const started = isLedStatusStarted(status);
+  const ended = status.ended === '1' || status.state === 'ended';
+  const failed = status.state === 'error' || status.ok === '0';
+  const slot = getTouchUiState().currentContent?.slot ?? 'touch-default';
+  const screenKeyBySlot: Record<string, string> = {
+    'touch-default': 'SCREEN_1',
+    'start-here': 'SCREEN_2',
+    phase1: 'SCREEN_3',
+    phase2: 'SCREEN_4',
+    'full-program': 'SCREEN_5',
+  };
+  const screenKey = screenKeyBySlot[slot] ?? 'SCREEN_2';
+  if (nativeTelemetryScreenKey && nativeTelemetryScreenKey !== screenKey) {
+    clearScreenPlayback(nativeTelemetryScreenKey);
+  }
+  nativeTelemetryScreenKey = screenKey;
+  reportScreenPlayback({
+    screenKey,
+    mediaVersionId: meta?.mediaVersionId ?? null,
+    title: meta?.title ?? null,
+    positionMs: nativeTelemetryStartedAt > 0 ? Date.now() - nativeTelemetryStartedAt : 0,
+    durationMs: null,
+    isPlaying: started && !ended && !state.displayPaused,
+    output: 'HDMI-2',
+    source: 'NATIVE_HDMI',
+    requestId: `xt-${nonce}`,
+    stage: ended ? 'ended' : (status.state ?? (started ? 'started' : 'pending')),
+    error: failed ? (status.detail ?? 'native playback failed') : null,
+    path: src,
+    updatedAt: new Date().toISOString(),
   });
 }
 
@@ -156,6 +225,7 @@ function postTouchPlayback(port: BrightSignMessagePort | null, force = false): v
 function pollPlaybackStatus(port: BrightSignMessagePort | null): void {
   const status = readXtPlaybackStatus();
   const bus = readXtBusHeartbeat();
+  reportNativeHdmiTelemetry(status);
 
   if (status?.ended === '1') {
     const nonce = asString(status.restartNonce);

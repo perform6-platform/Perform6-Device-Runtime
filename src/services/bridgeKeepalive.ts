@@ -207,7 +207,7 @@ function onPongTimeout(): void {
   missStreak += 1;
   // Observe only — never auto-reboot from keepalive. LED uses SD bus.
   if (missStreak <= 2 || missStreak % 5 === 0) {
-    console.warn('[Perform6] Bridge pong miss (observe-only; LED uses SD bus)', {
+    console.info('[Perform6] Optional HTML bridge pong not observed (native LED unaffected)', {
       missStreak,
       state: computeBridgeState(),
       lastRoundTripAt: lastRoundTripAt || null,
