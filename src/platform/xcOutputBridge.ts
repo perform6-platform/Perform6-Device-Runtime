@@ -23,6 +23,7 @@ import { BridgeMsg } from '../services/bridgeProtocol';
 import { resolveSdPlaybackUrl, subscribeSdCacheProgress } from '../services/sdCacheBridge';
 import type { DisplayTarget } from '../shared/types';
 import { useRuntimeStore } from '../stores/runtimeStore';
+import { createId } from '../shared/createId';
 
 const ACK_WAIT_MS = 2_500;
 const REASSERT_MS = 5_000;
@@ -65,6 +66,7 @@ function buildCommand(
   if (!src) return null;
   return {
     target,
+    requestId: createId(),
     src,
     fallbackSrc: '',
     mediaVersionId,

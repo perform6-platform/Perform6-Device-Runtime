@@ -17,6 +17,7 @@ const VOLUME_FLUSH_DELAY_MS = 400;
 export type LedPlaybackTarget = 'led' | 'led2' | 'led3';
 
 export interface LedPlaybackCommand {
+  requestId: string;
   target: LedPlaybackTarget;
   src: string;
   fallbackSrc: string;
@@ -47,6 +48,10 @@ export interface LedPlaybackStatus {
   role?: string;
   wantUrl?: string;
   restartNonce?: string;
+  requestId?: string;
+  mediaVersionId?: string;
+  mediaTitle?: string;
+  writtenAt?: string;
   /** Per-role map written by autorun (in-memory merge + atomic sidecars). */
   roles?: Partial<Record<LedPlaybackTarget, LedPlaybackStatus>>;
 }
@@ -67,6 +72,7 @@ function signatureOf(file: LedPlaybackFile): string {
     .map((c) =>
       [
         c.target,
+        c.requestId,
         c.src,
         c.mediaVersionId,
         c.restartNonce,
@@ -172,6 +178,7 @@ export function toLedPlaybackCommand(
   }
   return {
     target: partial.target,
+    requestId: partial.requestId ?? '',
     src: playSrc,
     fallbackSrc: fallbackSrc || '',
     mediaVersionId: partial.mediaVersionId ?? '',
@@ -291,7 +298,12 @@ export function isLedStatusStarted(status: LedPlaybackStatus | null | undefined)
   if (!status) return false;
   if (status.ok !== '1') return false;
   const state = status.state ?? '';
-  if (state === 'started' || state === 'started-transport' || state === '') return true;
+  if (
+    state === 'playing' ||
+    state === 'started' ||
+    state === 'started-transport' ||
+    state === ''
+  ) return true;
   const detail = status.detail ?? '';
   return detail.startsWith('file-play-') && !detail.includes('pending');
 }
@@ -317,6 +329,7 @@ export function writeXtPlaybackFile(
     [
       {
         target: 'led',
+        requestId: record.requestId ?? '',
         src: record.src,
         fallbackSrc: record.fallbackSrc ?? '',
         mediaVersionId: record.mediaVersionId ?? '',
@@ -340,4 +353,3 @@ export function readXtPlaybackStatus(): LedPlaybackStatus | null {
 export function readXtBusHeartbeat(): LedBusHeartbeat | null {
   return readLedBusHeartbeat();
 }
-

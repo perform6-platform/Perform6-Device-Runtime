@@ -19,6 +19,7 @@ import { toLedPlayableSrc } from '../services/playbackSrc';
 import { BridgeMsg } from '../services/bridgeProtocol';
 import { subscribeSdCacheProgress } from '../services/sdCacheBridge';
 import { useRuntimeStore } from '../stores/runtimeStore';
+import { reportScreenPlayback } from '../services/playbackTelemetry';
 
 const ACK_WAIT_MS = 2_500;
 const REASSERT_MS = 5_000;
@@ -54,6 +55,7 @@ function clearAckTimer(): void {
 
 function buildPayload(): {
   type: string;
+  requestId: string;
   role: string;
   src: string;
   fallbackSrc: string;
@@ -73,6 +75,7 @@ function buildPayload(): {
   lastPostedNonce = restartNonce;
   return {
     type: BridgeMsg.XT_PLAYBACK,
+    requestId: meta?.requestId ?? '',
     role: 'touch',
     src,
     fallbackSrc: toLedPlayableSrc(meta?.fallbackSrc),
@@ -153,6 +156,27 @@ function postTouchPlayback(port: BrightSignMessagePort | null, force = false): v
 function pollPlaybackStatus(port: BrightSignMessagePort | null): void {
   const status = readXtPlaybackStatus();
   const bus = readXtBusHeartbeat();
+
+  if (status) {
+    const state = useRuntimeStore.getState();
+    const meta = state.displayPlaybackMeta;
+    const started = isLedStatusStarted(status);
+    reportScreenPlayback({
+      screenKey: meta?.screenKey ?? 'SCREEN_1',
+      output: 'HDMI-2',
+      source: 'NATIVE_HDMI',
+      requestId: status.requestId ?? meta?.requestId ?? null,
+      mediaVersionId: status.mediaVersionId ?? meta?.mediaVersionId ?? null,
+      title: status.mediaTitle ?? meta?.title ?? null,
+      positionMs: 0,
+      durationMs: null,
+      isPlaying: started,
+      stage: status.state ?? (started ? 'started' : 'unknown'),
+      error: status.ok === '0' ? (status.detail ?? 'native playback failed') : null,
+      path: status.src ?? status.wantUrl ?? null,
+      updatedAt: status.writtenAt ?? null,
+    });
+  }
 
   if (status?.ended === '1') {
     const nonce = asString(status.restartNonce);

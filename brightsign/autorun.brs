@@ -727,6 +727,9 @@ Function CreateLedState(vp as Object, key as String) as Object
   st.vp = vp
   st.key = key
   st.nonce = 0
+  st.requestId = ""
+  st.mediaVersionId = ""
+  st.mediaTitle = ""
   st.loopMode = true
   st.paused = false
   st.wantUrl = ""
@@ -1416,6 +1419,9 @@ Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, stat
   src = PayloadString(payload, "src")
   fallbackSrc = PayloadString(payload, "fallbackSrc")
   mediaId = PayloadString(payload, "mediaVersionId")
+  st.requestId = PayloadString(payload, "requestId")
+  st.mediaVersionId = mediaId
+  st.mediaTitle = PayloadString(payload, "mediaTitle")
   TraceLog("PLAY|ApplyNative|src=" + src + "|fb=" + fallbackSrc + "|id=" + mediaId)
   if not IsPlayableNativeSrc(src) then
     TraceLog("PLAY|gate|primary-not-playable")
@@ -1470,7 +1476,9 @@ Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, stat
   if ok = false then detail = "play failed"
   PostPlaybackAck(states, st, payload, ok, detail)
   if ok then
-    WriteXtPlaybackStatus(st, "started", false)
+    ' PlayFile=true means the request was accepted, not that frames reached HDMI.
+    ' roVideoEvent Playing is the authoritative transition to playing.
+    WriteXtPlaybackStatus(st, "accepted", false)
   else
     WriteXtPlaybackStatus(st, "play failed", false)
   end if
@@ -1664,6 +1672,12 @@ Sub WriteLedPlaybackStatus(st as Object, detail as String, ended as Boolean)
     state = "ended"
   else if detail = "accepted" then
     state = "accepted"
+  else if detail = "playing" or detail = "playing-resumed" then
+    state = "playing"
+  else if detail = "paused" then
+    state = "paused"
+  else if detail = "underrun" then
+    state = "underrun"
   else if Instr(1, detail, "fail") > 0 or Instr(1, detail, "error") > 0 or detail = "no playable src" or detail = "no video player" or detail = "media missing" then
     state = "error"
   else if Len(st.playingUrl) > 0 and st.idleShown <> true then
@@ -1678,6 +1692,10 @@ Sub WriteLedPlaybackStatus(st as Object, detail as String, ended as Boolean)
   entry.src = st.playingUrl
   entry.wantUrl = st.wantUrl
   entry.restartNonce = IntToStr(st.nonce)
+  entry.requestId = st.requestId
+  entry.mediaVersionId = st.mediaVersionId
+  entry.mediaTitle = st.mediaTitle
+  entry.writtenAt = IntToStr(ProgressNowMs())
   entry.ok = okStr
   entry.state = state
   entry.detail = detail
@@ -1695,6 +1713,10 @@ Sub WriteLedPlaybackStatus(st as Object, detail as String, ended as Boolean)
     entryJson = entryJson + q + "src" + q + ":" + q + st.playingUrl + q + ","
     entryJson = entryJson + q + "wantUrl" + q + ":" + q + st.wantUrl + q + ","
     entryJson = entryJson + q + "restartNonce" + q + ":" + q + IntToStr(st.nonce) + q + ","
+    entryJson = entryJson + q + "requestId" + q + ":" + q + st.requestId + q + ","
+    entryJson = entryJson + q + "mediaVersionId" + q + ":" + q + st.mediaVersionId + q + ","
+    entryJson = entryJson + q + "mediaTitle" + q + ":" + q + st.mediaTitle + q + ","
+    entryJson = entryJson + q + "writtenAt" + q + ":" + q + IntToStr(ProgressNowMs()) + q + ","
     entryJson = entryJson + q + "ok" + q + ":" + q + okStr + q + ","
     entryJson = entryJson + q + "state" + q + ":" + q + state + q + ","
     entryJson = entryJson + q + "detail" + q + ":" + q + detail + q + ","
@@ -1714,6 +1736,10 @@ Sub WriteLedPlaybackStatus(st as Object, detail as String, ended as Boolean)
   root.src = entry.src
   root.wantUrl = entry.wantUrl
   root.restartNonce = entry.restartNonce
+  root.requestId = entry.requestId
+  root.mediaVersionId = entry.mediaVersionId
+  root.mediaTitle = entry.mediaTitle
+  root.writtenAt = entry.writtenAt
   root.ok = entry.ok
   root.state = entry.state
   root.detail = entry.detail
@@ -2837,6 +2863,20 @@ Sub Main()
       videoCode = ev.GetInt()
       if videoCode <> 8 then
         LedLog("=== Perform6: roVideoEvent " + VideoEventName(videoCode) + " ===")
+      end if
+      if profile = "XT2145" and type(ledState) = "roAssociativeArray" then
+        if videoCode = 3 then
+          WriteXtPlaybackStatus(ledState, "playing", false)
+        else if videoCode = 5 then
+          WriteXtPlaybackStatus(ledState, "paused", false)
+        else if videoCode = 6 then
+          WriteXtPlaybackStatus(ledState, "playing-resumed", false)
+        else if videoCode = 14 then
+          WriteXtPlaybackStatus(ledState, "underrun", false)
+        else if videoCode = 16 then
+          ledState.playingUrl = ""
+          WriteXtPlaybackStatus(ledState, "error-native-video-event", false)
+        end if
       end if
       ' 8 = MediaEnded - notify touch UI for non-looping XT playback.
       if videoCode = 8 and profile = "XT2145" and type(htmlTouch) = "roHtmlWidget" then

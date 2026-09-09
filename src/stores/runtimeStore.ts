@@ -37,6 +37,7 @@ interface RuntimeStoreState {
   debugLogs: DebugLogEntry[];
   displayVideoSrc: string | null;
   displayPlaybackMeta: {
+    requestId: string;
     screenKey: string;
     mediaVersionId: string | null;
     title: string | null;
@@ -147,17 +148,20 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
     const safeSrc = sanitizeDisplaySrc(displayVideoSrc);
     const safeFallback = sanitizeFallbackSrc(meta?.fallbackSrc);
     const prev = get();
+    const mediaChanged =
+      safeSrc !== prev.displayVideoSrc ||
+      meta?.mediaVersionId !== prev.displayPlaybackMeta?.mediaVersionId;
     const nextMeta = safeSrc
       ? {
+          requestId: mediaChanged
+            ? createId()
+            : (prev.displayPlaybackMeta?.requestId ?? createId()),
           screenKey: meta?.screenKey ?? 'SCREEN_1',
           mediaVersionId: meta?.mediaVersionId ?? null,
           title: meta?.title ?? null,
           fallbackSrc: safeFallback,
         }
       : null;
-    const mediaChanged =
-      safeSrc !== prev.displayVideoSrc ||
-      nextMeta?.mediaVersionId !== prev.displayPlaybackMeta?.mediaVersionId;
     set({
       displayVideoSrc: safeSrc,
       displayPlaybackMeta: nextMeta,

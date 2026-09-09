@@ -5,6 +5,13 @@ export interface ScreenPlaybackSample {
   positionMs: number;
   durationMs?: number | null;
   isPlaying: boolean;
+  output?: string | null;
+  source?: 'HTML_UI' | 'NATIVE_HDMI' | null;
+  requestId?: string | null;
+  stage?: string | null;
+  error?: string | null;
+  path?: string | null;
+  updatedAt?: string | null;
 }
 
 const samples = new Map<string, ScreenPlaybackSample>();
