@@ -2,6 +2,7 @@ import type { DeviceAuthContext } from '../shared/types/api';
 import { apiFetchData } from './api';
 import { drainDeviceLogs, type BufferedDeviceLog } from './deviceLogCollector';
 import { fetchAutorunLogTail } from './ledLogBridge';
+import { getNodeFs, toNodeSdPath } from '../platform/brightSignNode';
 
 export interface DeviceLogUploadEntry {
   level: BufferedDeviceLog['level'];
@@ -12,6 +13,49 @@ export interface DeviceLogUploadEntry {
 
 let lastAutorunLine = '';
 let flushInFlight = false;
+
+const CANARY_FILES = [
+  'SD:/perform6-boot-canary.txt',
+  'SD:/perform6-heartbeat.txt',
+  'SD:/perform6-playfile-attempt.txt',
+] as const;
+
+function readCanaryEntries(): DeviceLogUploadEntry[] {
+  const fs = getNodeFs();
+  if (!fs) return [];
+  const now = new Date().toISOString();
+  const out: DeviceLogUploadEntry[] = [];
+  for (const sd of CANARY_FILES) {
+    try {
+      const nodePath = toNodeSdPath(sd);
+      if (!fs.existsSync(nodePath)) {
+        out.push({
+          level: 'WARN',
+          source: 'AUTORUN',
+          message: `CANARY|missing|${sd}`,
+          loggedAt: now,
+        });
+        continue;
+      }
+      const raw = fs.readFileSync(nodePath, 'utf8');
+      const text = (typeof raw === 'string' ? raw : String(raw)).trim().slice(0, 2000);
+      out.push({
+        level: 'INFO',
+        source: 'AUTORUN',
+        message: `CANARY|${sd}|${text || '(empty)'}`,
+        loggedAt: now,
+      });
+    } catch {
+      out.push({
+        level: 'WARN',
+        source: 'AUTORUN',
+        message: `CANARY|read-fail|${sd}`,
+        loggedAt: now,
+      });
+    }
+  }
+  return out;
+}
 
 function autorunTailToNewEntries(tail: string): DeviceLogUploadEntry[] {
   if (!tail.trim()) return [];
@@ -30,11 +74,11 @@ function autorunTailToNewEntries(tail: string): DeviceLogUploadEntry[] {
   if (fresh.length === 0) return [];
   lastAutorunLine = fresh[fresh.length - 1] ?? lastAutorunLine;
 
-  return fresh.slice(-200).map((message) => ({
+  return fresh.slice(-250).map((message) => ({
     level:
-      message.includes('ERROR') || message.includes('FAILED')
+      message.includes('ERROR') || message.includes('FAILED') || message.includes('FN|break')
         ? 'ERROR'
-        : message.includes('unparsed') || message.includes('ping — no')
+        : message.includes('unparsed') || message.includes('ping — no') || message.includes('CANARY|missing')
           ? 'WARN'
           : 'INFO',
     source: 'AUTORUN' as const,
@@ -58,15 +102,18 @@ async function collectLogEntries(): Promise<DeviceLogUploadEntry[]> {
     console.warn('[Perform6] Autorun log collect failed', error);
   }
 
-  const merged = [...jsEntries, ...autorunEntries];
+  const canaryEntries = readCanaryEntries();
+
+  const merged = [...jsEntries, ...autorunEntries, ...canaryEntries];
   if (merged.length > 0) {
     console.info('[Perform6] Log upload batch', {
       js: jsEntries.length,
       autorun: autorunEntries.length,
+      canary: canaryEntries.length,
       total: merged.length,
     });
   }
-  return merged.slice(0, 400);
+  return merged.slice(0, 500);
 }
 
 export async function uploadDeviceLogs(

@@ -1,6 +1,9 @@
 /**
- * BrightSign allows one BSMessagePort per HtmlWidget.
+ * BrightSign / BrightAuthor: one BSMessagePort per HtmlWidget = normal zone messaging.
  * Recreating the port drops autorun→JS replies onto a dead instance.
+ *
+ * On nodejs_enabled widgets, duplex requires @brightsign/messageport (Node).
+ * DOM BSMessagePort can PostBSMessage but often never receives PostJSMessage.
  */
 let sharedPort: BrightSignMessagePort | null | undefined;
 const bsMessageListeners = new Set<(event: BrightSignMessagePortEvent) => void>();
@@ -10,6 +13,11 @@ let activeTransport: BridgeTransport = 'none';
 
 export function getBridgeTransport(): BridgeTransport {
   return activeTransport;
+}
+
+/** True when inbound PostJSMessage is expected to work (BA-style duplex). */
+export function isBridgeDuplexTransport(): boolean {
+  return activeTransport === 'node-messageport';
 }
 
 function dispatchBsMessage(event: BrightSignMessagePortEvent): void {

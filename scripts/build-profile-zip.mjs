@@ -99,27 +99,32 @@ function assertAutorunPlayerAllocation(autorunPath) {
 }
 
 /**
- * Guard: XT+XC must poll unified SD LED bus; pool PlayFile + mp4 alias fallback present.
+ * Guard: XT+XC LED = BA bridge + SD fallback; pool PlayFile (no multi-GB CopyFile alias).
  */
 function assertLedPlaybackBus(autorunPath) {
   const text = fs.readFileSync(autorunPath, 'utf8');
   const required = [
     'perform6-led-playback.json',
     'MaybePollLedPlaybackFile',
-    'EnsureMp4PlayAlias',
     'PoolMp4AliasPath',
     'IsExtensionlessPoolPath',
     'ApplyOneLedPlaybackCommand',
-    'PlayLocalFile alias-hit',
-    'DrainMp4AliasQueueOne',
+    'PlayLocalFile pool-direct OK',
+    'ProbeString',
     'AtomicWriteAsciiFile',
     'LedStatusRolesAA',
     'LoadLedStatusRootAA',
     'profile = "XT2145" or profile = "XC4055"',
+    'NO on-demand HTTPS stream',
   ];
   for (const needle of required) {
     if (!text.includes(needle)) {
       fail(`autorun.brs missing LED SD bus requirement: ${needle}`);
+    }
+  }
+  for (const banned of ['Sub DrainMp4AliasQueueOne', 'Function EnsureMp4PlayAlias']) {
+    if (text.includes(banned)) {
+      fail(`thin autorun must not contain ${banned}`);
     }
   }
   const jsLed = path.join(root, 'src', 'platform', 'ledPlaybackFile.ts');
@@ -146,7 +151,7 @@ function assertLedPlaybackBus(autorunPath) {
   if (!xcText.includes('readLedPlaybackStatusForRole')) {
     fail('xcOutputBridge.ts must read per-role LED status');
   }
-  console.log('[release:zip] LED SD bus assert OK (alias-queue, atomic status, JS write)');
+  console.log('[release:zip] LED SD bus assert OK (pool-direct, BA bridge, JS write)');
 }
 
 function run(command, args, env = {}) {
@@ -272,6 +277,7 @@ function main() {
   assertAutorunPlayerAllocation(autorun);
   assertLedPlaybackBus(autorun);
   run(process.execPath, [path.join(root, 'scripts', 'assert-led-playback.mjs')]);
+  run(process.execPath, [path.join(root, 'scripts', 'assert-program-led-command.mjs')]);
 
   const buildEnv = {};
   if (member) {
@@ -423,9 +429,9 @@ function main() {
       'Supported firmwares: BrightSign OS 8.2+ and 9.x (Series 5: XT/XC/HD).',
       'Storage: plaintext SD (no EncryptStorage). App files stay readable for HtmlWidget.',
       'Media store: SD:/perform6-media-pool/ — AssetPool GetPoolFilePath (authoritative for XT/XC LED PlayFile).',
-      '  JS writes SD:/perform6-led-playback.json; autorun polls and PlayFile(pool path). Bridge optional/dead OK.',
-      '  Extensionless sha256 pool paths: alias-hit first; pool-direct (+ProbeString); CopyFile only on fail.',
-      '  Eager alias: JS queues perform6-mp4-alias-queue.json after pool mark; autorun drains off play path.',
+      '  LED NORMAL: JS PostBSMessage(xt/xc-playback) → autorun PlayFile. SD JSON = fallback if bridge one-way.',
+      '  Extensionless sha256 pool: pool-direct PlayFile + ProbeString (no BrightScript CopyFile, no JS alias copy).',
+      '  Content is deployment/sync driven (Fitness/Golf libraries) — slots are generic (idle/start-here/…).',
       '  Status: per-role sidecars (atomic) + unified roles map from in-memory merge (no disk RMW).',
       '  Legacy SD:/perform6-media/*.mp4 and perform6-xt-playback.json still accepted. clearCache wipes pool + media.',
       '',

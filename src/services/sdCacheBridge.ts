@@ -229,7 +229,7 @@ export function markMediaPoolPath(mediaVersionId: string, sdPath: string): void 
   const map = readMediaPoolPathMap();
   map[mediaVersionId] = sdPath;
   writeMediaPoolPathMap(map);
-  // Eager .mp4 alias (link/copy or autorun queue) so first PlayFile is alias-hit.
+  // Pool-direct play only — no eager .mp4 alias copy (Bluefin freeze / SD double).
   enqueueMp4PlayAlias(sdPath);
 }
 

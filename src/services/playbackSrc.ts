@@ -1,3 +1,8 @@
+/**
+ * Playback URL helpers — BrightAuthor-style offline play.
+ * On BrightSign hardware: sync/AssetPool fills SD first, then local PlayFile / <video>.
+ * Never stream HTTPS VOD on-device (no on-demand). Simulator may use remote URLs.
+ */
 import { runtimeConfig } from '../config/runtime';
 import { MEDIA_POOL_DIR_NAME, MEDIA_STORE_DIR_NAME } from './mediaStorePaths';
 
@@ -100,8 +105,8 @@ export function toLedPlayableSrc(src: string | null | undefined): string {
 }
 
 /**
- * BrightSign hardware never plays HTTPS VOD (dual-decode + cache fight).
- * The browser simulator may use the remote URL so panes are not blank.
+ * BrightSign hardware never plays HTTPS VOD (no on-demand stream).
+ * Local SD/cache path only; simulator may use remote URL for panes.
  */
 export function resolvePlaybackSrc(
   localSrc: string | null | undefined,
@@ -112,7 +117,7 @@ export function resolvePlaybackSrc(
   return null;
 }
 
-/** Drop HTTPS on-device so HtmlWidget never creates a hidden decoder. */
+/** Drop HTTPS on-device so HtmlWidget never creates a hidden decoder / on-demand stream. */
 export function safeHtmlVideoSrc(src: string | null | undefined): string | null {
   if (!src) return null;
   if (runtimeConfig.isSimulator) return src;

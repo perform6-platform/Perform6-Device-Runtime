@@ -198,10 +198,11 @@ export async function probeAutorunCapabilities(
           autorunRelease: null,
         };
         console.warn(
-          '[Perform6] Autorun bridge down — no led-hello-ack within ' +
+          '[Perform6] Autorun bridge quiet — no led-hello-ack within ' +
             String(timeoutMs) +
-            'ms. Flash full SD package (autorun.brs + index.html + assets) matching JS v' +
-            runtimeConfig.runtimeVersion,
+            'ms (handshake may still be open; LED uses SD bus). Flash matching autorun+JS v' +
+            runtimeConfig.runtimeVersion +
+            ' if playback also fails.',
         );
       }
       finish();

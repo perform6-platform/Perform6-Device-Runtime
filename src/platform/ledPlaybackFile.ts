@@ -1,13 +1,10 @@
 /**
- * Bridge-independent native LED playback (XT2145 + XC4055).
- *
- * JS writes SD:/perform6-led-playback.json via Node fs.
- * autorun polls ~500ms and PlayFile(pool path) per target (led / led2 / led3).
- * Legacy dual-write: SD:/perform6-xt-playback.json (XT single-LED shape).
- * Status: per-role sidecars (authoritative) + unified roles map (memory-merged in autorun).
- *   Prefer sidecar reads — safe if unified file is mid-replace.
+ * LED SD playback file — FALLBACK when BA-style bridge cannot confirm play.
+ * Normal path: PostBSMessage(xt-playback / xc-playback) → autorun PlayFile.
+ * JS still may write SD:/perform6-led-playback.json after ack timeout.
  */
 import { getNodeFs, toNodeSdPath } from './brightSignNode';
+import { toLedPlayableSrc } from '../services/playbackSrc';
 
 const LED_FILE_SD = 'SD:/perform6-led-playback.json';
 const XT_FILE_SD = 'SD:/perform6-xt-playback.json';
@@ -71,6 +68,7 @@ function signatureOf(file: LedPlaybackFile): string {
       [
         c.target,
         c.src,
+        c.mediaVersionId,
         c.restartNonce,
         c.volumePercent,
         c.loop,
@@ -160,11 +158,22 @@ function flushPending(): void {
 export function toLedPlaybackCommand(
   partial: Omit<LedPlaybackCommand, 'writtenAt'> & { writtenAt?: string },
 ): LedPlaybackCommand | null {
-  if (!partial.src || !partial.target) return null;
+  if (!partial.target) return null;
+  const src = toLedPlayableSrc(partial.src);
+  const fallbackSrc = toLedPlayableSrc(partial.fallbackSrc);
+  const playSrc = src || fallbackSrc;
+  if (!playSrc) {
+    console.warn('[Perform6] LED command dropped — no local playable src', {
+      target: partial.target,
+      src: partial.src,
+      fallbackSrc: partial.fallbackSrc,
+    });
+    return null;
+  }
   return {
     target: partial.target,
-    src: partial.src,
-    fallbackSrc: partial.fallbackSrc ?? '',
+    src: playSrc,
+    fallbackSrc: fallbackSrc || '',
     mediaVersionId: partial.mediaVersionId ?? '',
     mediaTitle: partial.mediaTitle ?? '',
     screenKey: partial.screenKey ?? 'SCREEN_1',

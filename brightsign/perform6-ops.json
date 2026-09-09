@@ -5,5 +5,6 @@
   "clearCacheOnBoot": false,
   "rebootAfterCacheClear": false,
   "syncOnBoot": false,
-  "_comment": "pauseOta=true: custom fleet OTA is Admin Install only (never auto on Sync Now)."
+  "traceAutorun": false,
+  "_comment": "traceAutorun=true for verbose FN enter/exit. Critical MAIN/PLAY/break always log. Media wipe is deferred (non-blocking)."
 }

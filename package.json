@@ -1,8 +1,8 @@
 {
   "name": "perform6-touchscreen",
-  "version": "1.5.5",
+  "version": "1.5.8",
   "private": true,
-  "description": "Perform6 BrightSign touchscreen app ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â React, offline-first",
+  "description": "Perform6 BrightSign app — BA-style zones, offline SD play (no on-demand HTTPS)",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,6 +10,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "assert:led-playback": "node scripts/assert-led-playback.mjs",
+    "assert:program-led": "node scripts/assert-program-led-command.mjs",
+    "assert:playback": "node scripts/assert-led-playback.mjs && node scripts/assert-program-led-command.mjs",
     "release:zip": "node scripts/build-profile-zip.mjs XT2145",
     "release:zip:xt2145": "node scripts/build-profile-zip.mjs XT2145",
     "release:zip:xc4055": "node scripts/build-profile-zip.mjs XC4055",
