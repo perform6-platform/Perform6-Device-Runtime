@@ -1478,6 +1478,13 @@ Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, stat
 End Sub
 
 Sub PostPlaybackAck(states as Object, st as Object, payload as Object, ok as Boolean, detail as String)
+  ' XT field logs show outbound HtmlWidget messages can block the native loop.
+  ' Playback status is already persisted to SD and polled by the touch app.
+  g = GetGlobalAA()
+  if g.p6Profile = "XT2145" then
+    TraceLog("BRIDGE|ack-via-sd|" + st.key + "|" + detail)
+    return
+  end if
   html = ResolveBridgeHtml(states)
   msg = CreateObject("roAssociativeArray")
   profileHint = PayloadString(payload, "type")
@@ -1933,6 +1940,10 @@ Sub PlayIdleClip(st as Object)
 End Sub
 
 Sub PostLedReady(html as Object, msgType as String, role as String)
+  ' Do not make XT boot depend on an outbound HtmlWidget message. Readiness is
+  ' represented by the SD heartbeat/status bus once Main enters its poll loop.
+  g = GetGlobalAA()
+  if g.p6Profile = "XT2145" then return
   if type(html) <> "roHtmlWidget" then
     return
   end if
@@ -2582,6 +2593,8 @@ Sub Main()
 
   identity = CollectDeviceIdentity()
   profile = ResolveHardwareProfile(identity)
+  gProfile = GetGlobalAA()
+  gProfile.p6Profile = profile
   LedLog("=== Perform6: hardware profile " + profile + " ===")
   TraceLog("MAIN|profile|" + profile)
 
@@ -2802,8 +2815,13 @@ Sub Main()
     ProcessOpsOnBoot(ledStates)
   end if
 
-  ' Running from SD — tell JS so Admin starts as Present until a detach event.
-  PostStorageHotplug(ledStates, true, "SD:")
+  ' XT observes the SD mount directly. Keep its native loop independent of an
+  ' outbound HtmlWidget message; retain the proven behavior for other profiles.
+  if profile <> "XT2145" then
+    PostStorageHotplug(ledStates, true, "SD:")
+  else
+    LedLog("=== Perform6: SD present (native bus; outbound boot post skipped) ===")
+  end if
 
   ' DWS already enabled early (before SetScreenModes) for field recovery.
 
