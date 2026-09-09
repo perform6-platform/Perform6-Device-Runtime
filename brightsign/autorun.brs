@@ -1248,9 +1248,9 @@ End Sub
 
 Sub EnsureDeferredWorkers(states as Object, html as Object)
   RememberP6Html(html)
-  CreateDirectory(CacheDir())
-  CreateDirectory(MediaPoolDir())
-  LedLog("=== Perform6: thin autorun — media dirs only (no HTTP workers) ===")
+  ' JS AssetPool owns/creates SD:/perform6-media-pool. Re-opening that active
+  ' pool directory here can block Main before its playback-command loop.
+  LedLog("=== Perform6: thin autorun — JS owns media dirs (no HTTP workers) ===")
 End Sub
 
 Sub HandleLedPrefetch(payload as Object, msgPort as Object, states as Object)
@@ -2742,8 +2742,11 @@ Sub Main()
       FlushLedLog()
     end if
 
+    TraceLog("MAIN|xt|post-idle")
     EnsureDeferredWorkers(ledStates, htmlTouch)
+    TraceLog("MAIN|xt|workers-ready")
     ProcessOpsOnBoot(ledStates)
+    TraceLog("MAIN|xt|ops-ready")
     ' Resume last known content immediately — do not wait for the JS bridge.
     FlushLedLog()
     MaybeResumePlaybackFromFile(ledStates, msgPort, "boot")

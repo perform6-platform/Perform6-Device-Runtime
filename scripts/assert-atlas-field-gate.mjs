@@ -11,6 +11,7 @@ const allowedRuntimeFiles = new Set([
   'brightsign/autorun.brs',
   'src/platform/ledPlaybackFile.ts',
   'src/platform/xtOutputBridge.ts',
+  'src/services/mediaAssetPool.ts',
   'src/services/otaApply.ts',
   'src/services/otaAssetPool.ts',
 ]);
@@ -42,7 +43,12 @@ for (const protectedPrefix of [
   'src/pages/',
   'src/stores/',
 ]) {
-  if (changed.some((file) => file.startsWith(protectedPrefix))) {
+  if (
+    changed.some(
+      (file) =>
+        file.startsWith(protectedPrefix) && file !== 'src/services/mediaAssetPool.ts',
+    )
+  ) {
     fail(`pairing/download/playback behavior changed under ${protectedPrefix}`);
   }
 }
@@ -59,8 +65,22 @@ for (const marker of [
   'Function RollbackPendingOta',
   'RollbackPendingOta("html-load-error")',
   'DeleteFile("SD:/perform6-ota-pending.json")',
+  'MAIN|xt|workers-ready',
 ]) {
   if (!autorun.includes(marker)) fail(`autorun invariant missing: ${marker}`);
+}
+
+
+const mediaPool = fs.readFileSync(
+  path.join(root, 'src', 'services', 'mediaAssetPool.ts'),
+  'utf8',
+);
+for (const marker of [
+  'event.detail',
+  'POOL_START_MS = 10 * 60_000',
+  'POOL_STALL_MS = 15 * 60_000',
+]) {
+  if (!mediaPool.includes(marker)) fail(`AssetPool field invariant missing: ${marker}`);
 }
 
 const env = fs.readFileSync(path.join(root, '.env.brightsign-xt2145'), 'utf8');
