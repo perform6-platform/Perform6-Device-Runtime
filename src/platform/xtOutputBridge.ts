@@ -1,7 +1,7 @@
 /**
- * XT2145 LED = video zone in the same autorun "presentation" as touch HtmlWidget.
- * BrightAuthor-style: PostBSMessage → autorun PlayFile is the NORMAL path.
- * SD JSON file is fallback only (no port / ack timeout / one-way bridge).
+ * XT2145 LED = native roVideoPlayer in autorun.
+ * PRIMARY: write SD:/perform6-led-playback.json (autorun polls).
+ * OPTIONAL: PostBSMessage if port exists — never wait for ack, never reboot.
  */
 import { runtimeConfig } from '../config/runtime';
 import {
@@ -20,8 +20,7 @@ import { BridgeMsg } from '../services/bridgeProtocol';
 import { subscribeSdCacheProgress } from '../services/sdCacheBridge';
 import { useRuntimeStore } from '../stores/runtimeStore';
 
-const ACK_WAIT_MS = 2_500;
-const REASSERT_MS = 5_000;
+const REASSERT_MS = 15_000;
 
 let initialized = false;
 let ignoreLedEndedUntil = 0;
@@ -29,8 +28,6 @@ let lastPostedNonce = '';
 let lastStatusEndedNonce = '';
 let lastReassertAt = 0;
 let lastBridgeAckNonce = '';
-let ackTimer: number | null = null;
-let pendingSdFallback = false;
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
@@ -45,10 +42,32 @@ function nativePlayableSrc(
   return toLedPlayableSrc(fallbackSrc);
 }
 
-function clearAckTimer(): void {
-  if (ackTimer != null) {
-    window.clearTimeout(ackTimer);
-    ackTimer = null;
+function writeSdPrimary(
+  payload: ReturnType<typeof buildPayload>,
+  reason: string,
+  force = false,
+): void {
+  const fileOk = writeXtPlaybackFile(payload, { immediate: true, force });
+  console.info('[Perform6] XT LED SD-primary', {
+    reason,
+    ok: fileOk,
+    src: payload.src,
+    restartNonce: payload.restartNonce,
+  });
+}
+
+/** SD file first so autorun can PlayFile without a live bridge. */
+function postTouchPlayback(port: BrightSignMessagePort | null, force = false): void {
+  const payload = buildPayload();
+  if (!payload.src) return;
+
+  writeSdPrimary(payload, force ? 'reassert' : 'play', force);
+
+  if (!port) return;
+  try {
+    port.PostBSMessage(payload);
+  } catch (error) {
+    console.warn('[Perform6] XT PostBSMessage failed (SD already written)', error);
   }
 }
 
@@ -91,65 +110,6 @@ function buildPayload(): {
   };
 }
 
-function writeSdFallback(
-  payload: ReturnType<typeof buildPayload>,
-  reason: string,
-  force = false,
-): void {
-  const fileOk = writeXtPlaybackFile(payload, { immediate: true, force });
-  console.warn('[Perform6] XT LED SD fallback (BA bridge primary)', {
-    reason,
-    ok: fileOk,
-    src: payload.src,
-    restartNonce: payload.restartNonce,
-  });
-}
-
-/**
- * BA-style zone message: PostBSMessage first. SD file only if bridge cannot confirm.
- */
-function postTouchPlayback(port: BrightSignMessagePort | null, force = false): void {
-  const payload = buildPayload();
-  if (!payload.src) return;
-
-  pendingSdFallback = false;
-  clearAckTimer();
-
-  if (!port) {
-    writeSdFallback(payload, 'no-messageport', force);
-    return;
-  }
-
-  try {
-    port.PostBSMessage(payload);
-    console.info('[Perform6] XT LED zone via bridge (BA-style)', {
-      src: payload.src,
-      restartNonce: payload.restartNonce,
-      transport: getBridgeTransport(),
-      force,
-    });
-  } catch (error) {
-    console.warn('[Perform6] XT PostBSMessage failed — SD fallback', error);
-    writeSdFallback(payload, 'post-failed', force);
-    return;
-  }
-
-  // DOM port on Node widget is often one-way — schedule SD fallback unless ack arrives.
-  pendingSdFallback = true;
-  const nonce = payload.restartNonce;
-  ackTimer = window.setTimeout(() => {
-    ackTimer = null;
-    if (!pendingSdFallback) return;
-    if (lastBridgeAckNonce === nonce) return;
-    if (isLedStatusStarted(readXtPlaybackStatus())) {
-      pendingSdFallback = false;
-      return;
-    }
-    writeSdFallback(payload, 'ack-timeout', true);
-    pendingSdFallback = false;
-  }, ACK_WAIT_MS);
-}
-
 function pollPlaybackStatus(port: BrightSignMessagePort | null): void {
   const status = readXtPlaybackStatus();
   const bus = readXtBusHeartbeat();
@@ -173,13 +133,12 @@ function pollPlaybackStatus(port: BrightSignMessagePort | null): void {
     state.displayPlaybackMeta?.fallbackSrc,
   );
   if (!want) return;
-  if (lastBridgeAckNonce === lastPostedNonce) return;
-  if (isLedStatusStarted(status)) return;
+  if (isLedStatusStarted(status) && asString(status?.src) === want) return;
 
   const now = Date.now();
   if (now - lastReassertAt < REASSERT_MS) return;
   lastReassertAt = now;
-  console.info('[Perform6] XT LED reassert (BA bridge primary)', {
+  console.info('[Perform6] XT LED SD reassert (no reboot)', {
     status: status?.state ?? null,
     detail: status?.detail ?? null,
     bus: bus?.detail ?? null,
@@ -203,9 +162,7 @@ export function initXtOutputBridge(): void {
 
   const port = getSharedMessagePort();
   if (!port) {
-    console.warn(
-      '[Perform6] BSMessagePort missing — XT LED uses SD fallback only',
-    );
+    console.warn('[Perform6] BSMessagePort missing — XT LED uses SD file only');
   } else {
     subscribeBsMessages((event) => {
       const type = asString(event.data.type);
@@ -216,16 +173,7 @@ export function initXtOutputBridge(): void {
         const ok = asString(event.data.ok) !== '0';
         if (ok) {
           lastBridgeAckNonce = nonce || lastPostedNonce;
-          pendingSdFallback = false;
-          clearAckTimer();
-          console.info('[Perform6] XT playback ack (BA bridge)', { nonce });
-        } else {
-          console.warn('[Perform6] XT playback ack failed (bridge)', {
-            detail: asString(event.data.detail),
-            src: asString(event.data.src),
-          });
-          const payload = buildPayload();
-          if (payload.src) writeSdFallback(payload, 'ack-failed', true);
+          console.info('[Perform6] XT playback ack (optional bridge)', { nonce });
         }
       } else if (type === BridgeMsg.XT_LED_ENDED) {
         if (Date.now() < ignoreLedEndedUntil) {
@@ -262,10 +210,9 @@ export function initXtOutputBridge(): void {
     }
   });
 
-  window.setInterval(() => pollPlaybackStatus(port), 1000);
+  window.setInterval(() => pollPlaybackStatus(port), 2000);
   postTouchPlayback(port);
-  console.info(
-    '[Perform6] XT output bridge armed (BA-style: PostBSMessage primary, SD fallback)',
-    { transport: getBridgeTransport() },
-  );
+  console.info('[Perform6] XT LED armed (SD-primary, bridge optional, no auto-reboot)', {
+    transport: getBridgeTransport(),
+  });
 }

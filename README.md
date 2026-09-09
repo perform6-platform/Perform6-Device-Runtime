@@ -2,7 +2,7 @@
 
 Perform6 app for **BrightSign players** — React, TypeScript, Tailwind, offline-first.
 
-- **Startup:** [`brightsign/autorun.brs`](./brightsign/autorun.brs) (one file for all tenants)
+- **Startup:** per-device BrightScript — [`brightsign/autorun-xt2145.brs`](./brightsign/autorun-xt2145.brs) / [`autorun-xc4055.brs`](./brightsign/autorun-xc4055.brs) / [`autorun-hd226.brs`](./brightsign/autorun-hd226.brs) (zip copies the matching file as `autorun.brs` on SD)
 - **Deploy:** `dist/` + `autorun.brs` to device, or OTA via R2 (no BSN)
 - **Dev:** browser at http://localhost:5173 (no player required)
 

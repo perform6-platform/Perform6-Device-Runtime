@@ -59,73 +59,77 @@ function fail(message) {
 }
 
 /**
- * Guard: XT must create HDMI-2 once (after HtmlWidget), never a pre-HTML duplicate.
- * XC must create HDMI-2 and HDMI-3 once each after HtmlWidget.
+ * Guard: per-profile autorun allocates the right HDMI VideoPlayers (BA zone order).
  */
-function assertAutorunPlayerAllocation(autorunPath) {
+function assertAutorunPlayerAllocation(autorunPath, profileKey) {
   const text = fs.readFileSync(autorunPath, 'utf8');
   if (text.includes('idle before HtmlWidget')) {
     fail(
-      'autorun.brs still has pre-HtmlWidget LED allocation ("idle before HtmlWidget") — remove duplicate players',
+      `${path.basename(autorunPath)} still has pre-HtmlWidget LED allocation ("idle before HtmlWidget")`,
     );
   }
 
-  const xtStart = text.indexOf('if profile = "XT2145" and multiOutput then');
-  const xcStart = text.indexOf('else if profile = "XC4055" and multiOutput then');
-  const hdStart = text.indexOf("else\n    ' HD226");
-  if (xtStart < 0 || xcStart < 0) {
-    fail('autorun.brs missing XT2145 / XC4055 multiOutput branches');
+  if (profileKey === 'XT2145') {
+    const xtHdmi2 = (text.match(/TryCreateVideoPlayer\([^)]*2,\s*"hdmi-2"\)/g) || []).length;
+    if (xtHdmi2 !== 1) {
+      fail(`XT2145 autorun must allocate HDMI-2 exactly once (found ${xtHdmi2})`);
+    }
+    console.log('[release:zip] autorun player assert OK (XT HDMI-2×1, no pre-HTML LED)');
+    return;
   }
 
-  const xtBlock = text.slice(xtStart, xcStart);
-  const xcBlock = text.slice(xcStart, hdStart > xcStart ? hdStart : text.length);
-
-  const xtHdmi2 = (xtBlock.match(/TryCreateVideoPlayer\([^)]*2,\s*"hdmi-2"\)/g) || []).length;
-  if (xtHdmi2 !== 1) {
-    fail(`XT2145 branch must allocate HDMI-2 exactly once (found ${xtHdmi2})`);
+  if (profileKey === 'XC4055') {
+    const xcHdmi2 = (text.match(/TryCreateVideoPlayer\([^)]*2,\s*"hdmi-2"\)/g) || []).length;
+    const xcHdmi3 = (text.match(/TryCreateVideoPlayer\([^)]*3,\s*"hdmi-3"\)/g) || []).length;
+    if (xcHdmi2 !== 1 || xcHdmi3 !== 1) {
+      fail(
+        `XC4055 autorun must allocate HDMI-2 once and HDMI-3 once (found hdmi-2=${xcHdmi2}, hdmi-3=${xcHdmi3})`,
+      );
+    }
+    console.log('[release:zip] autorun player assert OK (XC HDMI-2×1 HDMI-3×1, no pre-HTML LED)');
+    return;
   }
 
-  const xcHdmi2 = (xcBlock.match(/TryCreateVideoPlayer\([^)]*2,\s*"hdmi-2"\)/g) || []).length;
-  const xcHdmi3 = (xcBlock.match(/TryCreateVideoPlayer\([^)]*3,\s*"hdmi-3"\)/g) || []).length;
-  if (xcHdmi2 !== 1 || xcHdmi3 !== 1) {
-    fail(
-      `XC4055 branch must allocate HDMI-2 once and HDMI-3 once (found hdmi-2=${xcHdmi2}, hdmi-3=${xcHdmi3})`,
-    );
-  }
-
-  console.log(
-    '[release:zip] autorun player assert OK (XT HDMI-2×1, XC HDMI-2×1 HDMI-3×1, no pre-HTML LED)',
-  );
+  // HD226: no native LED VideoPlayer required
+  console.log('[release:zip] autorun player assert OK (HD226 HtmlWidget-only)');
 }
 
 /**
  * Guard: XT+XC LED = BA bridge + SD fallback; pool PlayFile (no multi-GB CopyFile alias).
  */
-function assertLedPlaybackBus(autorunPath) {
+function assertLedPlaybackBus(autorunPath, profileKey) {
   const text = fs.readFileSync(autorunPath, 'utf8');
-  const required = [
-    'perform6-led-playback.json',
-    'MaybePollLedPlaybackFile',
-    'PoolMp4AliasPath',
-    'IsExtensionlessPoolPath',
-    'ApplyOneLedPlaybackCommand',
-    'PlayLocalFile pool-direct OK',
-    'ProbeString',
-    'AtomicWriteAsciiFile',
-    'LedStatusRolesAA',
-    'LoadLedStatusRootAA',
-    'profile = "XT2145" or profile = "XC4055"',
-    'NO on-demand HTTPS stream',
-  ];
-  for (const needle of required) {
-    if (!text.includes(needle)) {
-      fail(`autorun.brs missing LED SD bus requirement: ${needle}`);
+  if (profileKey === 'HD226') {
+    for (const banned of ['Sub DrainMp4AliasQueueOne', 'Function EnsureMp4PlayAlias', 'Sub RecycleHtmlWidget']) {
+      if (text.includes(banned)) fail(`HD226 autorun must not contain ${banned}`);
     }
-  }
-  for (const banned of ['Sub DrainMp4AliasQueueOne', 'Function EnsureMp4PlayAlias']) {
-    if (text.includes(banned)) {
-      fail(`thin autorun must not contain ${banned}`);
+    console.log('[release:zip] LED SD bus assert skipped (HD226 HtmlWidget-only)');
+  } else {
+    const required = [
+      'perform6-led-playback.json',
+      'MaybePollLedPlaybackFile',
+      'PoolMp4AliasPath',
+      'IsExtensionlessPoolPath',
+      'ApplyOneLedPlaybackCommand',
+      'PlayLocalFile pool-direct OK',
+      'ProbeString',
+      'AtomicWriteAsciiFile',
+      'LedStatusRolesAA',
+      'LoadLedStatusRootAA',
+      'LED PRIMARY',
+      'NO on-demand HTTPS stream',
+    ];
+    for (const needle of required) {
+      if (!text.includes(needle)) {
+        fail(`${path.basename(autorunPath)} missing LED SD bus requirement: ${needle}`);
+      }
     }
+    for (const banned of ['Sub DrainMp4AliasQueueOne', 'Function EnsureMp4PlayAlias']) {
+      if (text.includes(banned)) {
+        fail(`thin autorun must not contain ${banned}`);
+      }
+    }
+    console.log('[release:zip] LED SD bus assert OK (pool-direct, SD-primary)');
   }
   const jsLed = path.join(root, 'src', 'platform', 'ledPlaybackFile.ts');
   const jsXc = path.join(root, 'src', 'platform', 'xcOutputBridge.ts');
@@ -270,12 +274,12 @@ function main() {
   console.log(`[release:zip] mode=${profile.mode}`);
   console.log(`[release:zip] api from ${path.basename(envFile)} (edit VITE_API_BASE_URL for production)`);
 
-  const autorun = path.join(root, 'brightsign', 'autorun.brs');
+  const autorun = path.join(root, 'brightsign', `autorun-${profile.slug}.brs`);
   if (!fs.existsSync(autorun)) {
-    fail('Missing brightsign/autorun.brs');
+    fail(`Missing brightsign/autorun-${profile.slug}.brs`);
   }
-  assertAutorunPlayerAllocation(autorun);
-  assertLedPlaybackBus(autorun);
+  assertAutorunPlayerAllocation(autorun, profileKey);
+  assertLedPlaybackBus(autorun, profileKey);
   run(process.execPath, [path.join(root, 'scripts', 'assert-led-playback.mjs')]);
   run(process.execPath, [path.join(root, 'scripts', 'assert-program-led-command.mjs')]);
 
@@ -298,7 +302,7 @@ function main() {
   const distIndex = path.join(root, 'dist', 'index.html');
   const distAssets = path.join(root, 'dist', 'assets');
   if (!fs.existsSync(distIndex) || !fs.existsSync(distAssets) || !fs.existsSync(autorun)) {
-    fail('Build output incomplete (need dist/index.html, dist/assets, brightsign/autorun.brs)');
+    fail(`Build output incomplete (need dist/index.html, dist/assets, brightsign/autorun-${profile.slug}.brs)`);
   }
 
   // Persist ready-to-copy folder (no extract step for SD deploy)

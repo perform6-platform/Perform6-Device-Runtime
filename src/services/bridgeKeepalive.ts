@@ -1,8 +1,9 @@
 /**
- * BrightAuthor-simple bridge health.
- * LED playback PRIMARY path is SD bus (PostBSMessage + SD fallback) — not this probe.
+ * BrightAuthor / docs-style messageport health (optional).
+ * LED playback PRIMARY path is SD bus — not this probe.
  * Keepalive: handshake with grace while JS boots after HtmlWidget, then steady ping.
- * Never recreates the port or SetUrl-recycles HTML. Stuck recovery = full reboot only.
+ * Never SetUrl-recycles HTML. Never auto-reboot from pong miss / heal probe.
+ * Explicit Admin reboot = led-ota-reboot / requestBridgeForceHeal only.
  */
 import {
   getBridgeTransport,
@@ -371,32 +372,32 @@ export function getKeepaliveBridgeSnapshot() {
   };
 }
 
-/** Admin / OTA — BA-simple: full reboot only (never SetUrl / port recreate). */
+/**
+ * Docs-style: messageport health is observe-only.
+ * LED uses SD bus — never auto-reboot / SetUrl-recycle from heal probes.
+ */
 export function requestBridgeSelfHeal(reason: string): void {
   if (!isBrightSignRuntime()) return;
-  if (isBridgeInGrace()) {
-    console.info('[Perform6] Bridge heal skipped (handshake grace)', { reason });
-    return;
-  }
-  requestPlayerReboot(reason, false);
+  console.warn('[Perform6] Bridge heal observe-only (no auto-reboot; LED uses SD bus)', {
+    reason,
+    grace: isBridgeInGrace(),
+  });
+  flushLogsSoon();
 }
 
 /**
- * @deprecated HTML SetUrl recycle breaks duplex. Maps to full reboot (BA-simple).
+ * @deprecated HTML SetUrl recycle breaks duplex. Docs-style: refuse, no reboot.
  */
 export function requestBridgeHtmlRecycle(reason: string, force = false): void {
   if (!isBrightSignRuntime()) return;
-  if (!force && isBridgeInGrace()) {
-    console.info('[Perform6] Bridge recycle skipped (handshake grace)', { reason });
-    return;
-  }
   console.warn(
-    '[Perform6] Bridge HTML recycle disabled (BA-simple) — rebooting instead',
-    { reason },
+    '[Perform6] Bridge HTML recycle refused (docs-style — no SetUrl, no auto-reboot)',
+    { reason, force },
   );
-  requestPlayerReboot(reason, force);
+  flushLogsSoon();
 }
 
+/** Explicit Admin / ops force path only — not used by keepalive probes. */
 export function requestBridgeForceHeal(reason: string): void {
   if (!isBrightSignRuntime()) return;
   requestPlayerReboot(reason, true);

@@ -1,7 +1,6 @@
 /**
- * XC4055 LED2/LED3 = video zones in the same autorun as primary HtmlWidget.
- * BrightAuthor-style: PostBSMessage → autorun PlayFile is the NORMAL path.
- * SD JSON file is fallback only (no port / ack timeout).
+ * XC4055 LED2/LED3 = native roVideoPlayer zones.
+ * PRIMARY: SD:/perform6-led-playback.json. Bridge optional. No auto-reboot.
  */
 import { runtimeConfig } from '../config/runtime';
 import {
@@ -24,16 +23,13 @@ import { resolveSdPlaybackUrl, subscribeSdCacheProgress } from '../services/sdCa
 import type { DisplayTarget } from '../shared/types';
 import { useRuntimeStore } from '../stores/runtimeStore';
 
-const ACK_WAIT_MS = 2_500;
-const REASSERT_MS = 5_000;
+const REASSERT_MS = 15_000;
 
 let initialized = false;
 let publishSequence = 0;
 let lastReassertAt = 0;
 let lastStatusEndedKey = '';
 let lastBridgeAckAt = 0;
-let ackTimer: number | null = null;
-let pendingSdFallback = false;
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
@@ -41,13 +37,6 @@ function asString(value: unknown): string {
 
 function nativePlayableSrc(src: string | null | undefined): string {
   return toLedPlayableSrc(src);
-}
-
-function clearAckTimer(): void {
-  if (ackTimer != null) {
-    window.clearTimeout(ackTimer);
-    ackTimer = null;
-  }
 }
 
 function buildCommand(
@@ -79,9 +68,9 @@ function buildCommand(
   };
 }
 
-function writeSdFallback(cmds: LedPlaybackCommand[], reason: string, force = false): void {
+function writeSdPrimary(cmds: LedPlaybackCommand[], reason: string, force = false): void {
   const fileOk = writeLedPlaybackFile(cmds, { immediate: true, force });
-  console.warn('[Perform6] XC LED SD fallback (BA bridge primary)', {
+  console.info('[Perform6] XC LED SD-primary', {
     reason,
     ok: fileOk,
     targets: cmds.map((c) => c.target),
@@ -101,15 +90,9 @@ function publishSecondaryScreens(
   if (cmds.length === 0) return;
   if (sequence !== publishSequence && !force) return;
 
-  pendingSdFallback = false;
-  clearAckTimer();
+  writeSdPrimary(cmds, force ? 'reassert' : 'play', force);
 
-  if (!port) {
-    writeSdFallback(cmds, 'no-messageport', force);
-    return;
-  }
-
-  let posted = 0;
+  if (!port) return;
   for (const cmd of cmds) {
     try {
       port.PostBSMessage({
@@ -127,44 +110,10 @@ function publishSecondaryScreens(
         volumePercent: cmd.volumePercent,
         restartNonce: cmd.restartNonce,
       });
-      posted += 1;
     } catch (error) {
-      console.warn('[Perform6] XC PostBSMessage failed', cmd.target, error);
+      console.warn('[Perform6] XC PostBSMessage failed (SD already written)', cmd.target, error);
     }
   }
-
-  if (posted === 0) {
-    writeSdFallback(cmds, 'post-failed', force);
-    return;
-  }
-
-  console.info('[Perform6] XC LED zones via bridge (BA-style)', {
-    targets: cmds.map((c) => c.target),
-    srcs: cmds.map((c) => c.src),
-    transport: getBridgeTransport(),
-    force,
-  });
-
-  pendingSdFallback = true;
-  const snapshot = cmds;
-  ackTimer = window.setTimeout(() => {
-    ackTimer = null;
-    if (!pendingSdFallback) return;
-    if (Date.now() - lastBridgeAckAt < ACK_WAIT_MS + 500) {
-      pendingSdFallback = false;
-      return;
-    }
-    const s2 = readLedPlaybackStatusForRole('led2');
-    const s3 = readLedPlaybackStatusForRole('led3');
-    const ok2 = !snapshot.some((c) => c.target === 'led2') || isLedStatusStarted(s2);
-    const ok3 = !snapshot.some((c) => c.target === 'led3') || isLedStatusStarted(s3);
-    if (ok2 && ok3) {
-      pendingSdFallback = false;
-      return;
-    }
-    writeSdFallback(snapshot, 'ack-timeout', true);
-    pendingSdFallback = false;
-  }, ACK_WAIT_MS);
 }
 
 function pollPlaybackStatus(port: BrightSignMessagePort | null): void {
@@ -187,12 +136,11 @@ function pollPlaybackStatus(port: BrightSignMessagePort | null): void {
   const led2Ok = !want2 || isLedStatusStarted(statusLed2);
   const led3Ok = !want3 || isLedStatusStarted(statusLed3);
   if (led2Ok && led3Ok) return;
-  if (Date.now() - lastBridgeAckAt < REASSERT_MS) return;
 
   const now = Date.now();
   if (now - lastReassertAt < REASSERT_MS) return;
   lastReassertAt = now;
-  console.info('[Perform6] XC LED reassert (BA bridge primary)', {
+  console.info('[Perform6] XC LED SD reassert (no reboot)', {
     led2: statusLed2?.state ?? null,
     led3: statusLed3?.state ?? null,
     bus: bus?.detail ?? null,
@@ -216,28 +164,17 @@ export function initXcOutputBridge(): void {
 
   const port = getSharedMessagePort();
   if (!port) {
-    console.warn(
-      '[Perform6] BSMessagePort missing — XC LED uses SD fallback only',
-    );
+    console.warn('[Perform6] BSMessagePort missing — XC LED uses SD file only');
   } else {
     subscribeBsMessages((event) => {
       const type = asString(event.data.type);
       if (type === BridgeMsg.XC_LED_READY) {
         publishSecondaryScreens(port);
       } else if (type === BridgeMsg.XC_PLAYBACK_ACK) {
-        if (asString(event.data.ok) === '0') {
-          console.warn('[Perform6] XC playback ack failed (bridge)', {
-            role: asString(event.data.role),
-            detail: asString(event.data.detail),
-          });
-        } else {
-          lastBridgeAckAt = Date.now();
-          pendingSdFallback = false;
-          clearAckTimer();
-          console.info('[Perform6] XC playback ack (BA bridge)', {
-            role: asString(event.data.role),
-          });
-        }
+        lastBridgeAckAt = Date.now();
+        console.info('[Perform6] XC playback ack (optional bridge)', {
+          role: asString(event.data.role),
+        });
       }
     });
   }
@@ -254,10 +191,9 @@ export function initXcOutputBridge(): void {
     }
   });
 
-  window.setInterval(() => pollPlaybackStatus(port), 1000);
+  window.setInterval(() => pollPlaybackStatus(port), 2000);
   publishSecondaryScreens(port);
-  console.info(
-    '[Perform6] XC output bridge armed (BA-style: PostBSMessage primary, SD fallback)',
-    { transport: getBridgeTransport() },
-  );
+  console.info('[Perform6] XC LED armed (SD-primary, bridge optional, no auto-reboot)', {
+    transport: getBridgeTransport(),
+  });
 }

@@ -1,11 +1,9 @@
-' Perform6 BrightSign autorun — BA-style zones + thin boot
-' HtmlWidget (touch/primary) + roVideoPlayer LED zones in ONE Main (like a presentation).
-' LED NORMAL PATH: JS PostBSMessage(xt-playback/xc-playback) → ApplyNativePlayback → ack.
-' LED FALLBACK: SD:/perform6-led-playback.json poll (if bridge one-way / no port).
-' Media: sync/AssetPool to SD first, then PlayFile — NO on-demand HTTPS stream.
-' Never SetUrl-recycle HtmlWidget after load-finished (orphans BSMessagePort duplex).
-' Profiles: XT2145 / XC4055 = React HDMI-1 + native LEDs; HD226 = one HtmlWidget.
-' Content is deployment-driven (Fitness/Golf) — autorun never hardcodes site media.
+' Perform6 BrightSign autorun — HD226 (single HtmlWidget)
+' No native LED VideoPlayer. React on one HDMI.
+' NO on-demand HTTPS stream in autorun.
+' Never SetUrl-recycle HtmlWidget after load-finished.
+' Docs-style thin: zones + SD PlayFile + hang-proof Main. No wipe/FS/heal. No recovery auto-reboot.
+' hang-harden: queued PostJS, single PlayFile, SD-only bus read, no mkdir/Sleep on hot path.
 
 Sub SafePrint(msg as String)
   print msg
@@ -26,11 +24,15 @@ End Function
 Sub FlushLedLog()
   st = LedLogState()
   if st.dirty <> true then return
-  path = "SD:/perform6-led.log"
-  existing = ReadAsciiFile(path)
-  if type(existing) <> "roString" and type(existing) <> "String" then existing = ""
-  if Len(existing) > 60000 then existing = Right(existing, 30000)
-  WriteAsciiFile(path, existing + st.buf)
+  ' NEVER ReadAsciiFile(perform6-led.log) — field XT hang: Main dead after idle,
+  ' heartbeat never written. Keep history in RAM, overwrite SD file.
+  g = GetGlobalAA()
+  hist = ""
+  if type(g.p6LedHist) = "roString" or type(g.p6LedHist) = "String" then hist = g.p6LedHist
+  hist = hist + st.buf
+  if Len(hist) > 30000 then hist = Right(hist, 20000)
+  g.p6LedHist = hist
+  WriteAsciiFile("SD:/perform6-led.log", hist)
   st.buf = ""
   st.lines = 0
   st.dirty = false
@@ -43,7 +45,7 @@ Sub MaybeFlushLedLog()
   lastMs = st.lastFlushMs
   nowMs = ProgressNowMs()
   if type(lastMs) <> "roInteger" and type(lastMs) <> "Integer" then lastMs = 0
-  if nowMs - lastMs < 5000 and st.lines < 20 then return
+  if nowMs - lastMs < 5000 and st.lines < 40 then return
   FlushLedLog()
 End Sub
 
@@ -55,38 +57,13 @@ Sub LedLog(msg as String)
   st.buf = st.buf + msg + Chr(10)
   st.lines = st.lines + 1
   st.dirty = true
-  if st.lines >= 20 then FlushLedLog()
+  ' No auto-flush on boot spam — only MaybeFlushLedLog inside wait() loop.
 End Sub
 
 ' --- Field debug: canary files + TRACE (rate-limited) → Admin ---
-Function TraceVerboseEnabled() as Boolean
-  g = GetGlobalAA()
-  if g.p6Trace = true then return true
-  return false
-End Function
 
-Sub SetTraceVerbose(enabled as Boolean)
-  g = GetGlobalAA()
-  g.p6Trace = enabled
-End Sub
 
 ' Critical traces always; enter/exit spam only when traceAutorun=true.
-Function ShouldEmitTrace(msg as String) as Boolean
-  if TraceVerboseEnabled() then return true
-  if Left(msg, 5) = "MAIN|" then return true
-  if Left(msg, 5) = "WIPE|" then return true
-  if Instr(1, msg, "FN|break|") > 0 then return true
-  if Instr(1, msg, "PLAY|fail") > 0 then return true
-  if Instr(1, msg, "PLAY|ok-") > 0 then return true
-  if Instr(1, msg, "PLAY|ApplyNative") > 0 then return true
-  if Instr(1, msg, "BRIDGE|html-msg|xt-playback") > 0 then return true
-  if Instr(1, msg, "BRIDGE|html-msg|xc-playback") > 0 then return true
-  if Instr(1, msg, "BRIDGE|node-msg|xt-playback") > 0 then return true
-  if Instr(1, msg, "BRIDGE|node-msg|xc-playback") > 0 then return true
-  if Instr(1, msg, "BRIDGE|event=roNodeJsEvent") > 0 then return true
-  if Instr(1, msg, "SD|resume|") > 0 then return true
-  return false
-End Function
 
 ' One SD write (skip duplicate /storage/sd unless verbose) — less Main I/O.
 Sub CanaryWrite(path as String, text as String)
@@ -98,44 +75,98 @@ Sub CanaryWrite(path as String, text as String)
   end if
 End Sub
 
-Sub TraceLog(msg as String)
-  if not ShouldEmitTrace(msg) then return
-  LedLog("TRACE|" + msg)
-End Sub
 
-Sub TraceFnEnter(name as String, detail as String)
-  if not TraceVerboseEnabled() then return
-  if Len(detail) > 0 then
-    TraceLog("FN|enter|" + name + "|" + detail)
-  else
-    TraceLog("FN|enter|" + name)
-  end if
-End Sub
 
-Sub TraceFnExit(name as String, result as String)
-  if not TraceVerboseEnabled() then return
-  if Len(result) > 0 then
-    TraceLog("FN|exit|" + name + "|" + result)
-  else
-    TraceLog("FN|exit|" + name)
-  end if
-End Sub
 
-Sub TraceFnBreak(name as String, reason as String)
-  ' Breaks always — needed to find LED play stops without full TRACE spam.
-  TraceLog("FN|break|" + name + "|" + reason)
-End Sub
 
 Sub WriteBootCanary()
   CanaryWrite("SD:/perform6-boot-canary.txt", "boot-reached|" + IntToStr(ProgressNowMs()))
   TraceLog("MAIN|boot-canary|written")
 End Sub
 
+' Field breadcrumb: last boot step → perform6-boot-canary.txt (one small overwrite).
+' Debug trail file written only AFTER loop-enter (pre-loop SD spam can hang Main).
+Sub WriteBootStepCanary(step as String)
+  if Len(step) = 0 then return
+  line = step + "|" + IntToStr(ProgressNowMs())
+  CanaryWrite("SD:/perform6-boot-canary.txt", line)
+  SafePrint("=== Perform6: boot-step " + step + " ===")
+  g = GetGlobalAA()
+  trail = ""
+  if type(g.p6DebugTrail) = "roString" or type(g.p6DebugTrail) = "String" then trail = g.p6DebugTrail
+  trail = trail + line + Chr(10)
+  if Len(trail) > 4000 then trail = Right(trail, 3000)
+  g.p6DebugTrail = trail
+  if g.p6LoopAlive = true then
+    WriteAsciiFile("SD:/perform6-debug-f6ed41.txt", trail)
+  end if
+  ' Always flush so field can see last boundary even if Main stalls next.
+  FlushLedLog()
+End Sub
+
 Sub WriteMainHeartbeat()
   ms = ProgressNowMs()
-  CanaryWrite("SD:/perform6-heartbeat.txt", "alive-" + IntToStr(ms))
-  TraceLog("MAIN|heartbeat|alive|" + IntToStr(ms))
-  FlushLedLog()
+  ' Marker f6ed41 proves NEW autorun is on the card (Admin/JS can detect).
+  CanaryWrite("SD:/perform6-heartbeat.txt", "alive-f6ed41-" + IntToStr(ms))
+  SafePrint("=== Perform6: heartbeat alive-f6ed41-" + IntToStr(ms) + " ===")
+End Sub
+
+' LED play = SD JSON poll. Never PostJSMessage on boot — it can hang Main forever.
+Sub ScheduleDeferredBootResume()
+  g = GetGlobalAA()
+  g.p6BootResumePending = true
+  g.p6BootResumePass = 0
+  g.p6BootResumeSpan = CreateObject("roTimespan")
+  if type(g.p6BootResumeSpan) = "roTimespan" then g.p6BootResumeSpan.Mark()
+End Sub
+
+Sub ScheduleDeferredWorkersAndOps()
+  g = GetGlobalAA()
+  g.p6DeferWorkersOps = true
+End Sub
+
+' One small unit per call — never block wait()/poll behind workers+resume.
+Sub MaybeRunDeferredBootWork(states as Object, msgPort as Object)
+  g = GetGlobalAA()
+
+  if g.p6BootResumePending = true then
+    pass = g.p6BootResumePass
+    if type(pass) <> "roInteger" and type(pass) <> "Integer" then pass = 0
+
+    if pass = 0 then
+      WriteBootStepCanary("boot-resume-1-enter")
+      MaybeResumePlaybackFromFile(states, msgPort, "boot")
+      WriteBootStepCanary("boot-resume-1-done")
+      g.p6BootResumePass = 1
+      if type(g.p6BootResumeSpan) <> "roTimespan" then
+        g.p6BootResumeSpan = CreateObject("roTimespan")
+      end if
+      if type(g.p6BootResumeSpan) = "roTimespan" then g.p6BootResumeSpan.Mark()
+      return
+    end if
+
+    if pass = 1 then
+      if type(g.p6BootResumeSpan) = "roTimespan" then
+        if g.p6BootResumeSpan.TotalMilliseconds() < 500 then return
+      end if
+      WriteBootStepCanary("boot-resume-2-enter")
+      MaybeResumePlaybackFromFile(states, msgPort, "boot2")
+      WriteBootStepCanary("boot-resume-2-done")
+      g.p6BootResumePending = false
+      return
+    end if
+  end if
+
+  ' Workers/ops only after resume finished — never same tick as first PlayFile.
+  if g.p6DeferWorkersOps = true then
+    WriteBootStepCanary("deferred-workers-enter")
+    html = ResolveBridgeHtml(states)
+    EnsureDeferredWorkers(states, html)
+    WriteBootStepCanary("deferred-workers-done")
+    ProcessOpsOnBoot(states)
+    WriteBootStepCanary("deferred-ops-done")
+    g.p6DeferWorkersOps = false
+  end if
 End Sub
 
 Sub WritePlayfileCanary(phase as String, path as String, okFlag as String)
@@ -146,54 +177,10 @@ Sub WritePlayfileCanary(phase as String, path as String, okFlag as String)
   TraceLog("PLAY|" + line)
 End Sub
 
-Sub AttachStorageHotplug(msgPort as Object)
-  hotplug = CreateObject("roStorageHotplug")
-  if type(hotplug) <> "roStorageHotplug" then return
-  hotplug.SetPort(msgPort)
-  SafePrint("=== Perform6: storage hotplug monitor attached ===")
-End Sub
 
-Function StorageEventPath(ev as Object) as String
-  path = ""
-  if type(ev) = "roStorageAttached" or type(ev) = "roStorageDetached" then
-    path = ev.GetString()
-  end if
-  if type(path) <> "roString" and type(path) <> "String" then path = ""
-  return path
-End Function
 
-Function IsSdStoragePath(path as String) as Boolean
-  if Len(path) = 0 then return true
-  upper = UCase(path)
-  if Instr(1, upper, "SD") > 0 then return true
-  if Instr(1, upper, "MMC") > 0 then return true
-  if Instr(1, upper, "/STORAGE/SD") > 0 then return true
-  return false
-End Function
 
-Sub PostStorageHotplug(states as Object, attached as Boolean, path as String)
-  if attached then
-    state = "attached"
-  else
-    state = "detached"
-  end if
-  LedLog("=== Perform6: storage " + state + " " + path + " ===")
-  html = ResolveBridgeHtml(states)
-  msg = CreateObject("roAssociativeArray")
-  msg.AddReplace("type", "led-storage")
-  msg.state = state
-  msg.path = path
-  PostJsMessage(html, msg)
-End Sub
 
-Sub HandleStorageHotplug(ev as Object, states as Object, attached as Boolean)
-  path = StorageEventPath(ev)
-  if not IsSdStoragePath(path) then
-    SafePrint("=== Perform6: ignore non-SD storage event " + path + " ===")
-    return
-  end if
-  PostStorageHotplug(states, attached, path)
-End Sub
 
 Sub AttachHtmlWidgetPort(html as Object, msgPort as Object)
   ' BrightSign: cfg.port alone is not always enough — always SetPort after create
@@ -384,27 +371,56 @@ Sub PostJsToWidget(html as Object, msg as Object)
   html.PostJSMessage(msg)
 End Sub
 
+' Queue outbound JS messages — never call PostJSMessage synchronously on hot path.
+' Boot grace + max 1 drain per wait() keeps Main responsive.
+Sub EnqueuePostJs(html as Object, msg as Object)
+  if type(msg) <> "roAssociativeArray" then return
+  g = GetGlobalAA()
+  if type(g.p6PostJsQ) <> "roArray" then
+    g.p6PostJsQ = CreateObject("roArray", 8, true)
+  end if
+  item = CreateObject("roAssociativeArray")
+  item.html = html
+  item.msg = msg
+  g.p6PostJsQ.Push(item)
+  if g.p6PostJsQ.Count() > 12 then
+    g.p6PostJsQ.Shift()
+  end if
+End Sub
+
+Sub DrainOnePostJs()
+  g = GetGlobalAA()
+  if g.p6LoopAlive <> true then return
+  if type(g.p6LoopEnterSpan) = "roTimespan" then
+    if g.p6LoopEnterSpan.TotalMilliseconds() < 3000 then return
+  end if
+  if type(g.p6PostJsQ) <> "roArray" then return
+  if g.p6PostJsQ.Count() = 0 then return
+  item = g.p6PostJsQ.Shift()
+  if type(item) <> "roAssociativeArray" then return
+  html = item.html
+  if type(html) <> "roHtmlWidget" then html = ResolveBridgeHtml(invalid)
+  PostJsToWidget(html, item.msg)
+End Sub
+
 ' One PostJSMessage per event — BrightSign: one port per widget.
 Sub PostJsMessage(html as Object, msg as Object)
   if type(msg) <> "roAssociativeArray" then return
-  if type(html) = "roHtmlWidget" then
-    PostJsToWidget(html, msg)
-    return
-  end if
   g = GetGlobalAA()
-  if type(g.htmlTouch) = "roHtmlWidget" then
-    PostJsToWidget(g.htmlTouch, msg)
-    return
+  ' Before loop-enter: drop (never block boot). After: queue only.
+  if g.p6LoopAlive <> true then return
+  if type(html) <> "roHtmlWidget" then
+    if type(g.htmlTouch) = "roHtmlWidget" then
+      html = g.htmlTouch
+    else if type(g.htmlPrimary) = "roHtmlWidget" then
+      html = g.htmlPrimary
+    else if type(g.p6Html) = "roHtmlWidget" then
+      html = g.p6Html
+    else if type(g.html) = "roHtmlWidget" then
+      html = g.html
+    end if
   end if
-  if type(g.htmlPrimary) = "roHtmlWidget" then
-    PostJsToWidget(g.htmlPrimary, msg)
-    return
-  end if
-  if type(g.p6Html) = "roHtmlWidget" then
-    PostJsToWidget(g.p6Html, msg)
-    return
-  end if
-  if type(g.html) = "roHtmlWidget" then PostJsToWidget(g.html, msg)
+  EnqueuePostJs(html, msg)
 End Sub
 
 Function PayloadString(payload as Object, key as String) as String
@@ -640,19 +656,13 @@ End Function
 
 ' Idle logo candidates: BrightScript SD:/ first, then Node mount alias.
 Function IdlePathCandidates(name as String) as Object
-  paths = CreateObject("roArray", 2, true)
+  paths = CreateObject("roArray", 1, true)
   paths.Push("SD:/" + name)
-  paths.Push("/storage/sd/" + name)
   return paths
 End Function
 
 Function IdleFilePresent(name as String) as Boolean
   if FileExistsIn("SD:/", name) then return true
-  ' MatchFiles may not accept /storage/sd — try PlayStaticImage/PlayFile fallbacks instead.
-  fs = CreateObject("roFileSystem")
-  if type(fs) = "roFileSystem" then
-    if fs.Exists("/storage/sd/" + name) = true then return true
-  end if
   return false
 End Function
 
@@ -669,31 +679,6 @@ End Function
 ' Integer max is 2,147,483,647 (~2.15 GB). Use Float/Val (exact to 2^53) or
 ' LongInteger when present. Free space: compare in MB via GetFreeInMegabytes().
 ' ---------------------------------------------------------------------------
-Function ParseByteSize(value as Dynamic) as Float
-  t = type(value)
-  if t = "Invalid" then return 0.0
-  if t = "roInteger" or t = "Integer" then return value * 1.0
-  if t = "roFloat" or t = "Float" or t = "Double" then return value
-  if t = "roLongInteger" or t = "LongInteger" then
-    s = ""
-    s = value.ToString()
-    if type(s) = "roString" or type(s) = "String" then
-      if Len(s) > 0 then return Val(s)
-    end if
-    n = value.GetLong()
-    return ParseByteSize(n)
-  end if
-  if t = "roString" or t = "String" then
-    if Len(value) = 0 then return 0.0
-    return Val(value)
-  end if
-  s = Str(value)
-  while Len(s) > 0 and Left(s, 1) = " "
-    s = Mid(s, 2)
-  end while
-  if Len(s) = 0 then return 0.0
-  return Val(s)
-End Function
 
 Function CacheDir() as String
   ' Single authoritative playable store (Bluefin + LED).
@@ -748,18 +733,14 @@ End Function
 Function LocalMediaExists(path as String) as Boolean
   path = NormalizeLocalSrc(path)
   if Len(path) = 0 then return false
-  if PartFileBytes(path) > 0 then return true
-  alt = ""
-  if Left(path, 4) = "SD:/" then
-    alt = "/storage/sd/" + Mid(path, 5)
-  else if Left(path, 12) = "/storage/sd/" then
-    alt = "SD:/" + Mid(path, 13)
+  ' SD:/ only — avoid dual-mount PartFileBytes / Exists storms on Main.
+  if Left(path, 12) = "/storage/sd/" then
+    path = "SD:/" + Mid(path, 13)
   end if
-  if Len(alt) > 0 and PartFileBytes(alt) > 0 then return true
+  if PartFileBytes(path) > 0 then return true
   fs = CreateObject("roFileSystem")
   if type(fs) = "roFileSystem" then
     if fs.Exists(path) = true then return true
-    if Len(alt) > 0 and fs.Exists(alt) = true then return true
   end if
   return false
 End Function
@@ -801,41 +782,17 @@ End Function
 Function TryPlayFileOnce(vp as Object, p as String) as Boolean
   TraceFnEnter("TryPlayFileOnce", p)
   WritePlayfileCanary("trying", p, "?")
-  ok = vp.PlayFile(p)
-  if ok = true then
-    WritePlayfileCanary("ok-string", p, "1")
-    TraceFnExit("TryPlayFileOnce", "ok-string")
-    return true
-  end if
-  ' BrightAuthor pattern: PlayFile({Filename: GetPoolFilePath(...)})
+  ' Single BA-style attempt — stacked PlayFile variants can stall Main.
   aa = CreateObject("roAssociativeArray")
   aa.Filename = p
+  if IsExtensionlessPoolPath(p) then
+    aa.ProbeString = "mp4"
+  end if
   ok = vp.PlayFile(aa)
   if ok = true then
     WritePlayfileCanary("ok-filename", p, "1")
-    TraceFnExit("TryPlayFileOnce", "ok-filename")
+    TraceFnExit("TryPlayFileOnce", "ok")
     return true
-  end if
-  ' Extensionless pool: ProbeString often unlocks PlayFile without CopyFile alias.
-  if IsExtensionlessPoolPath(p) then
-    aa2 = CreateObject("roAssociativeArray")
-    aa2.Filename = p
-    aa2.ProbeString = "mp4"
-    ok = vp.PlayFile(aa2)
-    if ok = true then
-      WritePlayfileCanary("ok-probe-mp4", p, "1")
-      TraceFnExit("TryPlayFileOnce", "ok-probe-mp4")
-      return true
-    end if
-    aa3 = CreateObject("roAssociativeArray")
-    aa3.Filename = p
-    aa3.ProbeString = ".mp4"
-    ok = vp.PlayFile(aa3)
-    if ok = true then
-      WritePlayfileCanary("ok-probe-dotmp4", p, "1")
-      TraceFnExit("TryPlayFileOnce", "ok-probe-dotmp4")
-      return true
-    end if
   end if
   WritePlayfileCanary("fail", p, "0")
   TraceFnExit("TryPlayFileOnce", "false")
@@ -859,28 +816,43 @@ Function PlayLocalFile(vp as Object, path as String) as Boolean
     end if
   end if
 
-  candidates = CreateObject("roArray", 4, true)
-  candidates.Push(path)
-  if Left(path, 4) = "SD:/" then
-    candidates.Push("/storage/sd/" + Mid(path, 5))
-  else if Left(path, 12) = "/storage/sd/" then
-    candidates.Push("SD:/" + Mid(path, 13))
-  end if
-  for each p in candidates
-    if TryPlayFileOnce(vp, p) then
-      if isPool then
-        LedLog("=== Perform6: PlayLocalFile pool-direct OK " + p + " ===")
-      end if
-      TraceFnExit("PlayLocalFile", "ok|" + p)
-      return true
+  if TryPlayFileOnce(vp, path) then
+    if isPool then
+      LedLog("=== Perform6: PlayLocalFile pool-direct OK " + path + " ===")
     end if
-  end for
+    TraceFnExit("PlayLocalFile", "ok|" + path)
+    return true
+  end if
   LedLog("=== Perform6: PlayLocalFile exhausted " + path + " ===")
   TraceFnExit("PlayLocalFile", "exhausted")
   return false
 End Function
 
 ' After HtmlWidget.Show — attach cache/OTA workers so boot never blocks on SD downloads.
+Sub BootSleepSlices(totalMs as Integer)
+  ' Pre-msgPort boot only — never use wait() without a port.
+  left = totalMs
+  while left > 0
+    slice = 100
+    if left < slice then slice = left
+    Sleep(slice)
+    left = left - slice
+  end while
+End Sub
+
+Sub WaitMsgSlices(msgPort as Object, slices as Integer)
+  if slices < 1 then return
+  i = 0
+  while i < slices
+    if type(msgPort) = "roMessagePort" then
+      wait(100, msgPort)
+    else
+      Sleep(100)
+    end if
+    i = i + 1
+  end while
+End Sub
+
 Sub RememberP6Html(html as Object)
   if type(html) <> "roHtmlWidget" then return
   g = GetGlobalAA()
@@ -923,13 +895,6 @@ End Sub
 
 ' Bridge heal marker: auto-reboot while stuck; refuse until cooldown expires
 ' or JS proves round-trip (led-bridge-healthy). Prevents reboot-loops.
-Function NowEpochSeconds() as Integer
-  dt = CreateObject("roDateTime")
-  if type(dt) <> "roDateTime" then return 0
-  secs = dt.ToSecondsSinceEpoch()
-  if type(secs) = "roInteger" or type(secs) = "Integer" then return secs
-  return 0
-End Function
 
 Sub RememberAppUrl(kind as String, appUrl as String)
   if Len(appUrl) = 0 then return
@@ -944,18 +909,6 @@ Sub RememberAppUrl(kind as String, appUrl as String)
 End Sub
 
 
-Sub EnsureLedIdleForStates(states as Object)
-  if type(states) <> "roArray" then return
-  for each st in states
-    if type(st) = "roAssociativeArray" then
-      if type(st.vp) = "roVideoPlayer" then
-        if st.idleShown <> true and Len(st.playingUrl) = 0 then
-          PlayIdleClip(st)
-        end if
-      end if
-    end if
-  end for
-End Sub
 
 Sub InitBridgeWatch()
   g = GetGlobalAA()
@@ -1032,54 +985,19 @@ Sub HandleLedHello(payload as Object, states as Object)
   end if
 End Sub
 
-Sub HandleLedBridgeHealthy()
-  NoteBridgeActivity()
-End Sub
 
-Sub HandleLedBridgeRecycle(payload as Object, states as Object)
-  ' BA-simple / BrightAuthor-style: never soft-reload HtmlWidget via SetUrl.
-  ' That orphans the JS BSMessagePort (outbound ok, inbound dead). Ops must reboot.
-  NoteBridgeActivity()
-  reason = PayloadString(payload, "reason")
-  if Len(reason) = 0 then reason = "js requested"
-  LedLog("=== Perform6: html recycle refused (BA-simple — use reboot) — " + reason + " ===")
-  html = ResolveBridgeHtml(states)
-  ack = CreateObject("roAssociativeArray")
-  ack.AddReplace("type", "led-bridge-recycle-ack")
-  ack.reason = reason
-  ack.detail = "refused-ba-simple"
-  PostJsMessage(html, ack)
-  EnsureLedIdleForStates(states)
-  FlushLedLog()
-End Sub
 
 
 ' One automatic recovery reboot after a fatal boot error; avoids silent blank forever.
-Function ShouldAutoRebootOnce(markerName as String) as Boolean
-  if FileExistsIn("SD:/", markerName) then
-    DeleteFile("SD:/" + markerName)
-    return false
-  end if
-  WriteAsciiFile("SD:/" + markerName, "1")
-  return true
-End Function
 
-Sub ClearBootFailMarker()
-  DeleteFile("SD:/perform6-boot-fail")
-End Sub
 
 Sub FatalHang(msg as String)
   LedLog(msg)
   SafePrint(msg)
   TraceLog("MAIN|FATAL|" + msg)
   CanaryWrite("SD:/perform6-fatal-canary.txt", msg)
-  if ShouldAutoRebootOnce("perform6-boot-fail") then
-    LedLog("=== Perform6: FATAL - auto reboot once ===")
-    FlushLedLog()
-    RebootDeviceAfterOta()
-  end if
-  ' Soft-alive: do NOT silent-sleep forever — heartbeat/canary keep updating for Admin.
-  LedLog("=== Perform6: FATAL soft-alive (heartbeat continues; fix SD package / reboot) ===")
+  ' Docs-style: no recovery auto-reboot. Soft-alive so Admin sees heartbeat/logs.
+  LedLog("=== Perform6: FATAL soft-alive (no auto-reboot; fix SD / Admin reboot) ===")
   FlushLedLog()
   while true
     WriteMainHeartbeat()
@@ -1091,144 +1009,16 @@ End Sub
 
 
 ' --- Thin: no HTTP prefetch/OTA in autorun. Keep media wipe + storage + log-tail. ---
-Function LegacyCacheDir() as String
-  return "SD:/perform6-cache"
-End Function
 
-Function OtaPoolDir() as String
-  return "SD:/perform6-ota-pool"
-End Function
 
-Function IsSafeMediaWipePath(path as String) as Boolean
-  if path = CacheDir() then return true
-  if path = LegacyCacheDir() then return true
-  if path = MediaPoolDir() then return true
-  if path = OtaPoolDir() then return false
-  return false
-End Function
 
-Function PathLooksLikeDirectory(fullPath as String) as Boolean
-  fs = CreateObject("roFileSystem")
-  if type(fs) <> "roFileSystem" then return false
-  st = fs.Stat(fullPath)
-  if type(st) <> "roAssociativeArray" then return false
-  if type(st.type) = "roString" or type(st.type) = "String" then
-    return Instr(1, LCase(st.type), "dir") > 0
-  end if
-  return false
-End Function
 
-Sub DeleteTree(path as String)
-  DeleteTreeBudgeted(path, 100000)
-End Sub
 
 ' Returns true if more work remains (call again later — keeps Main responsive).
-Function DeleteTreeBudgeted(path as String, budget as Integer) as Boolean
-  if Len(path) < 8 then return false
-  if Instr(1, path, "..") > 0 then return false
-  if Left(path, 4) <> "SD:/" then return false
-  if budget <= 0 then return true
 
-  dir = path
-  if Right(dir, 1) <> "/" then dir = dir + "/"
 
-  names = MatchFiles(dir, "*")
-  if type(names) <> "roList" and type(names) <> "roArray" then
-    DeleteDirectory(path)
-    return false
-  end if
-
-  used = 0
-  for each name in names
-    if used >= budget then return true
-    if Len(name) > 0 and name <> "." and name <> ".." then
-      full = dir + name
-      if PathLooksLikeDirectory(full) then
-        if DeleteTreeBudgeted(full, budget - used) then return true
-        used = used + 1
-      else
-        DeleteFile(full)
-        used = used + 1
-      end if
-    end if
-  end for
-
-  DeleteDirectory(path)
-  return false
-End Function
-
-Sub WipeMediaDirectory(path as String)
-  if not IsSafeMediaWipePath(path) then
-    LedLog("=== Perform6: refuse wipe of unsafe path " + path + " ===")
-    return
-  end if
-  ' Full wipe can block Main for minutes — prefer ScheduleDeferredMediaWipe.
-  DeleteDirectory(path)
-  DeleteTree(path)
-  CreateDirectory(path)
-  LedLog("=== Perform6: wiped+recreated " + path + " ===")
-End Sub
-
-Sub ScheduleDeferredMediaWipe()
-  g = GetGlobalAA()
-  g.p6WipeActive = true
-  g.p6WipePath = ""
-  g.p6WipeQueue = CreateObject("roArray", 3, true)
-  g.p6WipeQueue.Push(CacheDir())
-  g.p6WipeQueue.Push(MediaPoolDir())
-  g.p6WipeQueue.Push(LegacyCacheDir())
-  g.p6WipeIdx = 0
-  TraceLog("WIPE|scheduled|dirs=3")
-  LedLog("=== Perform6: media wipe DEFERRED (budgeted; Main stays responsive) ===")
-End Sub
 
 ' Heartbeat tick: delete up to ~40 entries then return (no multi-minute Main block).
-Sub MaybeProcessDeferredWipe()
-  g = GetGlobalAA()
-  if g.p6WipeActive <> true then return
-  if type(g.p6WipeQueue) <> "roArray" then
-    g.p6WipeActive = false
-    return
-  end if
-  idx = 0
-  if type(g.p6WipeIdx) = "roInteger" or type(g.p6WipeIdx) = "Integer" then idx = g.p6WipeIdx
-  if idx >= g.p6WipeQueue.Count() then
-    g.p6WipeActive = false
-    TraceLog("WIPE|done")
-    LedLog("=== Perform6: deferred media wipe complete ===")
-    FlushLedLog()
-    return
-  end if
-
-  path = g.p6WipeQueue[idx]
-  if not IsSafeMediaWipePath(path) then
-    g.p6WipeIdx = idx + 1
-    return
-  end if
-
-  TraceLog("WIPE|tick|" + path)
-  CreateDirectory(path)
-  more = DeleteTreeBudgeted(path, 40)
-  if more then
-    ' Same dir next tick.
-    return
-  end if
-  CreateDirectory(path)
-  LedLog("=== Perform6: deferred wiped " + path + " ===")
-  g.p6WipeIdx = idx + 1
-  if g.p6WipeIdx >= g.p6WipeQueue.Count() then
-    g.p6WipeActive = false
-    TraceLog("WIPE|done")
-    LedLog("=== Perform6: deferred media wipe complete ===")
-    FlushLedLog()
-    if g.p6WipeRebootWhenDone = true then
-      g.p6WipeRebootWhenDone = false
-      LedLog("=== Perform6: rebootAfterCacheClear after deferred wipe ===")
-      FlushLedLog()
-      RebootDeviceAfterOta()
-    end if
-  end if
-End Sub
 
 Function ReadLogTail(path as String, maxChars as Integer) as String
   existing = ReadAsciiFile(path)
@@ -1246,41 +1036,71 @@ Sub PostLedLogTail(html as Object, requestId as String, text as String)
   PostJsMessage(html, msg)
 End Sub
 
-Sub EnsureDeferredWorkers(states as Object, html as Object)
-  RememberP6Html(html)
-  CreateDirectory(CacheDir())
-  CreateDirectory(MediaPoolDir())
-  LedLog("=== Perform6: thin autorun — media dirs only (no HTTP workers) ===")
+
+' --- Docs-style stubs (JS owns cache/OTA/wipe/FS) ---
+Sub TraceLog(msg as String)
+End Sub
+
+Sub TraceFnEnter(name as String, detail as String)
+End Sub
+
+Sub TraceFnExit(name as String, result as String)
+End Sub
+
+Sub TraceFnBreak(name as String, reason as String)
+  LedLog("TRACE|FN|break|" + name + "|" + reason)
+End Sub
+
+Function TraceVerboseEnabled() as Boolean
+  return false
+End Function
+
+Sub SetTraceVerbose(enabled as Boolean)
+End Sub
+
+Sub ClearBootFailMarker()
+  DeleteFile("SD:/perform6-boot-fail")
 End Sub
 
 Sub HandleLedPrefetch(payload as Object, msgPort as Object, states as Object)
   LedLog("=== Perform6: led-cache-prefetch ignored (use JS AssetPool) ===")
 End Sub
 
-Sub HandleLedKeepSet(payload as Object, states as Object)
-End Sub
-
-Sub HandleLedCacheEvict(payload as Object, states as Object)
-End Sub
-
-Sub HandleLedCacheCancel(payload as Object, msgPort as Object, states as Object)
-End Sub
-
 Sub HandleLedCacheClearAll(states as Object)
-  ' MEDIA ONLY — never wipe OTA pool.
-  ' Do NOT sync DeleteTree here (multi-GB blocks Main). JS Node wipe is primary;
-  ' autorun schedules budgeted deferred wipe + idle.
-  EnsureLedIdleForStates(states)
-  DeleteFile("SD:/perform6-mp4-alias-queue.json")
-  DeleteFile("/storage/sd/perform6-mp4-alias-queue.json")
-  ScheduleDeferredMediaWipe()
-  LedLog("=== Perform6: media clear requested (deferred wipe; OTA untouched) ===")
-  FlushLedLog()
+  LedLog("=== Perform6: led-cache-clear-all ignored (use JS Node wipe) ===")
 End Sub
 
 Sub HandleLedOtaInstall(payload as Object, msgPort as Object, states as Object)
   LedLog("=== Perform6: led-ota-install ignored (use JS OTA AssetPool) ===")
 End Sub
+
+Sub HandleLedBridgeHeal(payload as Object)
+  LedLog("=== Perform6: bridge heal ignored (docs-style — no auto-reboot) ===")
+End Sub
+
+Sub HandleLedBridgeRecycle(payload as Object, states as Object)
+  LedLog("=== Perform6: html recycle refused (docs-style — no SetUrl) ===")
+End Sub
+
+Sub WriteXtPlaybackStatus(st as Object, detail as String, ended as Boolean)
+  WriteLedPlaybackStatus(st, detail, ended)
+End Sub
+
+Sub WriteXtBusHeartbeat(detail as String, src as String)
+  WriteLedBusHeartbeat(detail, src)
+End Sub
+
+Sub EnsureDeferredWorkers(states as Object, html as Object)
+  RememberP6Html(html)
+  ' No CreateDirectory here — JS/AssetPool owns dirs; mkdir can stall Main on some cards.
+  LedLog("=== Perform6: thin autorun — media dirs only (no HTTP workers) ===")
+End Sub
+
+
+
+
+
+
 
 Sub HandleLedOtaPing(states as Object)
   html = ResolveBridgeHtml(states)
@@ -1291,27 +1111,12 @@ Sub HandleLedOtaPing(states as Object)
   PostJsMessage(html, msg)
 End Sub
 
-Sub HandleLedOtaAuth(payload as Object, states as Object)
-End Sub
 
-Sub HandleLedOtaCancel(states as Object)
-End Sub
 
-Sub HandleLedBridgeHeal(payload as Object)
-  LedLog("=== Perform6: bridge heal ignored (BA-simple — reboot only) ===")
-End Sub
 
-Sub HandleLedFsList(payload as Object, states as Object)
-End Sub
 
-Sub HandleLedFsRead(payload as Object, states as Object)
-End Sub
 
-Sub HandleLedFsWrite(payload as Object, states as Object)
-End Sub
 
-Sub HandleLedFsDelete(payload as Object, states as Object)
-End Sub
 
 Sub HandleLedStorageInfo(states as Object)
   html = ResolveBridgeHtml(states)
@@ -1367,14 +1172,14 @@ Sub PlayNativeSrc(st as Object, src as String, msgPort as Object, states as Obje
       st.vp.StopClear()
       st.vp.SetViewMode("FillScreenAndCentered")
       st.idleShown = false
-      Sleep(100)
+      WaitMsgSlices(msgPort, 1)
     end if
-    if not LocalMediaExists(src) then
+    if LocalMediaExists(src) or IsExtensionlessPoolPath(src) then
+      ok = PlayLocalFile(st.vp, src)
+    else
       TraceFnBreak("PlayNativeSrc", "media-missing")
       LedLog("=== Perform6: LED " + st.key + " media missing " + src + " ===")
       ok = false
-    else
-      ok = PlayLocalFile(st.vp, src)
     end if
   end if
 
@@ -1500,15 +1305,14 @@ End Sub
 ' Bridge PostBSMessage is best-effort only — never required for LED play.
 
 Function LoadLedPlaybackFileAA() as Object
-  paths = CreateObject("roArray", 4, true)
+  ' SD:/ only — dual /storage/sd reads double Main I/O risk.
+  paths = CreateObject("roArray", 2, true)
   paths.Push("SD:/perform6-led-playback.json")
-  paths.Push("/storage/sd/perform6-led-playback.json")
   paths.Push("SD:/perform6-xt-playback.json")
-  paths.Push("/storage/sd/perform6-xt-playback.json")
   for each path in paths
     text = ReadAsciiFile(path)
     if type(text) = "roString" or type(text) = "String" then
-      if Len(text) > 0 then
+      if Len(text) > 0 and Len(text) < 200000 then
         parsed = ParseJSON(text)
         if type(parsed) = "roAssociativeArray" then return parsed
         LedLog("=== Perform6: LED playback file JSON parse fail " + path + " len=" + IntToStr(Len(text)) + " ===")
@@ -1555,35 +1359,25 @@ Function ResolveLedCommandTarget(aa as Object) as String
 End Function
 
 Function LoadLedStatusRootAA() as Object
-  paths = CreateObject("roArray", 2, true)
-  paths.Push("SD:/perform6-led-playback-status.json")
-  paths.Push("/storage/sd/perform6-led-playback-status.json")
-  for each path in paths
-    text = ReadAsciiFile(path)
-    if Len(text) > 0 then
-      parsed = ParseJSON(text)
-      if type(parsed) = "roAssociativeArray" then return parsed
-    end if
-  end for
+  text = ReadAsciiFile("SD:/perform6-led-playback-status.json")
+  if Len(text) > 0 and Len(text) < 200000 then
+    parsed = ParseJSON(text)
+    if type(parsed) = "roAssociativeArray" then return parsed
+  end if
   return invalid
 End Function
 
 Function LoadLedStatusSidecarEntry(roleKey as String) as Object
   if Len(roleKey) = 0 then return invalid
-  paths = CreateObject("roArray", 2, true)
-  paths.Push("SD:/perform6-led-playback-status-" + roleKey + ".json")
-  paths.Push("/storage/sd/perform6-led-playback-status-" + roleKey + ".json")
-  for each path in paths
-    text = ReadAsciiFile(path)
-    if Len(text) > 0 then
-      parsed = ParseJSON(text)
-      if type(parsed) = "roAssociativeArray" then
-        migrated = RoleStatusEntryFromFlat(parsed)
-        if type(migrated) = "roAssociativeArray" then return migrated
-        return parsed
-      end if
+  text = ReadAsciiFile("SD:/perform6-led-playback-status-" + roleKey + ".json")
+  if Len(text) > 0 and Len(text) < 200000 then
+    parsed = ParseJSON(text)
+    if type(parsed) = "roAssociativeArray" then
+      migrated = RoleStatusEntryFromFlat(parsed)
+      if type(migrated) = "roAssociativeArray" then return migrated
+      return parsed
     end if
-  end for
+  end if
   return invalid
 End Function
 
@@ -1704,7 +1498,6 @@ Sub WriteLedPlaybackStatus(st as Object, detail as String, ended as Boolean)
 
   ' Sidecar first — JS prefers these; each role is independently atomic.
   AtomicWriteAsciiFile("SD:/perform6-led-playback-status-" + roleKey + ".json", entryJson)
-  AtomicWriteAsciiFile("/storage/sd/perform6-led-playback-status-" + roleKey + ".json", entryJson)
 
   root = CreateObject("roAssociativeArray")
   root.type = "led-playback-status"
@@ -1724,9 +1517,7 @@ Sub WriteLedPlaybackStatus(st as Object, detail as String, ended as Boolean)
   if Len(json) = 0 then json = entryJson
 
   AtomicWriteAsciiFile("SD:/perform6-led-playback-status.json", json)
-  AtomicWriteAsciiFile("/storage/sd/perform6-led-playback-status.json", json)
   AtomicWriteAsciiFile("SD:/perform6-xt-playback-status.json", json)
-  AtomicWriteAsciiFile("/storage/sd/perform6-xt-playback-status.json", json)
 End Sub
 
 Sub WriteLedBusHeartbeat(detail as String, src as String)
@@ -1742,21 +1533,9 @@ Sub WriteLedBusHeartbeat(detail as String, src as String)
 End Sub
 
 ' Back-compat aliases used by ApplyNativePlayback / MediaEnded.
-Sub WriteXtPlaybackStatus(st as Object, detail as String, ended as Boolean)
-  WriteLedPlaybackStatus(st, detail, ended)
-End Sub
 
-Sub WriteXtBusHeartbeat(detail as String, src as String)
-  WriteLedBusHeartbeat(detail, src)
-End Sub
 
-Function LoadXtPlaybackFileAA() as Object
-  return LoadLedPlaybackFileAA()
-End Function
 
-Function XtPlaybackSignature(aa as Object) as String
-  return LedCmdSignature(aa)
-End Function
 
 Sub ApplyOneLedPlaybackCommand(states as Object, msgPort as Object, aa as Object, reason as String)
   TraceFnEnter("ApplyOneLedPlaybackCommand", reason)
@@ -1879,9 +1658,6 @@ Sub MaybePollLedPlaybackFile(states as Object, msgPort as Object)
   MaybeResumePlaybackFromFile(states, msgPort, "loop")
 End Sub
 
-Sub MaybePollXtPlaybackFile(states as Object, msgPort as Object)
-  MaybePollLedPlaybackFile(states, msgPort)
-End Sub
 ' ---------------------------------------------------------------------------
 
 ' Packaged led-idle.png (or optional led-idle.mp4 override) loops on the LED
@@ -1903,7 +1679,7 @@ Sub PlayIdleClip(st as Object)
         return
       end if
     end for
-    LedLog("=== Perform6: LED " + st.key + " idle FAILED led-idle.mp4 (SD:/ + /storage/sd/) ===")
+    LedLog("=== Perform6: LED " + st.key + " idle FAILED led-idle.mp4 (SD:/) ===")
   end if
 
   if not IdleFilePresent("led-idle.png") then
@@ -1929,18 +1705,9 @@ Sub PlayIdleClip(st as Object)
 
   st.vp.SetViewMode("FillScreenAndCentered")
   st.idleShown = false
-  LedLog("=== Perform6: LED " + st.key + " idle FAILED led-idle.png (SD:/ + /storage/sd/) ===")
+  LedLog("=== Perform6: LED " + st.key + " idle FAILED led-idle.png (SD:/) ===")
 End Sub
 
-Sub PostLedReady(html as Object, msgType as String, role as String)
-  if type(html) <> "roHtmlWidget" then
-    return
-  end if
-  ready = CreateObject("roAssociativeArray")
-  ready.AddReplace("type", msgType)
-  ready.AddReplace("role", role)
-  PostJsMessage(html, ready)
-End Sub
 
 ' Local DWS (docs): SetupDWS writes registry; BOS 9.1+ LDWS is off by default.
 ' Password = player serial (digest auth, user "admin").
@@ -2125,28 +1892,6 @@ Function ReadTextFile(path as String) as String
 End Function
 
 Function ResolveHardwareProfile(identity as Object) as String
-  ' Prefer package marker written by release zip (authoritative for this SD image).
-  profile = ReadTextFile("perform6-profile.txt")
-  if Len(profile) = 0 then
-    profile = ReadTextFile("SD:/perform6-profile.txt")
-  end if
-  if profile = "XT2145" or profile = "XC4055" or profile = "HD226" then
-    SafePrint("=== Perform6: profile from perform6-profile.txt = " + profile + " ===")
-    return profile
-  end if
-
-  model = UCase(identity.model)
-  if Instr(1, model, "XC4055") > 0 or Instr(1, model, "XC5") > 0 then
-    return "XC4055"
-  end if
-  if Instr(1, model, "XT2145") > 0 or Instr(1, model, "XT5") > 0 then
-    return "XT2145"
-  end if
-  if Instr(1, model, "HD226") > 0 or Instr(1, model, "HD5") > 0 then
-    return "HD226"
-  end if
-
-  SafePrint("=== Perform6: unknown model - single-output fallback ===")
   return "HD226"
 End Function
 
@@ -2222,57 +1967,19 @@ End Function
 
 Sub ProcessOpsOnBoot(states as Object)
   content = ReadRawFile(OpsFilePath())
-  if Len(content) = 0 then
-    SetTraceVerbose(false)
-    TraceLog("OPS|missing-ops|trace=off-default")
-    return
-  end if
-
-  ' Verbose TRACE only when traceAutorun:true (critical MAIN/PLAY/break always emit).
-  if OpsJsonFieldTrue(content, "traceAutorun") then
-    SetTraceVerbose(true)
-  else
-    SetTraceVerbose(false)
-  end if
-  TraceLog("OPS|traceAutorun|" + BoolToStr(TraceVerboseEnabled()))
-
-  modified = false
-  if OpsJsonFieldTrue(content, "clearCacheOnBoot") then
-    LedLog("=== Perform6: perform6-ops clearCacheOnBoot (deferred wipe) ===")
-    HandleLedCacheClearAll(states)
-    content = OpsJsonSetFieldFalse(content, "clearCacheOnBoot")
-    modified = true
-    if OpsJsonFieldTrue(content, "rebootAfterCacheClear") then
-      ' Reboot after wipe finishes — flag for heartbeat; avoid reboot mid-DeleteTree.
-      g = GetGlobalAA()
-      g.p6WipeRebootWhenDone = true
-      content = OpsJsonSetFieldFalse(content, "rebootAfterCacheClear")
-      modified = true
-    end if
-  end if
-
-  if modified then
-    WriteRawFile(OpsFilePath(), content)
-    LedLog("=== Perform6: perform6-ops.json one-shot flags consumed ===")
-  end if
-End Sub
-
-Sub HandleLedOpsReload(payload as Object, states as Object)
-  html = ResolveBridgeHtml(states)
-  content = ReadRawFile(OpsFilePath())
-  msg = CreateObject("roAssociativeArray")
-  msg.AddReplace("type", "led-ops-config")
-  msg.requestId = PayloadString(payload, "requestId")
-  msg.content = content
-  PostJsMessage(html, msg)
-End Sub
-
-Sub HandleLedOpsWrite(payload as Object)
-  content = PayloadString(payload, "content")
   if Len(content) = 0 then return
-  WriteRawFile(OpsFilePath(), content)
-  LedLog("=== Perform6: perform6-ops.json updated ===")
+  if OpsJsonFieldTrue(content, "traceAutorun") then
+    LedLog("=== Perform6: traceAutorun requested (verbose off in docs-thin) ===")
+  end if
+  if OpsJsonFieldTrue(content, "clearCacheOnBoot") then
+    LedLog("=== Perform6: clearCacheOnBoot ignored (use JS Node wipe) ===")
+    content = OpsJsonSetFieldFalse(content, "clearCacheOnBoot")
+    content = OpsJsonSetFieldFalse(content, "rebootAfterCacheClear")
+    WriteRawFile(OpsFilePath(), content)
+  end if
 End Sub
+
+
 
 Function FindScreenIndex(sm as Object, hdmiName as String) as Integer
   if type(sm) <> "roArray" then
@@ -2293,82 +2000,8 @@ Function FindScreenIndex(sm as Object, hdmiName as String) as Integer
   return -1
 End Function
 
-Sub LogDisplayIdentity(vm as Object, hdmiName as String)
-  if type(vm) <> "roVideoMode" then
-    return
-  end if
-
-  edid = vm.GetEdidIdentity(hdmiName)
-  if type(edid) <> "roAssociativeArray" then
-    SafePrint("=== Perform6: " + hdmiName + " EDID unavailable ===")
-    LedLog("=== Perform6: " + hdmiName + " EDID unavailable ===")
-    return
-  end if
-
-  manufacturer = "unknown"
-  monitorName = "unknown"
-  if type(edid.manufacturer) = "roString" then manufacturer = edid.manufacturer
-  if type(edid.monitor_name) = "roString" then monitorName = edid.monitor_name
-  SafePrint("=== Perform6: " + hdmiName + " EDID " + manufacturer + " / " + monitorName + " ===")
-  LedLog("=== Perform6: " + hdmiName + " EDID " + manufacturer + " / " + monitorName + " ===")
-End Sub
 
 ' Phase 4: prove whether hard-locked 60p was accepted by the real LED panel.
-Sub LogActiveDisplayModes(vm as Object, profile as String)
-  if type(vm) <> "roVideoMode" then return
-
-  active = vm.GetActiveMode()
-  if type(active) = "roAssociativeArray" then
-    modeText = ""
-    if type(active.videomode) = "roString" then modeText = active.videomode
-    colorText = ""
-    if type(active.colorspace) = "roString" then colorText = active.colorspace
-    depthText = ""
-    if type(active.colordepth) = "roString" then depthText = active.colordepth
-    LedLog("=== Perform6: GetActiveMode " + modeText + " " + colorText + " " + depthText + " ===")
-  else
-    LedLog("=== Perform6: GetActiveMode unavailable ===")
-  end if
-
-  fps = vm.GetFPS()
-  if type(fps) = "roInteger" or type(fps) = "Integer" then
-    LedLog("=== Perform6: GetFPS " + IntToStr(fps) + " ===")
-  end if
-
-  ' GetBestMode docs list "hdmi"/"vga"; multi-output also accepts HDMI-N names.
-  connectors = CreateObject("roArray", 4, true)
-  if profile = "XT2145" then
-    connectors.Push("HDMI-1")
-    connectors.Push("HDMI-2")
-  else if profile = "XC4055" then
-    connectors.Push("HDMI-1")
-    connectors.Push("HDMI-2")
-    connectors.Push("HDMI-3")
-  else
-    connectors.Push("hdmi")
-  end if
-
-  i = 0
-  while i < connectors.Count()
-    name = connectors[i]
-    best = vm.GetBestMode(name)
-    if type(best) <> "roString" and type(best) <> "String" then best = ""
-    if Len(best) = 0 and Left(UCase(name), 4) = "HDMI" then
-      ' Docs classic connector is "hdmi"; multi-output uses HDMI-N names.
-      fallback = vm.GetBestMode("hdmi")
-      if type(fallback) = "roString" or type(fallback) = "String" then
-        if Len(fallback) > 0 then
-          best = fallback
-          LedLog("=== Perform6: GetBestMode " + name + " blank — used hdmi=" + best + " ===")
-        end if
-      end if
-    end if
-    if Len(best) = 0 then best = "(blank/no EDID)"
-    LedLog("=== Perform6: GetBestMode " + name + "=" + best + " ===")
-    LogDisplayIdentity(vm, name)
-    i = i + 1
-  end while
-End Sub
 
 Function VideoEventName(code as Integer) as String
   if code = 3 then return "Playing"
@@ -2485,8 +2118,6 @@ Function ApplyMultiScreenModes(vm as Object, profile as String, displayMode as S
   SafePrint("=== Perform6: BrightSign pattern video_mode=" + mode1080 + " ===")
 
   if profile = "XT2145" then
-    LogDisplayIdentity(vm, "HDMI-1")
-    LogDisplayIdentity(vm, "HDMI-2")
     idx1 = FindScreenIndex(sm, "HDMI-1")
     idx2 = FindScreenIndex(sm, "HDMI-2")
     if idx1 < 0 then idx1 = 0
@@ -2526,9 +2157,6 @@ Function ApplyMultiScreenModes(vm as Object, profile as String, displayMode as S
   end if
 
   if profile = "XC4055" then
-    LogDisplayIdentity(vm, "HDMI-1")
-    LogDisplayIdentity(vm, "HDMI-2")
-    LogDisplayIdentity(vm, "HDMI-3")
     idx1 = FindScreenIndex(sm, "HDMI-1")
     idx2 = FindScreenIndex(sm, "HDMI-2")
     idx3 = FindScreenIndex(sm, "HDMI-3")
@@ -2587,17 +2215,16 @@ Sub Main()
 
   displayMode = ReadDisplayMode()
   ' XT/XC always BrightAuthor-style multi-output (React + native LED video).
-  multiOutput = (profile = "XT2145" or profile = "XC4055")
+  multiOutput = false
   SafePrint("=== Perform6: display mode " + displayMode + " ===")
 
-  Sleep(500)
+  BootSleepSlices(500)
 
   msgPort = CreateObject("roMessagePort")
   if type(msgPort) <> "roMessagePort" then
     FatalHang("=== Perform6: FATAL no roMessagePort ===")
   end if
 
-  AttachStorageHotplug(msgPort)
 
   ' Enable DWS before SetScreenModes so field logs still work during reboot.
   EnableDiagnosticWebServer()
@@ -2615,7 +2242,6 @@ Sub Main()
         Sleep(10000)
       end while
     end if
-    LogActiveDisplayModes(vm, profile)
   end if
 
   ' Must be configured before any HTML/video player allocates an audio decoder.
@@ -2651,125 +2277,8 @@ Sub Main()
   led3State = invalid
   ' Cache/OTA workers created AFTER HtmlWidget.Show (EnsureDeferredWorkers).
 
-  if profile = "XT2145" and multiOutput then
-    ' Order (BrightSign multi-out + decoder budget): HtmlWidget Show FIRST, then
-    ' exactly ONE HDMI-2 roVideoPlayer. Never allocate a pre-HTML LED player.
-    SafePrint("=== Perform6: XT React HDMI-1 + native video HDMI-2 ===")
-    touchRect = CreateObject("roRectangle", 0, 0, 1920, 1080)
-    ledRect = CreateObject("roRectangle", 1920, 0, 1920, 1080)
-    if type(touchRect) <> "roRectangle" or type(ledRect) <> "roRectangle" then
-      FatalHang("=== Perform6: FATAL no XT output rectangles ===")
-    end if
-
-    ' Prefer SD:/ path first — avoids post-Show SetUrl that orphans BSMessagePort.
-    touchUrl = BuildAppUrl("file:///SD:/index.html", identity, profile, "touch")
-    SafePrint("=== Perform6: HDMI-1 touch widget " + touchUrl + " ===")
-    htmlTouch = TryCreateHtmlWidget(touchRect, msgPort, touchUrl)
-    if type(htmlTouch) <> "roHtmlWidget" then
-      touchFallbackTried = true
-      touchUrl = BuildAppUrl("file:///index.html", identity, profile, "touch")
-      SafePrint("=== Perform6: retry HDMI-1 touch widget " + touchUrl + " ===")
-      htmlTouch = TryCreateHtmlWidget(touchRect, msgPort, touchUrl)
-    end if
-    if type(htmlTouch) <> "roHtmlWidget" then
-      FatalHang("=== Perform6: FATAL HDMI-1 touch HtmlWidget create failed ===")
-    end if
-
-    EnableJsObjectsSafe(htmlTouch)
-    RoutePlayerAudio(htmlTouch, "none")
-    SafePrint("=== Perform6: Show HDMI-1 touch HtmlWidget ===")
-    htmlTouch.Show()
-    gTouch = GetGlobalAA()
-    gTouch.htmlTouch = htmlTouch
-    RememberAppUrl("touch", touchUrl)
-    ClearBootFailMarker()
-
-    ' Exactly one XT HDMI-2 player — after HtmlWidget.Show (not before).
-    Sleep(500)
-    LedLog("=== Perform6: HDMI-2 native roVideoPlayer (single, after HtmlWidget) ===")
-    videoLed = TryCreateVideoPlayer(ledRect, msgPort, 2, "hdmi-2")
-    if type(videoLed) <> "roVideoPlayer" then
-      LedLog("=== Perform6: ERROR HDMI-2 roVideoPlayer create failed ===")
-    else
-      ledState = CreateLedState(videoLed, "led")
-      ledStates.Push(ledState)
-      PlayIdleClip(ledState)
-      PostLedReady(htmlTouch, "xt-led-ready", "led")
-      FlushLedLog()
-    end if
-
-    EnsureDeferredWorkers(ledStates, htmlTouch)
-    ProcessOpsOnBoot(ledStates)
-    ' Resume last known content immediately — do not wait for the JS bridge.
-    FlushLedLog()
-    MaybeResumePlaybackFromFile(ledStates, msgPort, "boot")
-    Sleep(1500)
-    MaybeResumePlaybackFromFile(ledStates, msgPort, "boot2")
-    FlushLedLog()
-  else if profile = "XC4055" and multiOutput then
-    ' Same order as XT: HtmlWidget Show first, then one player per LED output.
-    SafePrint("=== Perform6: XC React HDMI-1 + native video HDMI-2/3 ===")
-    primaryRect = CreateObject("roRectangle", 0, 0, 1920, 1080)
-    led2Rect = CreateObject("roRectangle", 1920, 0, 1920, 1080)
-    led3Rect = CreateObject("roRectangle", 3840, 0, 1920, 1080)
-    if type(primaryRect) <> "roRectangle" or type(led2Rect) <> "roRectangle" or type(led3Rect) <> "roRectangle" then
-      FatalHang("=== Perform6: FATAL no XC output rectangles ===")
-    end if
-
-    primaryUrl = BuildAppUrl("file:///SD:/index.html", identity, profile, "primary")
-    SafePrint("=== Perform6: HDMI-1 primary widget " + primaryUrl + " ===")
-    htmlPrimary = TryCreateHtmlWidget(primaryRect, msgPort, primaryUrl)
-    if type(htmlPrimary) <> "roHtmlWidget" then
-      primaryFallbackTried = true
-      primaryUrl = BuildAppUrl("file:///index.html", identity, profile, "primary")
-      SafePrint("=== Perform6: retry HDMI-1 primary widget " + primaryUrl + " ===")
-      htmlPrimary = TryCreateHtmlWidget(primaryRect, msgPort, primaryUrl)
-    end if
-    if type(htmlPrimary) <> "roHtmlWidget" then
-      FatalHang("=== Perform6: FATAL HDMI-1 primary HtmlWidget create failed ===")
-    end if
-
-    EnableJsObjectsSafe(htmlPrimary)
-    RoutePlayerAudio(htmlPrimary, "hdmi-1")
-    SafePrint("=== Perform6: Show HDMI-1 primary HtmlWidget ===")
-    htmlPrimary.Show()
-    gPrimary = GetGlobalAA()
-    gPrimary.htmlPrimary = htmlPrimary
-    RememberAppUrl("primary", primaryUrl)
-    ClearBootFailMarker()
-
-    Sleep(500)
-    LedLog("=== Perform6: HDMI-2 native roVideoPlayer (single, after HtmlWidget) ===")
-    videoLed2 = TryCreateVideoPlayer(led2Rect, msgPort, 2, "hdmi-2")
-    if type(videoLed2) <> "roVideoPlayer" then
-      LedLog("=== Perform6: ERROR HDMI-2 roVideoPlayer create failed ===")
-    else
-      led2State = CreateLedState(videoLed2, "led2")
-      ledStates.Push(led2State)
-      PlayIdleClip(led2State)
-      PostLedReady(htmlPrimary, "xc-led-ready", "led2")
-    end if
-
-    Sleep(500)
-    LedLog("=== Perform6: HDMI-3 native roVideoPlayer (single, after HtmlWidget) ===")
-    videoLed3 = TryCreateVideoPlayer(led3Rect, msgPort, 3, "hdmi-3")
-    if type(videoLed3) <> "roVideoPlayer" then
-      LedLog("=== Perform6: ERROR HDMI-3 roVideoPlayer create failed ===")
-    else
-      led3State = CreateLedState(videoLed3, "led3")
-      ledStates.Push(led3State)
-      PlayIdleClip(led3State)
-      PostLedReady(htmlPrimary, "xc-led-ready", "led3")
-    end if
-
-    EnsureDeferredWorkers(ledStates, htmlPrimary)
-    ProcessOpsOnBoot(ledStates)
-    FlushLedLog()
-    MaybeResumePlaybackFromFile(ledStates, msgPort, "boot")
-    Sleep(1500)
-    MaybeResumePlaybackFromFile(ledStates, msgPort, "boot2")
-    FlushLedLog()
-  else
+  ' HD226-only package — single HtmlWidget
+  if true then
     ' HD226 (and any non-multi profile): one HtmlWidget on the native canvas.
     SafePrint("=== Perform6: canvas " + StrI(width) + "x" + StrI(height) + " ===")
     rect = CreateObject("roRectangle", 0, 0, width, height)
@@ -2798,26 +2307,38 @@ Sub Main()
     gSingle.html = html
     RememberAppUrl("single", url)
     ClearBootFailMarker()
-    EnsureDeferredWorkers(ledStates, html)
-    ProcessOpsOnBoot(ledStates)
+    RememberP6Html(html)
+    WriteBootStepCanary("after-remember-html")
+    ScheduleDeferredBootResume()
+    ScheduleDeferredWorkersAndOps()
+    WriteBootStepCanary("after-schedule-deferred")
+    WriteBootStepCanary("hd-boot-block-done")
   end if
 
-  ' Running from SD — tell JS so Admin starts as Present until a detach event.
-  PostStorageHotplug(ledStates, true, "SD:")
-
   ' DWS already enabled early (before SetScreenModes) for field recovery.
+  ' Never PostJSMessage (storage hotplug / led-ready) before loop-enter.
 
   InitBridgeWatch()
-  LedLog("=== Perform6: bridge observe-only (no recycle/reboot on silence) ===")
-  TraceLog("MAIN|loop-enter")
+  WriteBootStepCanary("after-init-bridge")
+  gLoop = GetGlobalAA()
+  gLoop.p6LoopAlive = true
+  gLoop.p6LoopEnterSpan = CreateObject("roTimespan")
+  if type(gLoop.p6LoopEnterSpan) = "roTimespan" then gLoop.p6LoopEnterSpan.Mark()
+  gLoop.p6HtmlLoadFinished = false
+  gLoop.p6DebugLoopTicks = 0
+  WriteBootStepCanary("loop-enter")
   WriteMainHeartbeat()
+  if type(gLoop.p6DebugTrail) = "roString" or type(gLoop.p6DebugTrail) = "String" then
+    WriteAsciiFile("SD:/perform6-debug-f6ed41.txt", gLoop.p6DebugTrail)
+  end if
+  LedLog("=== Perform6: bridge observe-only (no recycle/reboot on silence) ===")
+  LedLog("=== Perform6: HD226 HtmlWidget-only (no native LED) ===")
 
   pbFileTimer = CreateObject("roTimer")
   if type(pbFileTimer) = "roTimer" then
     pbFileTimer.SetPort(msgPort)
-    pbFileTimer.SetElapsed(2, 0)
+    pbFileTimer.SetElapsed(1, 0)
     pbFileTimer.Start()
-    LedLog("=== Perform6: SD LED fallback poll 2s (bridge primary BA-style) ===")
   end if
 
   hbTimer = CreateObject("roTimer")
@@ -2825,14 +2346,22 @@ Sub Main()
     hbTimer.SetPort(msgPort)
     hbTimer.SetElapsed(15, 0)
     hbTimer.Start()
-    TraceLog("MAIN|heartbeat-timer|15s")
   end if
 
   while true
+    ' Event loop first — deferred maintenance must not starve wait().
     ev = wait(100, msgPort)
     MaybeFlushLedLog()
-    ' SD file = fallback only; bridge xt/xc-playback is the normal LED zone path.
-    if profile = "XT2145" or profile = "XC4055" then MaybePollLedPlaybackFile(ledStates, msgPort)
+    ' HD226: no native LED poll
+    gTick = GetGlobalAA()
+    ticks = gTick.p6DebugLoopTicks
+    if type(ticks) <> "roInteger" and type(ticks) <> "Integer" then ticks = 0
+    if ticks < 5 then
+      WriteBootStepCanary("loop-tick-" + IntToStr(ticks))
+      gTick.p6DebugLoopTicks = ticks + 1
+    end if
+    MaybeRunDeferredBootWork(ledStates, msgPort)
+    DrainOnePostJs()
     if type(ev) = "roVideoEvent" then
       videoCode = ev.GetInt()
       if videoCode <> 8 then
@@ -2874,16 +2403,16 @@ Sub Main()
       end if
       if isHbTimer then
         WriteMainHeartbeat()
-        MaybeProcessDeferredWipe()
+        MaybeFlushLedLog()
         if type(hbTimer) = "roTimer" then
           hbTimer.SetElapsed(15, 0)
           hbTimer.Start()
         end if
       else if isPbTimer then
-        MaybeProcessDeferredWipe()
         MaybeResumePlaybackFromFile(ledStates, msgPort, "poll")
+        MaybeFlushLedLog()
         if type(pbFileTimer) = "roTimer" then
-          pbFileTimer.SetElapsed(2, 0)
+          pbFileTimer.SetElapsed(1, 0)
           pbFileTimer.Start()
         end if
       else
@@ -2902,20 +2431,19 @@ Sub Main()
           if Len(failedUrl) = 0 then failedUrl = AsBrString(data.url)
           gLoad = GetGlobalAA()
           if gLoad.bridgeEverSeen = true or htmlLoadFinished = true then
-            LedLog("=== Perform6: load-error after HTML/bridge — reboot (no SetUrl) ===")
+            LedLog("=== Perform6: load-error after HTML/bridge — soft-alive (no SetUrl, no auto-reboot) ===")
             FlushLedLog()
-            if ShouldAutoRebootOnce("perform6-html-load-fail") then
-              RebootDeviceAfterOta()
-            end if
+            WriteMainHeartbeat()
           else if profile = "XT2145" then
             if Instr(1, failedUrl, "bs_output=touch") > 0 and touchFallbackTried = false and type(htmlTouch) = "roHtmlWidget" then
               touchFallbackTried = true
               touchUrl = BuildAppUrl("file:///SD:/index.html", identity, profile, "touch")
               LedLog("=== Perform6: HDMI-1 pre-JS SetUrl fallback (no port yet) ===")
               htmlTouch.SetUrl(touchUrl)
-            else if ShouldAutoRebootOnce("perform6-html-load-fail") then
+            else
+              LedLog("=== Perform6: HTML load-error — soft-alive (no auto-reboot) ===")
               FlushLedLog()
-              RebootDeviceAfterOta()
+              WriteMainHeartbeat()
             end if
           else if profile = "XC4055" then
             if Instr(1, failedUrl, "bs_output=primary") > 0 and primaryFallbackTried = false and type(htmlPrimary) = "roHtmlWidget" then
@@ -2923,16 +2451,20 @@ Sub Main()
               primaryUrl = BuildAppUrl("file:///SD:/index.html", identity, profile, "primary")
               LedLog("=== Perform6: HDMI-1 pre-JS SetUrl fallback (no port yet) ===")
               htmlPrimary.SetUrl(primaryUrl)
-            else if ShouldAutoRebootOnce("perform6-html-load-fail") then
+            else
+              LedLog("=== Perform6: HTML load-error — soft-alive (no auto-reboot) ===")
               FlushLedLog()
-              RebootDeviceAfterOta()
+              WriteMainHeartbeat()
             end if
-          else if ShouldAutoRebootOnce("perform6-html-load-fail") then
+          else
+            LedLog("=== Perform6: HTML load-error — soft-alive (no auto-reboot) ===")
             FlushLedLog()
-            RebootDeviceAfterOta()
+            WriteMainHeartbeat()
           end if
         else if reason = "load-finished" then
           htmlLoadFinished = true
+          gLf = GetGlobalAA()
+          gLf.p6HtmlLoadFinished = true
           DeleteFile("SD:/perform6-html-load-fail")
           SafePrint("=== Perform6: HTML load-finished ===")
           LedLog("=== Perform6: HTML load-finished ===")
@@ -2951,8 +2483,6 @@ Sub Main()
               HandleLedBridgePing(ledStates)
             else if msgType = "led-hello" then
               HandleLedHello(payload, ledStates)
-            else if msgType = "led-bridge-healthy" then
-              HandleLedBridgeHealthy()
             else if msgType = "xt-playback" or msgType = "xc-playback" then
               TraceFnEnter("BRIDGE|" + msgType, sender + "|" + target)
               if profile = "XT2145" then
@@ -2980,40 +2510,18 @@ Sub Main()
               HandleLedBridgeRecycle(payload, ledStates)
             else if msgType = "led-cache-prefetch" then
               HandleLedPrefetch(payload, msgPort, ledStates)
-            else if msgType = "led-cache-keep" then
-              HandleLedKeepSet(payload, ledStates)
-            else if msgType = "led-cache-evict" then
-              HandleLedCacheEvict(payload, ledStates)
-            else if msgType = "led-cache-cancel" then
-              HandleLedCacheCancel(payload, msgPort, ledStates)
             else if msgType = "led-cache-clear-all" then
               HandleLedCacheClearAll(ledStates)
             else if msgType = "led-log-tail-request" then
               HandleLedLogTailRequest(payload, ledStates)
-            else if msgType = "led-fs-list" then
-              HandleLedFsList(payload, ledStates)
-            else if msgType = "led-fs-read" then
-              HandleLedFsRead(payload, ledStates)
-            else if msgType = "led-fs-write" then
-              HandleLedFsWrite(payload, ledStates)
-            else if msgType = "led-fs-delete" then
-              HandleLedFsDelete(payload, ledStates)
             else if msgType = "led-storage-info" then
               HandleLedStorageInfo(ledStates)
             else if msgType = "led-ota-ping" then
               HandleLedOtaPing(ledStates)
-            else if msgType = "led-ota-auth" then
-              HandleLedOtaAuth(payload, ledStates)
             else if msgType = "led-ota-install" then
               HandleLedOtaInstall(payload, msgPort, ledStates)
-            else if msgType = "led-ota-cancel" then
-              HandleLedOtaCancel(ledStates)
             else if msgType = "led-ota-reboot" then
               RebootDeviceAfterOta()
-            else if msgType = "led-ops-reload" then
-              HandleLedOpsReload(payload, ledStates)
-            else if msgType = "led-ops-write" then
-              HandleLedOpsWrite(payload)
             else if Len(msgType) = 0 then
               LedLog("=== Perform6: JS message empty type ===")
             else
@@ -3060,10 +2568,6 @@ Sub Main()
       else
         TraceFnBreak("roNodeJsEvent", "no-payload")
       end if
-    else if type(ev) = "roStorageAttached" then
-      HandleStorageHotplug(ev, ledStates, true)
-    else if type(ev) = "roStorageDetached" then
-      HandleStorageHotplug(ev, ledStates, false)
     else if type(ev) <> "Invalid" and type(ev) <> "roInvalid" then
       TraceLog("MAIN|other-event|" + type(ev))
     end if
