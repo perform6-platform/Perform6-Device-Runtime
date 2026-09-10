@@ -1200,3 +1200,15 @@ export function resolveSdPlaybackUrl(
 export function cacheFileNameForMedia(fileUrl: string): string {
   return cacheNameFor(resolveMediaFileUrl(fileUrl));
 }
+
+// Retain the legacy download implementation for field rollback parity. These
+// references are deliberate no-ops so strict TypeScript builds do not discard
+// or reject emergency-path code that the production pipeline no longer calls.
+void resetDownloadUiState;
+void areTouchProgramsReady;
+void PREFETCH_MESSAGE;
+void MAX_DOWNLOAD_RETRIES;
+void RETRY_DELAYS_MS;
+void sleep;
+void isRetryableCacheError;
+void downloadMediaChunkToSd;
