@@ -49,7 +49,7 @@ export async function refreshSdStorageInfo(
   try {
     const req =
       typeof (globalThis as { require?: (id: string) => unknown }).require === 'function'
-        ? (globalThis as { require: (id: string) => unknown }).require
+        ? (globalThis as unknown as { require: (id: string) => unknown }).require
         : null;
     if (req) {
       const StorageInfo = req('@brightsign/storageinfo') as {

@@ -23,7 +23,7 @@ export function probeBrightSignAssetPool(): AssetPoolProbeResult {
     const req =
       typeof (globalThis as { require?: (id: string) => unknown }).require ===
       'function'
-        ? (globalThis as { require: (id: string) => unknown }).require
+        ? (globalThis as unknown as { require: (id: string) => unknown }).require
         : typeof window !== 'undefined' &&
             typeof (window as unknown as { require?: (id: string) => unknown })
               .require === 'function'

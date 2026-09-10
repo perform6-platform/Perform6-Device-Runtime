@@ -11,10 +11,12 @@ const allowedRuntimeFiles = new Set([
   'brightsign/autorun.brs',
   'ops/perform6-ota-bootstrap-1.5.12.html',
   'src/platform/ledPlaybackFile.ts',
+  'src/platform/brightSignNode.ts',
   'src/platform/xtOutputBridge.ts',
   'src/components/home/HomeHeroVideo.tsx',
   'src/pages/Home.tsx',
   'src/services/bridgeKeepalive.ts',
+  'src/services/assetPoolProbe.ts',
   'src/services/deviceLogsApi.ts',
   'src/services/media.ts',
   'src/services/mediaAssetPool.ts',
@@ -26,6 +28,7 @@ const allowedRuntimeFiles = new Set([
   'src/services/playbackTelemetry.ts',
   'src/services/playbackTelemetryApi.ts',
   'src/services/sdCacheBridge.ts',
+  'src/services/sdStorageInfo.ts',
   'src/services/syncEngine.ts',
 ]);
 
