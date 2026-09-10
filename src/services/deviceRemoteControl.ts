@@ -85,7 +85,7 @@ export async function clearSdCacheRemotely(): Promise<void> {
   // Media only — do not cancel OTA (separate path).
   const mediaVersionIds = listSdCachedMediaVersionIds();
   cancelMediaDownloads();
-  // Node wipe first — works when autorun ignores led-cache-clear-all.
+  // Node wipe first; autorun also wipes media/pool on led-cache-clear-all.
   const nodeCleared = clearSdMediaCacheViaNode();
   requestSdCacheClearAll();
   clearAllSdCachedMarks();

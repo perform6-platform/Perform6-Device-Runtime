@@ -9,7 +9,23 @@ import type {
 } from '../shared/types';
 import { createId } from '../shared/createId';
 import { DEFAULT_VOLUME, clampDisplayVolume } from '../lib/displayVolumePrefs';
+import { runtimeConfig } from '../config/runtime';
+import { isHttpUrl, toLedPlayableSrc } from '../services/playbackSrc';
 
+/** BrightAuthor-style: never HTTPS VOD on-device (no on-demand). Local SD / file:// OK. */
+function sanitizeDisplaySrc(src: string | null | undefined): string | null {
+  if (!src) return null;
+  if (runtimeConfig.isSimulator) return src;
+  if (isHttpUrl(src)) return null;
+  return src;
+}
+
+function sanitizeFallbackSrc(src: string | null | undefined): string | null {
+  if (!src) return null;
+  if (runtimeConfig.isSimulator) return src;
+  // LED bridge only accepts SD:/ pool or .mp4 — drop HTTPS always on device.
+  return toLedPlayableSrc(src) || null;
+}
 interface RuntimeStoreState {
   deviceInfo: DeviceInfo | null;
   connectionStatus: ConnectionStatus;
@@ -24,7 +40,7 @@ interface RuntimeStoreState {
     screenKey: string;
     mediaVersionId: string | null;
     title: string | null;
-    /** Network URL used if the LED widget cannot read the touch widget's cached blob. */
+    /** Local SD fallback for LED (never HTTPS on device). Simulator may use remote URL. */
     fallbackSrc: string | null;
   } | null;
   displayPaused: boolean;
@@ -127,24 +143,36 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
         currentScreenId: manifest?.screens[0]?.id ?? null,
       },
     }),
-  setDisplayVideoSrc: (displayVideoSrc, meta) =>
+  setDisplayVideoSrc: (displayVideoSrc, meta) => {
+    const safeSrc = sanitizeDisplaySrc(displayVideoSrc);
+    const safeFallback = sanitizeFallbackSrc(meta?.fallbackSrc);
+    const prev = get();
+    const nextMeta = safeSrc
+      ? {
+          screenKey: meta?.screenKey ?? 'SCREEN_1',
+          mediaVersionId: meta?.mediaVersionId ?? null,
+          title: meta?.title ?? null,
+          fallbackSrc: safeFallback,
+        }
+      : null;
+    const mediaChanged =
+      safeSrc !== prev.displayVideoSrc ||
+      nextMeta?.mediaVersionId !== prev.displayPlaybackMeta?.mediaVersionId;
     set({
-      displayVideoSrc,
-      displayPlaybackMeta: displayVideoSrc
-        ? {
-            screenKey: meta?.screenKey ?? 'SCREEN_1',
-            mediaVersionId: meta?.mediaVersionId ?? null,
-            title: meta?.title ?? null,
-            fallbackSrc: meta?.fallbackSrc ?? null,
-          }
-        : null,
-    }),
+      displayVideoSrc: safeSrc,
+      displayPlaybackMeta: nextMeta,
+      // Bump so LED bridge/SD bus always treats program switch as a new play.
+      ...(mediaChanged
+        ? { displayRestartNonce: prev.displayRestartNonce + 1 }
+        : {}),
+    });
+  },
   resetDisplayControls: () => {
     set({
       displayPaused: false,
       displayMuted: false,
       displayVolume: DEFAULT_VOLUME,
-      displayRestartNonce: 0,
+      // Keep nonce — zeroing made Start Here look like a no-op vs idle (both "0").
       displayVideoLoop: true,
       displayVideoEndedHandler: null,
     });

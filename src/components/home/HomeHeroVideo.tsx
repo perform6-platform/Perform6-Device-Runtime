@@ -1,21 +1,36 @@
 import { useEffect, useRef } from 'react';
 import { safeHtmlVideoSrc } from '../../services/playbackSrc';
+import { useVideoPlaybackTelemetry } from '../../hooks/useVideoPlaybackTelemetry';
 
 type HomeHeroVideoProps = {
   src: string | null;
   paused?: boolean;
   /** Home ~60% vignette vs Program Overview ~80% vignette. */
   overlay?: 'home' | 'overview';
+  mediaVersionId?: string | null;
+  mediaTitle?: string | null;
 };
 
 export function HomeHeroVideo({
   src,
   paused = false,
   overlay = 'home',
+  mediaVersionId = null,
+  mediaTitle = null,
 }: HomeHeroVideoProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const playSrc = safeHtmlVideoSrc(src);
+
+  useVideoPlaybackTelemetry(
+    videoRef,
+    {
+      screenKey: 'SCREEN_1',
+      mediaVersionId,
+      title: mediaTitle,
+    },
+    Boolean(playSrc),
+  );
 
   useEffect(() => {
     const video = videoRef.current;

@@ -1,3 +1,8 @@
+/**
+ * Playback URL helpers — BrightAuthor-style offline play.
+ * On BrightSign hardware: sync/AssetPool fills SD first, then local PlayFile / <video>.
+ * Never stream HTTPS VOD on-device (no on-demand). Simulator may use remote URLs.
+ */
 import { runtimeConfig } from '../config/runtime';
 import { MEDIA_POOL_DIR_NAME, MEDIA_STORE_DIR_NAME } from './mediaStorePaths';
 
@@ -75,9 +80,9 @@ function hasVideoExtension(src: string): boolean {
 
 /**
  * Native LED PlayFile:
- * - SD:/perform6-media/*.mp4 (legacy realized files)
- * - SD:/perform6-media-pool/…/sha256-… (AssetPool GetPoolFilePath — BrightAuthor
- *   PlayFile({Filename}) pattern; extensionless is valid; autorun aliases .mp4 on fail)
+ * - SD:/perform6-media/*.mp4 (AssetRealizer output; field-proven native shape)
+ * - SD:/perform6-media-pool/…/sha256-… only as a migration fallback. The
+ *   XT2145 field player rejected this extensionless shape in PlayFile.
  */
 export function isNativeLedPlayableSrc(src: string | null | undefined): boolean {
   if (!isLocalPlaybackSrc(src) || !src) return false;
@@ -92,7 +97,7 @@ export function isNativeLedPlayableSrc(src: string | null | undefined): boolean 
 }
 
 /**
- * LED / autorun PlayFile src — SD:/ path (pool hash or .mp4). Never file://.
+ * LED / autorun PlayFile src — SD:/ path, normally perform6-media/*.mp4.
  */
 export function toLedPlayableSrc(src: string | null | undefined): string {
   if (!isNativeLedPlayableSrc(src)) return '';
@@ -100,8 +105,8 @@ export function toLedPlayableSrc(src: string | null | undefined): string {
 }
 
 /**
- * BrightSign hardware never plays HTTPS VOD (dual-decode + cache fight).
- * The browser simulator may use the remote URL so panes are not blank.
+ * BrightSign hardware never plays HTTPS VOD (no on-demand stream).
+ * Local SD/cache path only; simulator may use remote URL for panes.
  */
 export function resolvePlaybackSrc(
   localSrc: string | null | undefined,
@@ -112,7 +117,7 @@ export function resolvePlaybackSrc(
   return null;
 }
 
-/** Drop HTTPS on-device so HtmlWidget never creates a hidden decoder. */
+/** Drop HTTPS on-device so HtmlWidget never creates a hidden decoder / on-demand stream. */
 export function safeHtmlVideoSrc(src: string | null | undefined): string | null {
   if (!src) return null;
   if (runtimeConfig.isSimulator) return src;

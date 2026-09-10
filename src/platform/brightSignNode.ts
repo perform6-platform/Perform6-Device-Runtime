@@ -13,8 +13,8 @@ export type NodeFs = {
     opts?: { withFileTypes?: boolean },
   ) => string[] | Array<{ name: string; isDirectory: () => boolean; isFile: () => boolean }>;
   statSync: (path: string) => { size: number; isDirectory: () => boolean; isFile: () => boolean };
-  readFileSync: (path: string, encoding?: string) => string | Buffer;
-  writeFileSync: (path: string, data: string, encoding?: string) => void;
+  readFileSync: (path: string, encoding?: string) => string | Uint8Array;
+  writeFileSync: (path: string, data: string | Uint8Array, encoding?: string) => void;
   copyFileSync?: (src: string, dest: string) => void;
   unlinkSync: (path: string) => void;
   rmSync?: (path: string, opts?: { recursive?: boolean; force?: boolean }) => void;

@@ -91,6 +91,10 @@ export default function Home() {
   const setDisplayVolume = useRuntimeStore((s) => s.setDisplayVolume);
   const setDisplayVideoEndedHandler = useRuntimeStore((s) => s.setDisplayVideoEndedHandler);
   const touchVideos = useTouchVideos(playbackState.manifest);
+  const idleTelemetryMedia = getTouchSlotMedia(
+    playbackState.manifest,
+    'touch-default',
+  );
   const {
     showDownloadOverlay,
     downloadUi,
@@ -147,9 +151,11 @@ export default function Home() {
   const returnToMainMenuRef = useRef(returnToMainMenu);
   returnToMainMenuRef.current = returnToMainMenu;
 
-  // Main menu: DEFAULT video loops on HDMI + behind touch buttons.
+  // Main menu only: DEFAULT (idle) on LED/HDMI. Never overwrite while a
+  // program overview modal is open or a session is active — that was the
+  // Golf-Default stuck command while Start Here was selected.
   useEffect(() => {
-    if (sessionOpen) return;
+    if (sessionOpen || overviewOpen) return;
     const idleMedia = getTouchSlotMedia(playbackState.manifest, 'touch-default');
     setDisplayVideoLoop(true);
     setDisplayPaused(false);
@@ -161,6 +167,7 @@ export default function Home() {
     });
   }, [
     sessionOpen,
+    overviewOpen,
     playbackState.manifest,
     setDisplayPaused,
     setDisplayVideoLoop,
@@ -370,6 +377,8 @@ export default function Home() {
         src={touchVideos.idle}
         paused={sessionOpen}
         overlay={overviewOpen || sessionOpen ? 'overview' : 'home'}
+        mediaVersionId={idleTelemetryMedia.mediaVersionId}
+        mediaTitle={idleTelemetryMedia.title ?? 'Main menu'}
       />
 
       <div className="p6-home__grid">

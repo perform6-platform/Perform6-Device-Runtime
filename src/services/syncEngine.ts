@@ -13,6 +13,7 @@ import { flushDeviceLogs } from './deviceLogsApi';
 import {
   clearSdCached,
   getConfirmedCachedMediaVersionIds,
+  getSdCachedUrl,
   hasSdCachedMedia,
   listSdCachedMediaVersionIds,
   reconcileSdCacheMarksFromDisk,
@@ -107,8 +108,11 @@ export async function runSyncEngine(
     const claimedIds = [
       ...new Set([...getCachedMediaVersionIds(), ...listSdCachedMediaVersionIds()]),
     ];
+    // Only advertise an extension-bearing realized file as playback-ready.
+    // Pool-only marks from <=1.5.14 must be returned by sync-check once more so
+    // AssetRealizer can expose them without re-downloading their hash objects.
     const verifiedCachedIds = getConfirmedCachedMediaVersionIds().filter(
-      (id) => hasSdCachedMedia(id) && claimedIds.includes(id),
+      (id) => Boolean(getSdCachedUrl(id)) && claimedIds.includes(id),
     );
     for (const id of claimedIds) {
       if (!hasSdCachedMedia(id) || !verifiedCachedIds.includes(id)) {
@@ -242,7 +246,7 @@ export async function runSyncEngine(
     const PROGRESS_REPORT_INTERVAL_MS = 3000;
 
     if (mediaItems.length > 0) {
-      // AssetPoolFetcher → GetPoolFilePath play (no Realizer / autorun prefetch).
+      // AssetPoolFetcher → AssetRealizer → extension-bearing local playback file.
       // Do NOT mark DOWNLOADING at 0 bytes before transfer — Admin showed false
       // "Downloading — / 26 MB" for 16+ minutes while AssetPool hung.
       const batch = await downloadMediaBatchToSd(

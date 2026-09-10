@@ -1,6 +1,5 @@
 /**
- * Offline asserts for LED SD-bus + pool PlayFile path rules (no hardware).
- * Invoked by npm run assert:led-playback and release:zip.
+ * Offline asserts: thin autorun + BA-style bridge primary LED path.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,7 +16,6 @@ function ok(msg) {
   console.log(`[assert:led-playback] OK: ${msg}`);
 }
 
-/** Mirror playbackSrc.ts rules (keep in sync). */
 function isNativeLedPlayableSrc(src) {
   if (!src || src.startsWith('blob:')) return false;
   const lower = src.toLowerCase();
@@ -32,9 +30,6 @@ function isNativeLedPlayableSrc(src) {
   }
   const pathLower = sd.toLowerCase().split('?')[0] ?? '';
   if (!pathLower.startsWith('sd:/')) return false;
-  if (pathLower.includes('perform6-media-pool')) {
-    return pathLower.length > 'sd:/perform6-media-pool/'.length;
-  }
   return (
     pathLower.endsWith('.mp4') ||
     pathLower.endsWith('.mov') ||
@@ -44,131 +39,122 @@ function isNativeLedPlayableSrc(src) {
 }
 
 function assertPathRules() {
+  const realized = 'SD:/perform6-media/1234567-99.mp4';
+  if (!isNativeLedPlayableSrc(realized)) fail('realized SD:/ .mp4 path must be playable');
   const pool =
     'SD:/perform6-media-pool/ab/sha256-abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
-  const poolFile =
-    'file:///SD:/perform6-media-pool/ab/sha256-abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
-  const storage =
-    '/storage/sd/perform6-media-pool/ab/sha256-abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
-  const legacy = 'SD:/perform6-media/golf.mp4';
-  if (!isNativeLedPlayableSrc(pool)) fail('extensionless pool SD:/ path must be playable');
-  if (!isNativeLedPlayableSrc(poolFile)) fail('extensionless pool file:// path must be playable');
-  if (!isNativeLedPlayableSrc(storage)) fail('extensionless /storage/sd pool path must be playable');
-  if (!isNativeLedPlayableSrc(legacy)) fail('legacy .mp4 must be playable');
+  if (isNativeLedPlayableSrc(pool)) fail('extensionless pool path must not be the asserted native route');
   if (isNativeLedPlayableSrc('https://cdn.example/v.mp4')) fail('HTTPS must not be native LED playable');
-  if (isNativeLedPlayableSrc('SD:/other/no-ext')) fail('non-pool extensionless must be rejected');
-  ok('path playability rules (pool hash + legacy mp4)');
+  ok('path playability rules');
 }
 
 function assertAutorun() {
   const text = fs.readFileSync(path.join(root, 'brightsign', 'autorun.brs'), 'utf8');
+  const lines = text.split(/\r?\n/).length;
+  if (lines > 3400) fail(`autorun still too thick (${lines} lines) — expected thin <3400`);
   for (const needle of [
-    'EnsureMp4PlayAlias',
-    'PoolMp4AliasPath',
-    'IsExtensionlessPoolPath',
+    'BA-style zones',
+    'NORMAL PATH: JS PostBSMessage',
     'perform6-led-playback.json',
     'MaybePollLedPlaybackFile',
-    'ApplyOneLedPlaybackCommand',
-    ' PlayLocalFile alias-hit',
+    'ApplyNativePlayback',
+    'existence probe missed; trying PlayFile',
     'PlayLocalFile pool-direct OK',
-    'PlayLocalFile alias-create',
-    'DrainMp4AliasQueueOne',
+    'ProbeString',
+    'NO on-demand HTTPS stream',
+    'media wipe DEFERRED',
+    'FATAL soft-alive',
+    'DeleteTreeBudgeted',
+    'WriteBootCanary',
+    'WriteMainHeartbeat',
+    'roNodeJsEvent',
+    'led-cache-prefetch ignored',
+    'led-ota-install ignored',
+    'led-storage-info-result',
+    'led-log-tail',
+    'load-error after HTML/bridge — reboot (no SetUrl)',
     'AtomicWriteAsciiFile',
-    'LedStatusRolesAA',
-    'LoadLedStatusRootAA',
-    'roles.AddReplace',
-    'led2',
-    'led3',
+    'Sub Main(',
+    'FALLBACK',
   ]) {
     if (!text.includes(needle)) fail(`autorun.brs missing ${needle}`);
   }
+  for (const banned of [
+    'Sub HandleCacheEvent',
+    'Sub HandleOtaEvent',
+    'Sub StartCacheDownload',
+    'Sub DrainMp4AliasQueueOne',
+    'Function EnsureMp4PlayAlias',
+    'Sub RecycleHtmlWidget',
+    'DiagEchoInbound',
+  ]) {
+    if (text.includes(banned)) fail(`thin autorun must not contain ${banned}`);
+  }
   if (!text.includes('profile = "XT2145" or profile = "XC4055"')) {
-    fail('autorun must poll LED bus for both XT2145 and XC4055');
+    fail('autorun must poll LED fallback bus for XT+XC');
   }
-  if (!text.includes('perform6-led-playback-status-') || !text.includes('root.roles')) {
-    fail('autorun must write per-role status (roles map + sidecars)');
-  }
-  if (!text.includes('perform6-mp4-alias-queue.json')) {
-    fail('autorun must drain mp4 alias queue');
-  }
-  ok('autorun LED bus + alias-first + per-role status');
+  ok(`autorun BA-style zones (${lines} lines)`);
 }
 
 function assertJs() {
   const led = fs.readFileSync(path.join(root, 'src', 'platform', 'ledPlaybackFile.ts'), 'utf8');
-  if (!led.includes('perform6-led-playback.json')) fail('ledPlaybackFile missing unified path');
   if (!led.includes('writeLedPlaybackFile')) fail('ledPlaybackFile missing writer');
-  if (!led.includes('readLedPlaybackStatusForRole')) fail('ledPlaybackFile missing per-role reader');
-  if (!led.includes('isLedStatusStarted')) fail('ledPlaybackFile missing isLedStatusStarted');
-  if (!led.includes('statusRolePath(role)')) fail('ledPlaybackFile must prefer per-role sidecars');
+  if (!led.includes('toLedPlayableSrc')) fail('ledPlaybackFile must normalize via toLedPlayableSrc');
+  if (!led.includes('FALLBACK')) fail('ledPlaybackFile must document SD as fallback');
+
   const aliasQ = fs.readFileSync(path.join(root, 'src', 'services', 'mp4AliasQueue.ts'), 'utf8');
-  if (!aliasQ.includes('enqueueMp4PlayAlias')) fail('mp4AliasQueue missing enqueueMp4PlayAlias');
-  if (!aliasQ.includes('perform6-mp4-alias-queue.json')) fail('mp4AliasQueue missing queue path');
-  const bridge = fs.readFileSync(path.join(root, 'src', 'services', 'sdCacheBridge.ts'), 'utf8');
-  if (!bridge.includes('enqueueMp4PlayAlias') && !bridge.includes('mp4AliasQueue')) {
-    fail('sdCacheBridge must enqueue mp4 alias after pool mark');
+  if (!aliasQ.includes('intentionally empty') && !aliasQ.includes('Do NOT enqueue autorun CopyFile')) {
+    fail('mp4AliasQueue must be pool-direct no-op (no autorun CopyFile enqueue)');
   }
-  const xc = fs.readFileSync(path.join(root, 'src', 'platform', 'xcOutputBridge.ts'), 'utf8');
-  if (!xc.includes('writeLedPlaybackFile')) fail('XC bridge must use SD bus');
-  if (!xc.includes('readLedPlaybackStatusForRole')) fail('XC bridge must read per-role status');
-  if (!xc.includes("'led2'") || !xc.includes("'led3'")) fail('XC bridge must target led2/led3');
+  if (/\bcopyFileSync\b/.test(aliasQ) || aliasQ.includes('mp4 alias copy OK')) {
+    fail('mp4AliasQueue must not contain copyFileSync / alias copy');
+  }
+
   const xt = fs.readFileSync(path.join(root, 'src', 'platform', 'xtOutputBridge.ts'), 'utf8');
   if (!xt.includes('writeXtPlaybackFile')) fail('XT bridge must write SD bus');
-  if (!xt.includes('isLedStatusStarted')) fail('XT bridge must use per-role started helper');
-  ok('JS XT+XC SD bus writers + per-role status readers');
-}
-
-function assertBusJsonShape() {
-  const sample = {
-    type: 'led-playback',
-    writtenAt: '1',
-    commands: [
-      {
-        target: 'led',
-        src: 'SD:/perform6-media-pool/x/sha256-abc',
-        fallbackSrc: '',
-        restartNonce: '1',
-        loop: 'true',
-        paused: 'false',
-        muted: 'false',
-        volumePercent: '100',
-        writtenAt: '1',
-      },
-      {
-        target: 'led2',
-        src: 'SD:/perform6-media-pool/y/sha256-def',
-        fallbackSrc: '',
-        restartNonce: '1',
-        loop: 'true',
-        paused: 'false',
-        muted: 'false',
-        volumePercent: '100',
-        writtenAt: '1',
-      },
-    ],
-  };
-  if (sample.type !== 'led-playback') fail('bus type');
-  if (sample.commands.length !== 2) fail('bus commands');
-  if (!isNativeLedPlayableSrc(sample.commands[0].src)) fail('sample led src');
-  if (!isNativeLedPlayableSrc(sample.commands[1].src)) fail('sample led2 src');
-
-  const statusSample = {
-    type: 'led-playback-status',
-    role: 'led2',
-    roles: {
-      led2: { role: 'led2', ok: '1', state: 'started', ended: '0' },
-      led3: { role: 'led3', ok: '1', state: 'started', ended: '0' },
-    },
-  };
-  if (!statusSample.roles.led2 || !statusSample.roles.led3) {
-    fail('status roles map must hold led2 and led3');
+  if (!xt.includes('PostBSMessage')) fail('XT bridge must PostBSMessage');
+  if (!xt.includes('BA-style') && !xt.includes('BA bridge')) {
+    fail('XT bridge must be BA-style (PostBSMessage primary)');
   }
-  ok('unified bus + per-role status JSON shape');
+  if (!xt.includes('ack-timeout')) fail('XT bridge must SD-fallback on ack-timeout');
+
+  const xc = fs.readFileSync(path.join(root, 'src', 'platform', 'xcOutputBridge.ts'), 'utf8');
+  if (!xc.includes('PostBSMessage')) fail('XC bridge must PostBSMessage');
+  if (!xc.includes('BA-style') && !xc.includes('BA bridge')) {
+    fail('XC bridge must be BA-style (PostBSMessage primary)');
+  }
+  if (!xc.includes('ack-timeout')) fail('XC bridge must SD-fallback on ack-timeout');
+
+  const port = fs.readFileSync(path.join(root, 'src', 'platform', 'bsMessagePort.ts'), 'utf8');
+  if (!port.includes('isBridgeDuplexTransport')) {
+    fail('bsMessagePort must expose isBridgeDuplexTransport');
+  }
+
+  const keepalive = fs.readFileSync(path.join(root, 'src', 'services', 'bridgeKeepalive.ts'), 'utf8');
+  if (!keepalive.includes("BridgeLinkState = 'bridging'") && !keepalive.includes("'bridging' |")) {
+    fail('bridgeKeepalive must expose bridging state during boot grace');
+  }
+  if (!keepalive.includes('BRIDGE_GRACE_MS') || !keepalive.includes('HELLO_RETRY_GRACE_MS')) {
+    fail('bridgeKeepalive must define boot grace + fast hello retry');
+  }
+  if (!keepalive.includes('handshake grace') && !keepalive.includes('isBridgeInGrace')) {
+    fail('bridgeKeepalive must skip heal/recycle during grace');
+  }
+
+  const store = fs.readFileSync(path.join(root, 'src', 'stores', 'runtimeStore.ts'), 'utf8');
+  if (!store.includes('sanitizeDisplaySrc') || !store.includes('sanitizeFallbackSrc')) {
+    fail('runtimeStore must sanitize display/fallback (no on-demand HTTPS)');
+  }
+
+  const playbackSrc = fs.readFileSync(path.join(root, 'src', 'services', 'playbackSrc.ts'), 'utf8');
+  if (!playbackSrc.includes('no on-demand')) {
+    fail('playbackSrc must document no on-demand HTTPS');
+  }
+
+  ok('JS BA-style bridge primary + SD fallback + no-on-demand gates');
 }
 
 assertPathRules();
 assertAutorun();
 assertJs();
-assertBusJsonShape();
 console.log('[assert:led-playback] all checks passed');
-

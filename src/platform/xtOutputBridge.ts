@@ -1,5 +1,14 @@
+/**
+ * XT2145 LED = video zone in the same autorun "presentation" as touch HtmlWidget.
+ * The SD command file is authoritative on XT2145/BOS 9.1; PostBSMessage is an
+ * optional low-latency hint. This survives a one-way or blocked widget bridge.
+ */
 import { runtimeConfig } from '../config/runtime';
-import { getSharedMessagePort, subscribeBsMessages } from './bsMessagePort';
+import {
+  getBridgeTransport,
+  getSharedMessagePort,
+  subscribeBsMessages,
+} from './bsMessagePort';
 import {
   readXtBusHeartbeat,
   readXtPlaybackStatus,
@@ -9,22 +18,46 @@ import {
 import { toLedPlayableSrc } from '../services/playbackSrc';
 import { BridgeMsg } from '../services/bridgeProtocol';
 import { subscribeSdCacheProgress } from '../services/sdCacheBridge';
+import {
+  clearScreenPlayback,
+  reportScreenPlayback,
+} from '../services/playbackTelemetry';
+import { getTouchUiState } from '../services/touchUiTelemetry';
 import { useRuntimeStore } from '../stores/runtimeStore';
+
+const ACK_WAIT_MS = 2_500;
+const REASSERT_MS = 5_000;
 
 let initialized = false;
 let ignoreLedEndedUntil = 0;
 let lastPostedNonce = '';
 let lastStatusEndedNonce = '';
 let lastReassertAt = 0;
+let lastBridgeAckNonce = '';
+let ackTimer: number | null = null;
+let pendingSdFallback = false;
+let nativeTelemetrySignature = '';
+let nativeTelemetryStartedAt = 0;
+let nativeTelemetryScreenKey = '';
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-function nativePlayableSrc(src: string | null | undefined, fallbackSrc: string | null | undefined): string {
+function nativePlayableSrc(
+  src: string | null | undefined,
+  fallbackSrc: string | null | undefined,
+): string {
   const primary = toLedPlayableSrc(src);
   if (primary) return primary;
   return toLedPlayableSrc(fallbackSrc);
+}
+
+function clearAckTimer(): void {
+  if (ackTimer != null) {
+    window.clearTimeout(ackTimer);
+    ackTimer = null;
+  }
 }
 
 function buildPayload(): {
@@ -66,43 +99,133 @@ function buildPayload(): {
   };
 }
 
+function writeSdFallback(
+  payload: ReturnType<typeof buildPayload>,
+  reason: string,
+  force = false,
+): void {
+  const fileOk = writeXtPlaybackFile(payload, { immediate: true, force });
+  const detail = {
+    reason,
+    ok: fileOk,
+    src: payload.src,
+    restartNonce: payload.restartNonce,
+  };
+  if (fileOk) {
+    console.info('[Perform6] XT HDMI-2 command persisted (native SD transport)', detail);
+  } else {
+    console.warn('[Perform6] XT HDMI-2 command persistence failed', detail);
+  }
+}
+
 /**
- * Primary path: SD file (autorun polls 500ms). Bridge PostBSMessage is best-effort only.
+ * Native XT playback has no HTMLVideoElement to sample. Mirror the autorun
+ * status sidecar into the existing CMS telemetry registry. SCREEN_2 is the
+ * physical HDMI-2 output; SCREEN_1 remains the Bluefin touch output.
+ */
+function reportNativeHdmiTelemetry(status: ReturnType<typeof readXtPlaybackStatus>): void {
+  if (!status) return;
+
+  const state = useRuntimeStore.getState();
+  const meta = state.displayPlaybackMeta;
+  const src = asString(status.src) || nativePlayableSrc(
+    state.displayVideoSrc,
+    meta?.fallbackSrc,
+  );
+  if (!src) return;
+
+  const nonce = asString(status.restartNonce) || String(state.displayRestartNonce);
+  const signature = `${nonce}|${src}`;
+  if (signature !== nativeTelemetrySignature) {
+    nativeTelemetrySignature = signature;
+    nativeTelemetryStartedAt = Date.now();
+  }
+
+  const started = isLedStatusStarted(status);
+  const ended = status.ended === '1' || status.state === 'ended';
+  const failed = status.state === 'error' || status.ok === '0';
+  const slot = getTouchUiState().currentContent?.slot ?? 'touch-default';
+  const screenKeyBySlot: Record<string, string> = {
+    'touch-default': 'SCREEN_1',
+    'start-here': 'SCREEN_2',
+    phase1: 'SCREEN_3',
+    phase2: 'SCREEN_4',
+    'full-program': 'SCREEN_5',
+  };
+  const screenKey = screenKeyBySlot[slot] ?? 'SCREEN_2';
+  if (nativeTelemetryScreenKey && nativeTelemetryScreenKey !== screenKey) {
+    clearScreenPlayback(nativeTelemetryScreenKey);
+  }
+  nativeTelemetryScreenKey = screenKey;
+  reportScreenPlayback({
+    screenKey,
+    mediaVersionId: meta?.mediaVersionId ?? null,
+    title: meta?.title ?? null,
+    positionMs: nativeTelemetryStartedAt > 0 ? Date.now() - nativeTelemetryStartedAt : 0,
+    durationMs: null,
+    isPlaying: started && !ended && !state.displayPaused,
+    output: 'HDMI-2',
+    source: 'NATIVE_HDMI',
+    requestId: `xt-${nonce}`,
+    stage: ended ? 'ended' : (status.state ?? (started ? 'started' : 'pending')),
+    error: failed ? (status.detail ?? 'native playback failed') : null,
+    path: src,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+/**
+ * BA-style zone message: PostBSMessage first. SD file only if bridge cannot confirm.
  */
 function postTouchPlayback(port: BrightSignMessagePort | null, force = false): void {
   const payload = buildPayload();
-  if (!payload.src) {
+  if (!payload.src) return;
+
+  pendingSdFallback = false;
+  clearAckTimer();
+
+  // Persist before touching the widget bridge. Autorun polls this file every
+  // two seconds, independently of the optional HtmlWidget message channel.
+  writeSdFallback(payload, 'authoritative-sd-command', force);
+
+  if (!port) {
     return;
   }
 
-  const fileOk = writeXtPlaybackFile(payload, { immediate: true, force });
-  if (fileOk) {
-    console.info('[Perform6] XT LED command via SD file (bridge optional)', {
-      src: payload.src,
-      restartNonce: payload.restartNonce,
-      force,
-    });
-  } else {
-    console.warn('[Perform6] XT LED SD file write failed — trying bridge only', {
-      src: payload.src,
-    });
-  }
-
-  if (!port) return;
   try {
     port.PostBSMessage(payload);
+    console.info('[Perform6] XT LED zone via bridge (BA-style)', {
+      src: payload.src,
+      restartNonce: payload.restartNonce,
+      transport: getBridgeTransport(),
+      force,
+    });
   } catch (error) {
-    console.warn('[Perform6] XT bridge PostBSMessage failed (SD file still written)', error);
+    console.warn('[Perform6] XT PostBSMessage failed — SD fallback', error);
+    writeSdFallback(payload, 'post-failed', force);
+    return;
   }
+
+  // Observe acknowledgement for diagnostics; the command is already durable.
+  pendingSdFallback = true;
+  const nonce = payload.restartNonce;
+  ackTimer = window.setTimeout(() => {
+    ackTimer = null;
+    if (!pendingSdFallback) return;
+    if (lastBridgeAckNonce === nonce) return;
+    if (isLedStatusStarted(readXtPlaybackStatus())) {
+      pendingSdFallback = false;
+      return;
+    }
+    writeSdFallback(payload, 'ack-timeout', true);
+    pendingSdFallback = false;
+  }, ACK_WAIT_MS);
 }
 
 function pollPlaybackStatus(port: BrightSignMessagePort | null): void {
   const status = readXtPlaybackStatus();
   const bus = readXtBusHeartbeat();
-
-  if (status?.ok === '1' && status.restartNonce === lastPostedNonce) {
-    // LED confirmed playing via SD status — no bridge ack needed.
-  }
+  reportNativeHdmiTelemetry(status);
 
   if (status?.ended === '1') {
     const nonce = asString(status.restartNonce);
@@ -117,16 +240,19 @@ function pollPlaybackStatus(port: BrightSignMessagePort | null): void {
     return;
   }
 
-  // Reassert command on SD bus until autorun reports started (bridge stays broken OK).
   const state = useRuntimeStore.getState();
-  const want = nativePlayableSrc(state.displayVideoSrc, state.displayPlaybackMeta?.fallbackSrc);
+  const want = nativePlayableSrc(
+    state.displayVideoSrc,
+    state.displayPlaybackMeta?.fallbackSrc,
+  );
   if (!want) return;
+  if (lastBridgeAckNonce === lastPostedNonce) return;
   if (isLedStatusStarted(status)) return;
 
   const now = Date.now();
-  if (now - lastReassertAt < 5000) return;
+  if (now - lastReassertAt < REASSERT_MS) return;
   lastReassertAt = now;
-  console.info('[Perform6] XT SD bus reassert (waiting for autorun play)', {
+  console.info('[Perform6] XT LED reassert (BA bridge primary)', {
     status: status?.state ?? null,
     detail: status?.detail ?? null,
     bus: bus?.detail ?? null,
@@ -151,7 +277,7 @@ export function initXtOutputBridge(): void {
   const port = getSharedMessagePort();
   if (!port) {
     console.warn(
-      '[Perform6] BSMessagePort missing — XT LED will use SD file bus only',
+      '[Perform6] BSMessagePort missing — XT LED uses SD fallback only',
     );
   } else {
     subscribeBsMessages((event) => {
@@ -162,12 +288,17 @@ export function initXtOutputBridge(): void {
         const nonce = asString(event.data.restartNonce);
         const ok = asString(event.data.ok) !== '0';
         if (ok) {
-          console.info('[Perform6] XT playback ack (bridge bonus)', { nonce });
+          lastBridgeAckNonce = nonce || lastPostedNonce;
+          pendingSdFallback = false;
+          clearAckTimer();
+          console.info('[Perform6] XT playback ack (BA bridge)', { nonce });
         } else {
           console.warn('[Perform6] XT playback ack failed (bridge)', {
             detail: asString(event.data.detail),
             src: asString(event.data.src),
           });
+          const payload = buildPayload();
+          if (payload.src) writeSdFallback(payload, 'ack-failed', true);
         }
       } else if (type === BridgeMsg.XT_LED_ENDED) {
         if (Date.now() < ignoreLedEndedUntil) {
@@ -189,6 +320,7 @@ export function initXtOutputBridge(): void {
     if (state.displayRestartNonce !== previous.displayRestartNonce) {
       ignoreLedEndedUntil = Date.now() + 1500;
       lastStatusEndedNonce = '';
+      lastBridgeAckNonce = '';
     }
     if (
       state.displayVideoSrc !== previous.displayVideoSrc ||
@@ -205,5 +337,8 @@ export function initXtOutputBridge(): void {
 
   window.setInterval(() => pollPlaybackStatus(port), 1000);
   postTouchPlayback(port);
-  console.info('[Perform6] XT output bridge armed (SD file primary, messageport optional)');
+  console.info(
+    '[Perform6] XT output bridge armed (BA-style: PostBSMessage primary, SD fallback)',
+    { transport: getBridgeTransport() },
+  );
 }

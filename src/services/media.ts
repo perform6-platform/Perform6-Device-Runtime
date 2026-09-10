@@ -9,6 +9,7 @@ import {
   downloadMediaItemsViaAssetPool,
   isMediaAssetPoolAvailable,
 } from './mediaAssetPool';
+import { realizeMediaAssetsViaRealizer } from './mediaRealize';
 import { resolveMediaFileUrl } from './manifest';
 import { offlineCacheService } from './offlineCache';
 import { MEDIA_CAPACITY_RESERVE_BYTES } from './mediaStorePaths';
@@ -29,7 +30,7 @@ export interface DownloadProgress {
   totalBytes: number | null;
 }
 
-/** Local playback URL from AssetPool path (or legacy perform6-media). */
+/** Local playback URL from the extension-bearing realized media store. */
 export async function resolveLocalPlaybackUrl(
   mediaVersionId: string,
   fallbackFileUrl?: string | null,
@@ -49,7 +50,7 @@ export function revokeLocalPlaybackUrl(_mediaVersionId: string): void {
 }
 
 /**
- * Download one item via AssetPool (playable at GetPoolFilePath — no Realizer copy).
+ * Download one item via AssetPool, then realize it to an extension-bearing file.
  */
 export async function downloadMediaItem(
   item: SyncMediaItem,
@@ -100,9 +101,13 @@ async function assertCapacityForDownload(
 }
 
 /**
- * BrightSign surgical media path:
- * AssetPoolFetcher → mark GetPoolFilePath → LED PlayFile(pool path).
- * No AssetRealizer / Node copy (field EPERM). Autorun prefetch disabled.
+ * BrightSign media path:
+ * AssetPoolFetcher → AssetRealizer → perform6-media/<stable-name>.mp4.
+ *
+ * The XT2145 field player rejects extensionless AssetPool SHA256 objects in
+ * native roVideoPlayer.PlayFile even though the HTML widget can read them.
+ * AssetRealizer is the BrightSign-supported way to expose the downloaded pool
+ * object under its manifest name; do not use Node copyFile (EPERM on the pool).
  */
 export async function downloadMediaBatchToSd(
   items: SyncMediaItem[],
@@ -159,6 +164,26 @@ export async function downloadMediaBatchToSd(
 
   const result = await downloadMediaItemsViaAssetPool(items, onProgress, options);
 
+  // Run for every pool-success item, including assets downloaded by an earlier
+  // release. This lets an OTA update repair the field player without downloading
+  // multi-GB media again.
+  const poolReadyIds = new Set([
+    ...result.succeeded,
+    ...result.downloaded,
+  ]);
+  const poolReadyItems = items.filter((item) =>
+    poolReadyIds.has(item.mediaVersionId),
+  );
+  const realized = await realizeMediaAssetsViaRealizer(poolReadyItems);
+  const realizedIds = new Set(realized.succeeded);
+
+  result.succeeded = result.succeeded.filter((id) => realizedIds.has(id));
+  for (const id of realized.failed) {
+    if (!result.failed.includes(id)) result.failed.push(id);
+    result.failureReasons[id] =
+      realized.failureReasons[id] ?? 'AssetRealizer did not produce playable media';
+  }
+
   const missing = items.filter(
     (item) =>
       !result.succeeded.includes(item.mediaVersionId) &&
@@ -166,7 +191,7 @@ export async function downloadMediaBatchToSd(
   );
 
   if (missing.length > 0) {
-    console.warn('[Perform6] AssetPool incomplete — no Realizer/prefetch fallback', {
+    console.warn('[Perform6] Media pipeline incomplete — pool or realization failed', {
       missing: missing.length,
       reasons: missing.map((m) => ({
         id: m.mediaVersionId,

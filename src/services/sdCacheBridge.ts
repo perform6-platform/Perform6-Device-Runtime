@@ -229,7 +229,7 @@ export function markMediaPoolPath(mediaVersionId: string, sdPath: string): void 
   const map = readMediaPoolPathMap();
   map[mediaVersionId] = sdPath;
   writeMediaPoolPathMap(map);
-  // Eager .mp4 alias (link/copy or autorun queue) so first PlayFile is alias-hit.
+  // Pool-direct play only — no eager .mp4 alias copy (Bluefin freeze / SD double).
   enqueueMp4PlayAlias(sdPath);
 }
 
@@ -291,7 +291,8 @@ export function getSdCachedUrl(mediaVersionId: string): string | null {
 }
 
 export function hasSdCachedMedia(mediaVersionId: string): boolean {
-  // Playable = AssetPool path (GetPoolFilePath) or legacy perform6-media mark.
+  // Downloaded = realized playback file or its backing AssetPool object.
+  // Playback resolution still requires/prefer the realized extension-bearing file.
   return Boolean(getSdCachedUrl(mediaVersionId) || getMediaPoolPath(mediaVersionId));
 }
 
@@ -1170,16 +1171,15 @@ function poolPathToFileUrl(sdPath: string): string {
 }
 
 /**
- * Local playback URL: prefer AssetPool GetPoolFilePath; else legacy perform6-media/*.mp4.
+ * Local playback URL: prefer the extension-bearing AssetRealizer output.
+ * Keep the pool object only as a compatibility fallback while old deployments
+ * are being repaired OTA.
  */
 export function resolveSdPlaybackUrl(
   mediaVersionId: string,
   fallbackFileUrl?: string | null,
 ): string | null {
-  const poolPath = getMediaPoolPath(mediaVersionId);
-  if (poolPath) return poolPathToFileUrl(poolPath);
-
-  // Optional: if a legacy realized .mp4 already exists, use it.
+  // If an extension-bearing file is already present, repair its mark first.
   if (fallbackFileUrl && realizePoolPathToCache(mediaVersionId, fallbackFileUrl)) {
     const ready = getSdCachedUrl(mediaVersionId);
     if (ready) return sdCacheFileUrl(ready);
@@ -1187,6 +1187,9 @@ export function resolveSdPlaybackUrl(
 
   const readyUrl = getSdCachedUrl(mediaVersionId);
   if (readyUrl) return sdCacheFileUrl(readyUrl);
+
+  const poolPath = getMediaPoolPath(mediaVersionId);
+  if (poolPath) return poolPathToFileUrl(poolPath);
 
   if (fallbackFileUrl && isMediaConfirmedOnSd(mediaVersionId)) {
     return sdCacheFileUrl(fallbackFileUrl);
@@ -1197,3 +1200,15 @@ export function resolveSdPlaybackUrl(
 export function cacheFileNameForMedia(fileUrl: string): string {
   return cacheNameFor(resolveMediaFileUrl(fileUrl));
 }
+
+// Retain the legacy download implementation for field rollback parity. These
+// references are deliberate no-ops so strict TypeScript builds do not discard
+// or reject emergency-path code that the production pipeline no longer calls.
+void resetDownloadUiState;
+void areTouchProgramsReady;
+void PREFETCH_MESSAGE;
+void MAX_DOWNLOAD_RETRIES;
+void RETRY_DELAYS_MS;
+void sleep;
+void isRetryableCacheError;
+void downloadMediaChunkToSd;

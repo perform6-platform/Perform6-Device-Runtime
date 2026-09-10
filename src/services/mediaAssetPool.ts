@@ -1,7 +1,8 @@
 /**
  * BrightSign asset-pool media delivery (separate from OTA).
  * Staging + playable pool: /storage/sd/perform6-media-pool (OS 9.1); docs fallback sd/….
- * LED plays GetPoolFilePath directly — no AssetRealizer / Node copy.
+ * Pool objects are subsequently exposed as extension-bearing playback files by
+ * BrightSign AssetRealizer. Node copyFile must never be used for pool objects.
  * Autorun led-cache-prefetch is disabled (bridge-inbound unreliable).
  */
 import type { SyncMediaItem } from '../shared/types/api';
@@ -32,16 +33,19 @@ import { probeBrightSignAssetPool } from './assetPoolProbe';
 /** AssetPool constructor path (/storage/sd/perform6-media-pool on OS 9.1). */
 export const MEDIA_POOL_PATH = MEDIA_ASSET_POOL_DIR;
 
+/** ProtectAssets should be a short metadata operation, not a media transfer. */
+const POOL_PROTECT_MS = 60_000;
 /**
- * No progressevent/fileevent after start → abort fast so media.ts can fall
- * back to autorun perform6-media (BrightSign-docs path must not hang forever).
+ * AssetPoolFetcher can be silent for several minutes while a large file is in
+ * flight. Keep this safely above BrightSign's documented 300-second default
+ * progress interval; the collection promise remains the source of truth.
  */
-const POOL_START_MS = 60_000;
+const POOL_START_MS = 10 * 60_000;
 /**
  * Mid-download: no byte progress / fileevent for this long → abort.
  * Timer resets on real progress. Longer than before so slow gym links can finish.
  */
-const POOL_STALL_MS = 5 * 60_000;
+const POOL_STALL_MS = 15 * 60_000;
 /** Absolute max for downloadInProgress flag — must cover multi-GB VOD. */
 const POOL_LOCK_MAX_MS = 8 * 60 * 60_000;
 
@@ -62,7 +66,7 @@ type AssetPoolInstance = {
   protectAssets: (name: string, list: MediaAsset[]) => Promise<void> | void;
 };
 
-type ProgressEvent = {
+type ProgressEventDetail = {
   type?: string;
   filename?: string;
   index?: number;
@@ -71,13 +75,17 @@ type ProgressEvent = {
   currentFileTotal?: number;
 };
 
-type FileEvent = {
+type ProgressEvent = ProgressEventDetail & { detail?: ProgressEventDetail };
+
+type FileEventDetail = {
   type?: string;
   filename?: string;
   index?: number;
   responseCode?: number;
   error?: string;
 };
+
+type FileEvent = FileEventDetail & { detail?: FileEventDetail };
 
 type AssetPoolFetcherInstance = {
   start: (list: MediaAsset[], params?: Record<string, unknown>) => Promise<void>;
@@ -134,6 +142,11 @@ function detachFetcherListeners(target: AssetPoolFetcherInstance | null): void {
   }
   boundFileListener = null;
   boundProgressListener = null;
+}
+
+/** BrightSign JavaScript events expose their payload under `detail`. */
+function eventDetail<T extends object>(event: T & { detail?: T }): T {
+  return event.detail && typeof event.detail === 'object' ? event.detail : event;
 }
 
 /** Fresh fetcher per download when removeEventListener is missing (OS EventEmitter leak). */
@@ -556,10 +569,10 @@ export async function downloadMediaItemsViaAssetPool(
           window.setTimeout(() => {
             reject(
               new Error(
-                `Asset pool protectAssets hang — ${POOL_START_MS / 1000}s (path=${MEDIA_POOL_PATH})`,
+                `Asset pool protectAssets hang — ${POOL_PROTECT_MS / 1000}s (path=${MEDIA_POOL_PATH})`,
               ),
             );
-          }, POOL_START_MS);
+          }, POOL_PROTECT_MS);
         }),
       ]);
     } catch (e) {
@@ -569,13 +582,20 @@ export async function downloadMediaItemsViaAssetPool(
     }
 
     const onFile = (event: FileEvent) => {
-      const name = String(event.filename ?? '');
+      const detail = eventDetail(event);
+      const name = String(detail.filename ?? '');
       lastProgressFile = name;
       lastProgressBytes = -1;
-      notePoolActivity();
       const item = byName.get(name);
-      if (!item) return;
-      const code = event.responseCode;
+      if (!item) {
+        console.info('[Perform6] Media asset pool collection event', {
+          type: detail.type ?? event.type ?? null,
+          responseCode: detail.responseCode ?? null,
+        });
+        return;
+      }
+      notePoolActivity();
+      const code = detail.responseCode;
       const ok = code === 200 || code === 226 || code === 0;
       if (ok) {
         completedFiles += 1;
@@ -591,7 +611,7 @@ export async function downloadMediaItemsViaAssetPool(
         });
       } else {
         failureReasons[item.mediaVersionId] =
-          event.error || `Asset fetch failed (code ${String(code ?? '?')})`;
+          detail.error || `Asset fetch failed (code ${String(code ?? '?')})`;
         void onProgress?.({
           mediaVersionId: item.mediaVersionId,
           bytesDownloaded: 0,
@@ -602,13 +622,14 @@ export async function downloadMediaItemsViaAssetPool(
     };
 
     const onProgressEvent = (event: ProgressEvent) => {
-      const name = String(event.filename ?? '');
+      const detail = eventDetail(event);
+      const name = String(detail.filename ?? '');
       const item = byName.get(name);
       if (!item) return;
-      const transferred = Number(event.currentFileTransferred ?? 0);
+      const transferred = Number(detail.currentFileTransferred ?? 0);
       const total =
-        event.currentFileTotal != null
-          ? Number(event.currentFileTotal)
+        detail.currentFileTotal != null
+          ? Number(detail.currentFileTotal)
           : item.fileSize != null
             ? Number(item.fileSize)
             : null;
@@ -666,7 +687,8 @@ export async function downloadMediaItemsViaAssetPool(
         clearSdCached([item.mediaVersionId]);
         continue;
       }
-      // Pool path is playable — LED PlayFile(GetPoolFilePath); no Realizer/copy.
+      // Record the backing object. media.ts realizes it under its .mp4 asset name
+      // before declaring the item playable.
       markMediaPoolPath(item.mediaVersionId, poolPath);
       markSdDownloadConfirmed(item.mediaVersionId);
       succeeded.push(item.mediaVersionId);
