@@ -1248,9 +1248,9 @@ End Sub
 
 Sub EnsureDeferredWorkers(states as Object, html as Object)
   RememberP6Html(html)
-  CreateDirectory(CacheDir())
-  CreateDirectory(MediaPoolDir())
-  LedLog("=== Perform6: thin autorun — media dirs only (no HTTP workers) ===")
+  ' JS AssetPool owns/creates SD:/perform6-media-pool. Re-opening that active
+  ' pool directory here can block Main before its playback-command loop.
+  LedLog("=== Perform6: thin autorun — JS owns media dirs (no HTTP workers) ===")
 End Sub
 
 Sub HandleLedPrefetch(payload as Object, msgPort as Object, states as Object)
@@ -1369,13 +1369,14 @@ Sub PlayNativeSrc(st as Object, src as String, msgPort as Object, states as Obje
       st.idleShown = false
       Sleep(100)
     end if
+    ' AssetRealizer files are visible to the HTML/Node filesystem immediately,
+    ' while roFileSystem Stat/Exists can report a false negative on exFAT. The
+    ' precheck is advisory only; roVideoPlayer.PlayFile is authoritative.
     if not LocalMediaExists(src) then
-      TraceFnBreak("PlayNativeSrc", "media-missing")
-      LedLog("=== Perform6: LED " + st.key + " media missing " + src + " ===")
-      ok = false
-    else
-      ok = PlayLocalFile(st.vp, src)
+      TraceLog("PLAY|existence-probe-miss|trying-PlayFile|" + src)
+      LedLog("=== Perform6: LED " + st.key + " existence probe missed; trying PlayFile " + src + " ===")
     end if
+    ok = PlayLocalFile(st.vp, src)
   end if
 
   if ok then
@@ -1478,6 +1479,13 @@ Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, stat
 End Sub
 
 Sub PostPlaybackAck(states as Object, st as Object, payload as Object, ok as Boolean, detail as String)
+  ' XT field logs show outbound HtmlWidget messages can block the native loop.
+  ' Playback status is already persisted to SD and polled by the touch app.
+  g = GetGlobalAA()
+  if g.p6Profile = "XT2145" then
+    TraceLog("BRIDGE|ack-via-sd|" + st.key + "|" + detail)
+    return
+  end if
   html = ResolveBridgeHtml(states)
   msg = CreateObject("roAssociativeArray")
   profileHint = PayloadString(payload, "type")
@@ -1933,6 +1941,10 @@ Sub PlayIdleClip(st as Object)
 End Sub
 
 Sub PostLedReady(html as Object, msgType as String, role as String)
+  ' Do not make XT boot depend on an outbound HtmlWidget message. Readiness is
+  ' represented by the SD heartbeat/status bus once Main enters its poll loop.
+  g = GetGlobalAA()
+  if g.p6Profile = "XT2145" then return
   if type(html) <> "roHtmlWidget" then
     return
   end if
@@ -2067,9 +2079,26 @@ Function UrlSafeToken(raw as String) as String
   return out
 End Function
 
+Function ReleaseVersionToken() as String
+  raw = ReadRawFile("SD:/perform6-release.json")
+  if Len(raw) = 0 then raw = ReadRawFile("perform6-release.json")
+  if Len(raw) = 0 then return ""
+
+  release = ParseJson(raw)
+  if type(release) <> "roAssociativeArray" then return ""
+  version = release.version
+  if type(version) <> "roString" and type(version) <> "String" then return ""
+  return UrlSafeToken(version)
+End Function
+
 Function BuildAppUrl(basePath as String, identity as Object, profile as String, outputRole as String) as String
   q = ""
+  releaseVersion = ReleaseVersionToken()
+  if Len(releaseVersion) > 0 then
+    q = "p6v=" + releaseVersion
+  end if
   if Len(identity.serial) > 0 then
+    if Len(q) > 0 then q = q + "&"
     q = q + "bs_serial=" + UrlSafeToken(identity.serial)
   end if
   if Len(identity.model) > 0 then
@@ -2177,7 +2206,10 @@ Function ReadRawFile(path as String) as String
     return ""
   end if
   out = ""
-  while true
+  ' BrightSign roReadFile.ReadLine() can keep returning an empty roString at EOF.
+  ' The previous type-based exit therefore trapped Main here forever while
+  ' reading perform6-ops.json, after the HDMI-2 logo but before the event loop.
+  while not f.AtEof()
     line = f.ReadLine()
     if type(line) <> "roString" and type(line) <> "String" then
       exit while
@@ -2381,6 +2413,37 @@ Function VideoEventName(code as Integer) as String
   return "code=" + IntToStr(code)
 End Function
 
+' Restore the previous active package when a newly activated OTA cannot load
+' its HtmlWidget. The marker exists only after staging and size validation.
+Function RollbackPendingOta(reason as String) as Boolean
+  text = ReadAsciiFile("SD:/perform6-ota-pending.json")
+  if Len(text) = 0 then return false
+  pending = ParseJSON(text)
+  if type(pending) <> "roAssociativeArray" then return false
+  backupRoot = AsBrString(pending.backupRoot)
+  paths = pending.paths
+  if Len(backupRoot) = 0 or type(paths) <> "roArray" then return false
+
+  restored = 0
+  for each relValue in paths
+    rel = AsBrString(relValue)
+    if Len(rel) > 0 then
+      backup = backupRoot + "/" + rel
+      active = "SD:/" + rel
+      if PartFileBytes(backup) > 0 then
+        if CopyFile(backup, active) then restored = restored + 1
+      end if
+    end if
+  end for
+  LedLog("=== Perform6: OTA rollback " + reason + " restored=" + IntToStr(restored) + " ===")
+  FlushLedLog()
+  if restored > 0 then
+    DeleteFile("SD:/perform6-ota-pending.json")
+    return true
+  end if
+  return false
+End Function
+
 Function VideoModeMatches(actualMode as Dynamic, expectedMode as String) as Boolean
   if type(actualMode) <> "roString" and type(actualMode) <> "String" then
     return false
@@ -2582,6 +2645,8 @@ Sub Main()
 
   identity = CollectDeviceIdentity()
   profile = ResolveHardwareProfile(identity)
+  gProfile = GetGlobalAA()
+  gProfile.p6Profile = profile
   LedLog("=== Perform6: hardware profile " + profile + " ===")
   TraceLog("MAIN|profile|" + profile)
 
@@ -2698,8 +2763,14 @@ Sub Main()
       FlushLedLog()
     end if
 
+    TraceLog("MAIN|xt|post-idle")
+    FlushLedLog()
     EnsureDeferredWorkers(ledStates, htmlTouch)
+    TraceLog("MAIN|xt|workers-ready")
+    FlushLedLog()
     ProcessOpsOnBoot(ledStates)
+    TraceLog("MAIN|xt|ops-ready")
+    FlushLedLog()
     ' Resume last known content immediately — do not wait for the JS bridge.
     FlushLedLog()
     MaybeResumePlaybackFromFile(ledStates, msgPort, "boot")
@@ -2802,8 +2873,13 @@ Sub Main()
     ProcessOpsOnBoot(ledStates)
   end if
 
-  ' Running from SD — tell JS so Admin starts as Present until a detach event.
-  PostStorageHotplug(ledStates, true, "SD:")
+  ' XT observes the SD mount directly. Keep its native loop independent of an
+  ' outbound HtmlWidget message; retain the proven behavior for other profiles.
+  if profile <> "XT2145" then
+    PostStorageHotplug(ledStates, true, "SD:")
+  else
+    LedLog("=== Perform6: SD present (native bus; outbound boot post skipped) ===")
+  end if
 
   ' DWS already enabled early (before SetScreenModes) for field recovery.
 
@@ -2898,6 +2974,9 @@ Sub Main()
           if Len(msg) = 0 then msg = AsBrString(data.message)
           SafePrint("=== Perform6: HTML load-error: " + msg + " ===")
           LedLog("=== Perform6: HTML load-error: " + msg + " ===")
+          if RollbackPendingOta("html-load-error") then
+            RebootDeviceAfterOta()
+          end if
           failedUrl = AsBrString(EventLookup(data, "url"))
           if Len(failedUrl) = 0 then failedUrl = AsBrString(data.url)
           gLoad = GetGlobalAA()
@@ -2933,6 +3012,7 @@ Sub Main()
           end if
         else if reason = "load-finished" then
           htmlLoadFinished = true
+          DeleteFile("SD:/perform6-ota-pending.json")
           DeleteFile("SD:/perform6-html-load-fail")
           SafePrint("=== Perform6: HTML load-finished ===")
           LedLog("=== Perform6: HTML load-finished ===")
