@@ -2653,7 +2653,8 @@ Function ApplyMultiScreenModes(vm as Object, profile as String, displayMode as S
   ' BrightSign multi-screen pattern: fixed modes, never "auto".
   ' XT preserves the field-proven 1080p Bluefin and uses 4K60 only on HDMI-2.
   ' XC keeps its independent 4K60 tiles.
-  ' :fullres = graphics plane 1:1 with video mode. Default color depth 8-bit.
+  ' :fullres = graphics plane 1:1 with video mode. HDMI color depth is
+  ' negotiated with the sink and reported by diagnostics; it is not assumed.
   mode4k = FleetVideoMode(displayMode)
   tileW = FleetOutputWidth()
   needChange = false
