@@ -93,6 +93,14 @@ function assertAutorun() {
   if (!text.includes('profile = "XT2145" or profile = "XC4055"')) {
     fail('autorun must poll LED fallback bus for XT+XC');
   }
+  for (const needle of [
+    'Function BluefinVideoMode()',
+    'return "1920x1080x60p:fullres"',
+    'ledRect = CreateObject("roRectangle", bluefinW, 0, tileW, tileH)',
+    'ConfigureOutput(sm[idx2], mode4k, bluefinW, true)',
+  ]) {
+    if (!text.includes(needle)) fail(`XT safe mixed-resolution layout missing: ${needle}`);
+  }
   ok(`autorun BA-style zones (${lines} lines)`);
 }
 

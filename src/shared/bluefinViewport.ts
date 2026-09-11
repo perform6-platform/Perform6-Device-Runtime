@@ -1,7 +1,7 @@
 /**
  * Bluefin 15.6" capacitive touchscreen — the locked design canvas.
- * HDMI-1 HtmlWidget is 3840×2160 @ 60p; this 1920×1080 design is scaled to fit
- * so CSS/offsets stay stable. Do not rewrite layout numbers to 4K.
+ * XT HDMI-1 stays at the field-proven native 1920×1080 @ 60p. HDMI-2 owns
+ * the independent 4K60 native-video rectangle.
  */
 export const BLUEFIN_VIEWPORT = {
   width: 1920,

@@ -5,31 +5,26 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const baseline = '568f7b6e53b471a52588f8711505e433b538b8b9';
+// Production 1.5.21 merge: pairing, OTA, downloads and HDMI-2 playback were
+// field-validated on Gabe's XT2145. Only the reviewed 4K diagnostics delta is
+// allowed beyond this point.
+const baseline = '8462d696cbc6cace659ea640ffd4a604cdc4d66b';
 const allowedRuntimeFiles = new Set([
-  '.env.brightsign-xt2145',
   'brightsign/autorun.brs',
-  'ops/perform6-ota-bootstrap-1.5.12.html',
-  'src/platform/ledPlaybackFile.ts',
-  'src/platform/brightSignNode.ts',
+  'scripts/assert-led-playback.mjs',
+  'scripts/build-profile-zip.mjs',
+  'src/App.tsx',
+  'src/components/status/OutputDiagnostics.tsx',
+  'src/hooks/useVideoPlaybackTelemetry.ts',
+  'src/layout/BluefinMasterFrame.tsx',
+  'src/main.tsx',
+  'src/pages/display/XC4055Display.tsx',
+  'src/pages/display/XT2145Display.tsx',
+  'src/platform/xcOutputBridge.ts',
   'src/platform/xtOutputBridge.ts',
-  'src/components/home/HomeHeroVideo.tsx',
-  'src/pages/Home.tsx',
-  'src/services/bridgeKeepalive.ts',
-  'src/services/assetPoolProbe.ts',
   'src/services/deviceLogsApi.ts',
-  'src/services/media.ts',
-  'src/services/mediaAssetPool.ts',
-  'src/services/mediaRealize.ts',
-  'src/services/mediaStorePaths.ts',
-  'src/services/otaApply.ts',
-  'src/services/otaAssetPool.ts',
-  'src/services/playbackSrc.ts',
-  'src/services/playbackTelemetry.ts',
-  'src/services/playbackTelemetryApi.ts',
-  'src/services/sdCacheBridge.ts',
-  'src/services/sdStorageInfo.ts',
-  'src/services/syncEngine.ts',
+  'src/services/outputResolutionProbe.ts',
+  'src/shared/bluefinViewport.ts',
 ]);
 
 function fail(message) {
@@ -147,7 +142,7 @@ for (const marker of [
   "phase2: 'SCREEN_4'",
   "'full-program': 'SCREEN_5'",
   "source: 'NATIVE_HDMI'",
-  "output: 'HDMI-2'",
+  "output: 'HDMI-2 native (configured 3840x2160x60p)'",
   'reportNativeHdmiTelemetry(status)',
 ]) {
   if (!xtBridge.includes(marker)) {
@@ -191,5 +186,5 @@ for (const marker of [
   }
 }
 
-console.log('[production-field-gate] PASS: protected 1.5.8 behavior is unchanged');
+console.log('[production-field-gate] PASS: protected production 1.5.21 behavior is unchanged');
 console.log(`[production-field-gate] allowed runtime delta: ${changed.join(', ')}`);

@@ -2345,7 +2345,8 @@ Sub LogDisplayIdentity(vm as Object, hdmiName as String)
   LedLog("=== Perform6: " + hdmiName + " EDID " + manufacturer + " / " + monitorName + " ===")
 End Sub
 
-' Phase 4: prove whether hard-locked 4K60 was accepted by each HDMI.
+' Report configured multi-screen modes honestly. On XT, GetActiveMode/GetFPS
+' describe the primary/canvas state; HDMI-2 is verified from GetScreenModes.
 Sub LogActiveDisplayModes(vm as Object, profile as String)
   if type(vm) <> "roVideoMode" then return
 
@@ -2358,10 +2359,12 @@ Sub LogActiveDisplayModes(vm as Object, profile as String)
     if type(active.colorspace) = "roString" then colorText = active.colorspace
     if type(active.colordepth) = "roString" then depthText = active.colordepth
     LedLog("=== Perform6: GetActiveMode " + modeText + " " + colorText + " " + depthText + " ===")
-    if ModeLooks4k60(modeText) then
-      LedLog("OUT|ACTIVE|ok=1|mode=" + modeText + "|depth=" + depthText)
+    if profile = "XT2145" and ModeLooks1080p60(modeText) then
+      LedLog("OUT|PRIMARY|ok=1|mode=" + modeText + "|depth=" + depthText)
+    else if profile <> "XT2145" and ModeLooks4k60(modeText) then
+      LedLog("OUT|PRIMARY|ok=1|mode=" + modeText + "|depth=" + depthText)
     else
-      LedLog("OUT|ISSUE|ACTIVE not 4K60|mode=" + modeText + "|depth=" + depthText)
+      LedLog("OUT|ISSUE|primary output mode unexpected|mode=" + modeText + "|depth=" + depthText)
     end if
   else
     LedLog("=== Perform6: GetActiveMode unavailable ===")
@@ -2373,8 +2376,8 @@ Sub LogActiveDisplayModes(vm as Object, profile as String)
   if type(fps) = "roInteger" or type(fps) = "Integer" then
     fpsText = IntToStr(fps)
     LedLog("=== Perform6: GetFPS " + fpsText + " ===")
-    if fps < 50 then
-      LedLog("OUT|ISSUE|output fps below 60|fps=" + fpsText)
+    if fps < 59 or fps > 60 then
+      LedLog("OUT|ISSUE|output fps is not 59.94/60|fps=" + fpsText)
     else
       LedLog("OUT|FPS|ok=1|fps=" + fpsText)
     end if
@@ -2384,12 +2387,11 @@ Sub LogActiveDisplayModes(vm as Object, profile as String)
   ry = vm.GetResY()
   if rx > 0 and ry > 0 then
     LedLog("OUT|GRAPHICS|" + IntToStr(rx) + "x" + IntToStr(ry))
-    if rx < 3840 or ry < 2160 then
-      LedLog("OUT|ISSUE|graphics plane below 4K|" + IntToStr(rx) + "x" + IntToStr(ry))
-    end if
   end if
 
-  WriteOutputDiagFile(profile, modeText, colorText, depthText, fpsText)
+  ledModeText = ""
+  if profile = "XT2145" then ledModeText = GetConfiguredScreenMode(vm, "HDMI-2")
+  WriteOutputDiagFile(profile, modeText, ledModeText, colorText, depthText, fpsText)
 
   ' GetBestMode docs list "hdmi"/"vga"; multi-output also accepts HDMI-N names.
   connectors = CreateObject("roArray", 4, true)
@@ -2423,6 +2425,8 @@ Sub LogActiveDisplayModes(vm as Object, profile as String)
     LedLog("=== Perform6: GetBestMode " + name + "=" + best + " ===")
     if ModeLooks4k60(best) then
       LedLog("OUT|" + name + "|best=4K60|" + best)
+    else if profile = "XT2145" and name = "HDMI-1" and Instr(1, LCase(best), "1920x1080") > 0 then
+      LedLog("OUT|HDMI-1|best=1080p|" + best)
     else if Instr(1, best, "(blank") = 0 then
       LedLog("OUT|ISSUE|" + name + " EDID best is not 4K60|" + best)
     end if
@@ -2431,18 +2435,32 @@ Sub LogActiveDisplayModes(vm as Object, profile as String)
   end while
 End Sub
 
-Sub WriteOutputDiagFile(profile as String, modeText as String, colorText as String, depthText as String, fpsText as String)
+Function GetConfiguredScreenMode(vm as Object, hdmiName as String) as String
+  sm = vm.GetScreenModes()
+  idx = FindScreenIndex(sm, hdmiName)
+  if idx < 0 then return ""
+  entry = sm[idx]
+  if type(entry) <> "roAssociativeArray" then return ""
+  if type(entry.video_mode) <> "roString" and type(entry.video_mode) <> "String" then return ""
+  modeText = entry.video_mode
+  LedLog("OUT|CONFIG|" + hdmiName + "|mode=" + modeText)
+  return modeText
+End Function
+
+Sub WriteOutputDiagFile(profile as String, primaryModeText as String, ledModeText as String, colorText as String, depthText as String, fpsText as String)
   q = Chr(34)
   ok = "0"
-  if ModeLooks4k60(modeText) then ok = "1"
+  fps = Int(Val(fpsText))
+  if ModeLooks4k60(ledModeText) and fps >= 59 and fps <= 60 then ok = "1"
   json = "{"
   json = json + q + "type" + q + ":" + q + "output-diag" + q + ","
   json = json + q + "profile" + q + ":" + q + profile + q + ","
-  json = json + q + "mode" + q + ":" + q + modeText + q + ","
+  json = json + q + "primaryMode" + q + ":" + q + primaryModeText + q + ","
+  json = json + q + "ledMode" + q + ":" + q + ledModeText + q + ","
   json = json + q + "colorspace" + q + ":" + q + colorText + q + ","
   json = json + q + "colordepth" + q + ":" + q + depthText + q + ","
   json = json + q + "fps" + q + ":" + q + fpsText + q + ","
-  json = json + q + "ok4k60" + q + ":" + q + ok + q
+  json = json + q + "configured4k60" + q + ":" + q + ok + q
   json = json + "}"
   WriteAsciiFile("SD:/perform6-output-diag.json", json)
   WriteAsciiFile("/storage/sd/perform6-output-diag.json", json)
@@ -2534,9 +2552,29 @@ Function FleetVideoMode(displayMode as String) as String
   return "3840x2160x60p:fullres"
 End Function
 
+Function BluefinVideoMode() as String
+  ' Field-proven mode and the native resolution of the 15.6-inch controller.
+  return "1920x1080x60p:fullres"
+End Function
+
+Function BluefinOutputWidth() as Integer
+  return 1920
+End Function
+
+Function BluefinOutputHeight() as Integer
+  return 1080
+End Function
+
 Function ModeLooks4k60(modeText as String) as Boolean
   low = LCase(modeText)
   if Instr(1, low, "3840x2160") = 0 then return false
+  if Instr(1, low, "60") = 0 then return false
+  return true
+End Function
+
+Function ModeLooks1080p60(modeText as String) as Boolean
+  low = LCase(modeText)
+  if Instr(1, low, "1920x1080") = 0 then return false
   if Instr(1, low, "60") = 0 then return false
   return true
 End Function
@@ -2612,8 +2650,9 @@ Function ApplyMultiScreenModes(vm as Object, profile as String, displayMode as S
     return false
   end if
 
-  ' BrightSign multi-screen pattern: fixed 4K60 per HDMI, never "auto".
-  ' XT dual / XC triple canvas: each tile 3840x2160, columns at 0 / 3840 / 7680.
+  ' BrightSign multi-screen pattern: fixed modes, never "auto".
+  ' XT preserves the field-proven 1080p Bluefin and uses 4K60 only on HDMI-2.
+  ' XC keeps its independent 4K60 tiles.
   ' :fullres = graphics plane 1:1 with video mode. Default color depth 8-bit.
   mode4k = FleetVideoMode(displayMode)
   tileW = FleetOutputWidth()
@@ -2657,8 +2696,10 @@ Function ApplyMultiScreenModes(vm as Object, profile as String, displayMode as S
     if idx1 < 0 then idx1 = 0
     if idx2 < 0 then idx2 = 1
 
-    if not ScreenAlreadyMatches(sm[idx1], mode4k, 0, true) then needChange = true
-    if not ScreenAlreadyMatches(sm[idx2], mode4k, tileW, true) then needChange = true
+    modeBluefin = BluefinVideoMode()
+    bluefinW = BluefinOutputWidth()
+    if not ScreenAlreadyMatches(sm[idx1], modeBluefin, 0, true) then needChange = true
+    if not ScreenAlreadyMatches(sm[idx2], mode4k, bluefinW, true) then needChange = true
 
     i = 0
     while i < sm.Count()
@@ -2671,12 +2712,12 @@ Function ApplyMultiScreenModes(vm as Object, profile as String, displayMode as S
     end while
 
     if needChange = false then
-      SafePrint("=== Perform6: XT2145 dual HDMI already configured (4K60) ===")
+      SafePrint("=== Perform6: XT2145 HDMI-1 1080p60 + HDMI-2 4K60 already configured ===")
       return false
     end if
 
-    ConfigureOutput(sm[idx1], mode4k, 0, true)
-    ConfigureOutput(sm[idx2], mode4k, tileW, true)
+    ConfigureOutput(sm[idx1], modeBluefin, 0, true)
+    ConfigureOutput(sm[idx2], mode4k, bluefinW, true)
     i = 0
     while i < sm.Count()
       if i <> idx1 and i <> idx2 then
@@ -2685,7 +2726,7 @@ Function ApplyMultiScreenModes(vm as Object, profile as String, displayMode as S
       i = i + 1
     end while
 
-    SafePrint("=== Perform6: SetScreenModes XT2145 HDMI-1+HDMI-2 " + mode4k + " (may reboot) ===")
+    SafePrint("=== Perform6: SetScreenModes XT2145 HDMI-1=" + modeBluefin + " HDMI-2=" + mode4k + " (may reboot) ===")
     vm.SetScreenModes(sm)
     return true
   end if
@@ -2793,7 +2834,8 @@ Sub Main()
   width = tileW
   height = tileH
 
-  ' XT/XC use independent 3840x2160 HtmlWidgets per HDMI. HD226 uses native size.
+  ' XC uses 4K tiles. XT keeps its Bluefin HtmlWidget at native 1080p and
+  ' reserves the following 4K canvas region for HDMI-2 native video.
   if profile <> "XT2145" and profile <> "XC4055" and type(vm) = "roVideoMode" then
     w = vm.GetResX()
     h = vm.GetResY()
@@ -2824,13 +2866,15 @@ Sub Main()
     ' Order (BrightSign multi-out + decoder budget): HtmlWidget Show FIRST, then
     ' exactly ONE HDMI-2 roVideoPlayer. Never allocate a pre-HTML LED player.
     SafePrint("=== Perform6: XT React HDMI-1 + native video HDMI-2 ===")
-    touchRect = CreateObject("roRectangle", 0, 0, tileW, tileH)
-    ledRect = CreateObject("roRectangle", tileW, 0, tileW, tileH)
+    bluefinW = BluefinOutputWidth()
+    bluefinH = BluefinOutputHeight()
+    touchRect = CreateObject("roRectangle", 0, 0, bluefinW, bluefinH)
+    ledRect = CreateObject("roRectangle", bluefinW, 0, tileW, tileH)
     if type(touchRect) <> "roRectangle" or type(ledRect) <> "roRectangle" then
       FatalHang("=== Perform6: FATAL no XT output rectangles ===")
     end if
-    LedLog("OUT|RECT|HDMI-1|0,0," + IntToStr(tileW) + "x" + IntToStr(tileH))
-    LedLog("OUT|RECT|HDMI-2|" + IntToStr(tileW) + ",0," + IntToStr(tileW) + "x" + IntToStr(tileH))
+    LedLog("OUT|RECT|HDMI-1|0,0," + IntToStr(bluefinW) + "x" + IntToStr(bluefinH))
+    LedLog("OUT|RECT|HDMI-2|" + IntToStr(bluefinW) + ",0," + IntToStr(tileW) + "x" + IntToStr(tileH))
 
     ' Prefer SD:/ path first — avoids post-Show SetUrl that orphans BSMessagePort.
     touchUrl = BuildAppUrl("file:///SD:/index.html", identity, profile, "touch")

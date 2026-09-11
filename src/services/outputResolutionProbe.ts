@@ -5,8 +5,10 @@
 import { runtimeConfig } from '../config/runtime';
 import { getNodeFs, toNodeSdPath } from '../platform/brightSignNode';
 
-const EXPECTED_W = 3840;
-const EXPECTED_H = 2160;
+const BLUEFIN_W = 1920;
+const BLUEFIN_H = 1080;
+const LED_W = 3840;
+const LED_H = 2160;
 const WATCH_MS = 60_000;
 const DIAG_PATHS = ['SD:/perform6-output-diag.json', '/storage/sd/perform6-output-diag.json'];
 
@@ -16,11 +18,12 @@ let lastSignature = '';
 type OutputDiag = {
   type?: string;
   profile?: string;
-  mode?: string;
+  primaryMode?: string;
+  ledMode?: string;
   colorspace?: string;
   colordepth?: string;
   fps?: string;
-  ok4k60?: string;
+  configured4k60?: string;
 };
 
 function readOutputDiag(): OutputDiag | null {
@@ -41,8 +44,10 @@ function readOutputDiag(): OutputDiag | null {
   return null;
 }
 
-function widgetLooks4k(): boolean {
-  return window.innerWidth >= EXPECTED_W - 8 && window.innerHeight >= EXPECTED_H - 8;
+function widgetLooksExpected(profile: string): boolean {
+  const expectedW = profile === 'XT2145' ? BLUEFIN_W : LED_W;
+  const expectedH = profile === 'XT2145' ? BLUEFIN_H : LED_H;
+  return window.innerWidth >= expectedW - 8 && window.innerHeight >= expectedH - 8;
 }
 
 function htmlVideoSummary(): string {
@@ -62,15 +67,16 @@ function htmlVideoSummary(): string {
 
 function probeOnce(reason: string): void {
   const widget = `${window.innerWidth}x${window.innerHeight}`;
-  const widgetOk = widgetLooks4k();
+  const profile = runtimeConfig.hardwareProfile;
+  const widgetOk = widgetLooksExpected(profile);
   const diag = readOutputDiag();
   const decode = htmlVideoSummary();
-  const mode = diag?.mode || 'missing';
+  const primaryMode = diag?.primaryMode || 'missing';
+  const ledMode = diag?.ledMode || 'missing';
   const fps = diag?.fps || '';
   const depth = diag?.colordepth || '';
-  const hdmiOk = diag?.ok4k60 === '1';
-  const profile = runtimeConfig.hardwareProfile;
-  const signature = [reason, widget, mode, fps, depth, decode, String(widgetOk), String(hdmiOk)].join('|');
+  const hdmiOk = diag?.configured4k60 === '1';
+  const signature = [reason, widget, primaryMode, ledMode, fps, depth, decode, String(widgetOk), String(hdmiOk)].join('|');
   if (signature === lastSignature && reason !== 'boot') return;
   lastSignature = signature;
 
@@ -79,7 +85,7 @@ function probeOnce(reason: string): void {
   );
   if (diag) {
     console.info(
-      `[Perform6] OUTPUT|HDMI|mode=${mode}|fps=${fps}|depth=${depth}|colorspace=${diag.colorspace || ''}|ok4k60=${diag.ok4k60 || '0'}|profile=${diag.profile || profile}`,
+      `[Perform6] OUTPUT|HDMI-2|configuredMode=${ledMode}|primaryMode=${primaryMode}|canvasFps=${fps}|primaryDepth=${depth}|primaryColorspace=${diag.colorspace || ''}|configured4k60=${diag.configured4k60 || '0'}|profile=${diag.profile || profile}`,
     );
   } else {
     console.warn('[Perform6] OUTPUT|ISSUE|perform6-output-diag.json missing — autorun HDMI mode not confirmed');
@@ -91,22 +97,22 @@ function probeOnce(reason: string): void {
 
   if (profile === 'XT2145' || profile === 'XC4055') {
     console.info(
-      `[Perform6] OUTPUT|LED|native=roVideoPlayer|expected=${EXPECTED_W}x${EXPECTED_H}|confirm=OUT|RECT + PlayFile in autorun log`,
+      `[Perform6] OUTPUT|LED|native=roVideoPlayer|configured=${LED_W}x${LED_H}|confirm=OUT|CONFIG + OUT|RECT + PlayFile in autorun log`,
     );
   }
 
   if (!widgetOk) {
     console.warn(
-      `[Perform6] OUTPUT|ISSUE|HTML widget below 4K|${widget}|expected=${EXPECTED_W}x${EXPECTED_H}`,
+      `[Perform6] OUTPUT|ISSUE|HTML widget unexpected|${widget}|expected=${profile === 'XT2145' ? `${BLUEFIN_W}x${BLUEFIN_H}` : `${LED_W}x${LED_H}`}`,
     );
   }
   if (diag && !hdmiOk) {
     console.warn(
-      `[Perform6] OUTPUT|ISSUE|HDMI output not 4K60|mode=${mode}|fps=${fps}|depth=${depth}`,
+      `[Perform6] OUTPUT|ISSUE|HDMI-2 not configured 4K60|mode=${ledMode}|canvasFps=${fps}`,
     );
   }
   if (widgetOk && hdmiOk) {
-    console.info('[Perform6] OUTPUT|OK|Bluefin widget and HDMI mode are 4K60');
+    console.info('[Perform6] OUTPUT|OK|Bluefin widget healthy and HDMI-2 configured 4K60');
   }
 }
 
