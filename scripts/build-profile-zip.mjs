@@ -93,8 +93,15 @@ function assertAutorunPlayerAllocation(autorunPath) {
     );
   }
 
+  if (!text.includes('3840x2160x60p:fullres')) {
+    fail('autorun.brs must lock fleet video mode 3840x2160x60p:fullres');
+  }
+  if (text.includes('1920x1080x60p:fullres') || text.includes('1920x1080x60p"')) {
+    fail('autorun.brs still locks 1080p fleet output — expected 4K60');
+  }
+
   console.log(
-    '[release:zip] autorun player assert OK (XT HDMI-2×1, XC HDMI-2×1 HDMI-3×1, no pre-HTML LED)',
+    '[release:zip] autorun player assert OK (XT HDMI-2×1, XC HDMI-2×1 HDMI-3×1, no pre-HTML LED, 4K60)',
   );
 }
 
@@ -397,8 +404,8 @@ function main() {
             ? {
                 outputs: 2,
                 canvas: 'HDMI-1 HtmlWidget + HDMI-2 native roVideoPlayer',
-                outputMap: 'HDMI-1 x=0; HDMI-2 x=1920',
-                mode: displayMode === 'MULTI_NOFULLRES' ? '1920x1080x60p' : '1920x1080x60p:fullres',
+                outputMap: 'HDMI-1 x=0; HDMI-2 x=3840',
+                mode: displayMode === 'MULTI_NOFULLRES' ? '3840x2160x60p' : '3840x2160x60p:fullres',
                 ledPlayback: 'PlayFile of AssetRealizer .mp4 under SD:/perform6-media; command via perform6-led-playback.json',
                 ledIdleClip: 'led-idle.png (packaged) or led-idle.mp4 override',
                 audioRoute: 'HDMI-1 touch silent; native video audio to HDMI-2',
@@ -408,14 +415,19 @@ function main() {
               ? {
                   outputs: 3,
                   canvas: 'HDMI-1 HtmlWidget + HDMI-2/3 native roVideoPlayer',
-                  outputMap: 'HDMI-1 x=0; HDMI-2 x=1920; HDMI-3 x=3840',
-                  mode: displayMode === 'MULTI_NOFULLRES' ? '1920x1080x60p' : '1920x1080x60p:fullres',
+                  outputMap: 'HDMI-1 x=0; HDMI-2 x=3840; HDMI-3 x=7680',
+                  mode: displayMode === 'MULTI_NOFULLRES' ? '3840x2160x60p' : '3840x2160x60p:fullres',
                   ledPlayback: 'PlayFile of AssetRealizer .mp4 under SD:/perform6-media; command via perform6-led-playback.json',
                   ledIdleClip: 'led-idle.png (packaged) or led-idle.mp4 override',
                   audioRoute: 'SCREEN_1 to HDMI-1; SCREEN_2 to HDMI-2; SCREEN_3 to HDMI-3',
                   ledLog: 'SD:/perform6-led.log',
                 }
-              : { outputs: 1, canvas: 'native', mode: 'default' },
+              : {
+                  outputs: 1,
+                  canvas: 'HDMI-1 HtmlWidget',
+                  outputMap: 'HDMI-1 x=0',
+                  mode: displayMode === 'MULTI_NOFULLRES' ? '3840x2160x60p' : '3840x2160x60p:fullres',
+                },
         files: [
           'autorun.brs',
           'index.html',
@@ -450,10 +462,10 @@ function main() {
       '  Legacy SD:/perform6-media/*.mp4 and perform6-xt-playback.json still accepted. clearCache wipes pool + media.',
       '',
       `Display mode (perform6-display.txt): ${displayMode}`,
-      '  BrightSign multi-screen pattern: fixed mode per HDMI — never auto / never fleet-default 4K.',
-      '  MULTI           = 1920x1080x60p:fullres (recommended; BA-style dual/triple canvas)',
-      '  MULTI_NOFULLRES = 1920x1080x60p without :fullres (scaled graphics only)',
-      '  Other values (auto, 4K, SINGLE, …) are ignored → MULTI.',
+      '  BrightSign multi-screen pattern: fixed 4K60 per HDMI — never auto.',
+      '  MULTI           = 3840x2160x60p:fullres (recommended; BA-style dual/triple canvas)',
+      '  MULTI_NOFULLRES = 3840x2160x60p without :fullres (scaled graphics only)',
+      '  Other values (auto, SINGLE, 1080, …) are ignored → MULTI.',
       'XT/XC always run MULTI layout. Edit only if you need MULTI_NOFULLRES.',
       '',
       profileKey === 'XT2145'

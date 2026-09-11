@@ -1,6 +1,7 @@
 /**
  * Bluefin 15.6" capacitive touchscreen — the locked design canvas.
- * XT2145 HDMI-1 HtmlWidget is always this size (SetScreenModes 1920x1080x60p).
+ * HDMI-1 HtmlWidget is 3840×2160 @ 60p; this 1920×1080 design is scaled to fit
+ * so CSS/offsets stay stable. Do not rewrite layout numbers to 4K.
  */
 export const BLUEFIN_VIEWPORT = {
   width: 1920,

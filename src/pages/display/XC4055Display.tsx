@@ -9,7 +9,7 @@ import { runtimeConfig, xcRoleToDisplayTarget } from '../../config/runtime';
 const OUTPUT_TARGETS: DisplayTarget[] = ['SCREEN_1', 'SCREEN_2', 'SCREEN_3'];
 
 /**
- * One physical LED output — full 1920×1080 content for one logical screen.
+ * One physical LED output — full 3840×2160 content for one logical screen.
  */
 function XcOutputSurface({
   target,
@@ -53,7 +53,7 @@ function XcOutputSurface({
 }
 
 /**
- * Production XC4055 — BrightSign uses three independent 1920×1080 HtmlWidgets.
+ * Production XC4055 — BrightSign uses one 4K HtmlWidget + two native LED players.
  * HDMI-1 (this page) only renders SCREEN_1. HDMI-2/3 are separate widgets.
  * Simulator keeps the 3-column preview for convenience.
  */

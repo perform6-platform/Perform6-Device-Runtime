@@ -164,7 +164,7 @@ function reportNativeHdmiTelemetry(status: ReturnType<typeof readXtPlaybackStatu
     positionMs: nativeTelemetryStartedAt > 0 ? Date.now() - nativeTelemetryStartedAt : 0,
     durationMs: null,
     isPlaying: started && !ended && !state.displayPaused,
-    output: 'HDMI-2',
+    output: 'HDMI-2 3840x2160 native',
     source: 'NATIVE_HDMI',
     requestId: `xt-${nonce}`,
     stage: ended ? 'ended' : (status.state ?? (started ? 'started' : 'pending')),

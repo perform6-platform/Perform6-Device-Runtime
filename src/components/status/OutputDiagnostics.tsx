@@ -5,17 +5,13 @@ import type { HardwareProfile } from '../../shared/types';
 
 /**
  * Physical HDMI port that each canvas column is mapped onto by autorun
- * SetScreenModes (display_x 0 / 1920 / 3840).
+ * SetScreenModes (display_x 0 / 3840 / 7680). Each widget is 3840×2160.
  */
 const HDMI_LABELS: Record<HardwareProfile, string[]> = {
   XT2145: ['HDMI-1 · TOUCH', 'HDMI-2 · LED'],
   XC4055: ['HDMI-1 · LED 1', 'HDMI-2 · LED 2', 'HDMI-3 · LED 3'],
   HD226: ['HDMI · LED'],
 };
-
-function slotCount(profile: HardwareProfile): number {
-  return HDMI_LABELS[profile]?.length ?? 1;
-}
 
 /** Compact corner strip so HDMI-1 is identifiable without hiding its UI. */
 export function OutputBadge({
@@ -28,7 +24,7 @@ export function OutputBadge({
   if (!runtimeConfig.showOutputDiagnostics) return null;
 
   const label = HDMI_LABELS[profile]?.[slotIndex] ?? `OUTPUT ${slotIndex + 1}`;
-  const canvasOk = window.innerWidth >= 1920 * slotCount(profile) - 8;
+  const canvasOk = window.innerWidth >= 3840 - 8 && window.innerHeight >= 2160 - 8;
 
   return (
     <div className="pointer-events-none absolute left-0 top-0 z-50 flex items-center gap-3 rounded-br-xl bg-black/80 px-4 py-2 font-mono text-sm text-white/80">
@@ -59,8 +55,9 @@ export function OutputDiagnostics({
 
   const label = HDMI_LABELS[profile]?.[slotIndex] ?? `OUTPUT ${slotIndex + 1}`;
   const actualCanvas = `${window.innerWidth}x${window.innerHeight}`;
-  const expectedWidth = 1920 * slotCount(profile);
-  const canvasOk = window.innerWidth >= expectedWidth - 8;
+  const expectedWidth = 3840;
+  const expectedHeight = 2160;
+  const canvasOk = window.innerWidth >= expectedWidth - 8 && window.innerHeight >= expectedHeight - 8;
   const failure = syncState.error || deviceError;
 
   return (
@@ -101,7 +98,7 @@ export function OutputDiagnostics({
         <div className="flex justify-between gap-6">
           <dt className="text-white/45">canvas</dt>
           <dd className={canvasOk ? 'text-emerald-300' : 'text-red-300'}>
-            {actualCanvas} {canvasOk ? 'OK' : `≠ ${expectedWidth}x1080`}
+            {actualCanvas} {canvasOk ? 'OK' : `≠ ${expectedWidth}x${expectedHeight}`}
           </dd>
         </div>
         <div className="flex justify-between gap-6">

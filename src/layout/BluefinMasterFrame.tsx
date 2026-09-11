@@ -26,9 +26,8 @@ function releaseBluefinLock() {
 }
 
 /**
- * Locks all children to the Bluefin 15.6" 1920×1080 canvas.
- * Scales the frame to fit the parent (letterboxed) so browser preview
- * keeps the same scale, spacing, type, and proportions as the device.
+ * Locks all children to the Bluefin 15.6" 1920×1080 design canvas.
+ * On a 4K HtmlWidget this scales 2×; offsets and CSS stay in design pixels.
  */
 export function BluefinMasterFrame({ children }: { children: ReactNode }) {
   const stageRef = useRef<HTMLDivElement>(null);

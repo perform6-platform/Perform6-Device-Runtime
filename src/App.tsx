@@ -114,7 +114,7 @@ export default function App() {
               <Home />
             ) : (
               <RequirePaired redirectTo="/pairing">
-                {/* XT HDMI-1 owns this 1920x1080 widget; HDMI-2 is a separate widget. */}
+                {/* XT HDMI-1 4K HtmlWidget (Bluefin design 1920×1080 scaled). HDMI-2 is native. */}
                 <Home />
               </RequirePaired>
             )

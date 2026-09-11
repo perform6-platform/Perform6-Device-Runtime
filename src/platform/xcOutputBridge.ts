@@ -23,6 +23,7 @@ import { BridgeMsg } from '../services/bridgeProtocol';
 import { resolveSdPlaybackUrl, subscribeSdCacheProgress } from '../services/sdCacheBridge';
 import type { DisplayTarget } from '../shared/types';
 import { useRuntimeStore } from '../stores/runtimeStore';
+import { reportScreenPlayback, clearScreenPlayback } from '../services/playbackTelemetry';
 
 const ACK_WAIT_MS = 2_500;
 const REASSERT_MS = 5_000;
@@ -167,10 +168,45 @@ function publishSecondaryScreens(
   }, ACK_WAIT_MS);
 }
 
+function reportXcNativeTelemetry(
+  screenKey: DisplayTarget,
+  hdmi: string,
+  status: ReturnType<typeof readLedPlaybackStatusForRole>,
+): void {
+  if (!status) {
+    clearScreenPlayback(screenKey);
+    return;
+  }
+  const started = isLedStatusStarted(status);
+  const ended = status.ended === '1' || status.state === 'ended';
+  const failed = status.state === 'error' || status.ok === '0';
+  const src = asString(status.src);
+  if (!src && !started) {
+    clearScreenPlayback(screenKey);
+    return;
+  }
+  reportScreenPlayback({
+    screenKey,
+    mediaVersionId: null,
+    title: null,
+    positionMs: 0,
+    durationMs: null,
+    isPlaying: started && !ended,
+    output: `${hdmi} 3840x2160 native`,
+    source: 'NATIVE_HDMI',
+    stage: ended ? 'ended' : (status.state ?? (started ? 'started' : 'pending')),
+    error: failed ? asString(status.detail) || 'native playback failed' : null,
+    path: src || null,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
 function pollPlaybackStatus(port: BrightSignMessagePort | null): void {
   const statusLed2 = readLedPlaybackStatusForRole('led2');
   const statusLed3 = readLedPlaybackStatusForRole('led3');
   const bus = readLedBusHeartbeat();
+  reportXcNativeTelemetry('SCREEN_2', 'HDMI-2', statusLed2);
+  reportXcNativeTelemetry('SCREEN_3', 'HDMI-3', statusLed3);
 
   for (const status of [statusLed2, statusLed3]) {
     if (status?.ended === '1') {

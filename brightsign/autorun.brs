@@ -2191,7 +2191,7 @@ Function ReadDisplayMode() as String
     return "MULTI_NOFULLRES"
   end if
   if mode <> "MULTI" and Len(mode) > 0 then
-    SafePrint("=== Perform6: perform6-display.txt '" + mode + "' ignored — BrightSign pattern uses MULTI (1080p fixed) ===")
+    SafePrint("=== Perform6: perform6-display.txt '" + mode + "' ignored — BrightSign pattern uses MULTI (4K60) ===")
   end if
   return "MULTI"
 End Function
@@ -2345,27 +2345,51 @@ Sub LogDisplayIdentity(vm as Object, hdmiName as String)
   LedLog("=== Perform6: " + hdmiName + " EDID " + manufacturer + " / " + monitorName + " ===")
 End Sub
 
-' Phase 4: prove whether hard-locked 60p was accepted by the real LED panel.
+' Phase 4: prove whether hard-locked 4K60 was accepted by each HDMI.
 Sub LogActiveDisplayModes(vm as Object, profile as String)
   if type(vm) <> "roVideoMode" then return
 
+  modeText = ""
+  colorText = ""
+  depthText = ""
   active = vm.GetActiveMode()
   if type(active) = "roAssociativeArray" then
-    modeText = ""
     if type(active.videomode) = "roString" then modeText = active.videomode
-    colorText = ""
     if type(active.colorspace) = "roString" then colorText = active.colorspace
-    depthText = ""
     if type(active.colordepth) = "roString" then depthText = active.colordepth
     LedLog("=== Perform6: GetActiveMode " + modeText + " " + colorText + " " + depthText + " ===")
+    if ModeLooks4k60(modeText) then
+      LedLog("OUT|ACTIVE|ok=1|mode=" + modeText + "|depth=" + depthText)
+    else
+      LedLog("OUT|ISSUE|ACTIVE not 4K60|mode=" + modeText + "|depth=" + depthText)
+    end if
   else
     LedLog("=== Perform6: GetActiveMode unavailable ===")
+    LedLog("OUT|ISSUE|GetActiveMode unavailable")
   end if
 
   fps = vm.GetFPS()
+  fpsText = ""
   if type(fps) = "roInteger" or type(fps) = "Integer" then
-    LedLog("=== Perform6: GetFPS " + IntToStr(fps) + " ===")
+    fpsText = IntToStr(fps)
+    LedLog("=== Perform6: GetFPS " + fpsText + " ===")
+    if fps < 50 then
+      LedLog("OUT|ISSUE|output fps below 60|fps=" + fpsText)
+    else
+      LedLog("OUT|FPS|ok=1|fps=" + fpsText)
+    end if
   end if
+
+  rx = vm.GetResX()
+  ry = vm.GetResY()
+  if rx > 0 and ry > 0 then
+    LedLog("OUT|GRAPHICS|" + IntToStr(rx) + "x" + IntToStr(ry))
+    if rx < 3840 or ry < 2160 then
+      LedLog("OUT|ISSUE|graphics plane below 4K|" + IntToStr(rx) + "x" + IntToStr(ry))
+    end if
+  end if
+
+  WriteOutputDiagFile(profile, modeText, colorText, depthText, fpsText)
 
   ' GetBestMode docs list "hdmi"/"vga"; multi-output also accepts HDMI-N names.
   connectors = CreateObject("roArray", 4, true)
@@ -2397,9 +2421,31 @@ Sub LogActiveDisplayModes(vm as Object, profile as String)
     end if
     if Len(best) = 0 then best = "(blank/no EDID)"
     LedLog("=== Perform6: GetBestMode " + name + "=" + best + " ===")
+    if ModeLooks4k60(best) then
+      LedLog("OUT|" + name + "|best=4K60|" + best)
+    else if Instr(1, best, "(blank") = 0 then
+      LedLog("OUT|ISSUE|" + name + " EDID best is not 4K60|" + best)
+    end if
     LogDisplayIdentity(vm, name)
     i = i + 1
   end while
+End Sub
+
+Sub WriteOutputDiagFile(profile as String, modeText as String, colorText as String, depthText as String, fpsText as String)
+  q = Chr(34)
+  ok = "0"
+  if ModeLooks4k60(modeText) then ok = "1"
+  json = "{"
+  json = json + q + "type" + q + ":" + q + "output-diag" + q + ","
+  json = json + q + "profile" + q + ":" + q + profile + q + ","
+  json = json + q + "mode" + q + ":" + q + modeText + q + ","
+  json = json + q + "colorspace" + q + ":" + q + colorText + q + ","
+  json = json + q + "colordepth" + q + ":" + q + depthText + q + ","
+  json = json + q + "fps" + q + ":" + q + fpsText + q + ","
+  json = json + q + "ok4k60" + q + ":" + q + ok + q
+  json = json + "}"
+  WriteAsciiFile("SD:/perform6-output-diag.json", json)
+  WriteAsciiFile("/storage/sd/perform6-output-diag.json", json)
 End Sub
 
 Function VideoEventName(code as Integer) as String
@@ -2470,8 +2516,28 @@ Function VideoModeMatches(actualMode as Dynamic, expectedMode as String) as Bool
     return false
   end if
 
-  ' Accept 1920x1080x60p with or without :fullres when bases match.
+  ' Accept 3840x2160x60p with or without :fullres when bases match.
   ' Strict :fullres-only matching caused endless SetScreenModes on some OS builds.
+  return true
+End Function
+
+Function FleetOutputWidth() as Integer
+  return 3840
+End Function
+
+Function FleetOutputHeight() as Integer
+  return 2160
+End Function
+
+Function FleetVideoMode(displayMode as String) as String
+  if displayMode = "MULTI_NOFULLRES" then return "3840x2160x60p"
+  return "3840x2160x60p:fullres"
+End Function
+
+Function ModeLooks4k60(modeText as String) as Boolean
+  low = LCase(modeText)
+  if Instr(1, low, "3840x2160") = 0 then return false
+  if Instr(1, low, "60") = 0 then return false
   return true
 End Function
 
@@ -2525,27 +2591,63 @@ Function ApplyMultiScreenModes(vm as Object, profile as String, displayMode as S
     return false
   end if
 
-  if profile = "HD226" then
-    SafePrint("=== Perform6: HD226 single-output - skip SetScreenModes ===")
-    return false
-  end if
-
   sm = vm.GetScreenModes()
-  if type(sm) <> "roArray" or sm.Count() < 2 then
+  if type(sm) <> "roArray" or sm.Count() < 1 then
+    if profile = "HD226" then
+      mode4k = FleetVideoMode(displayMode)
+      active = vm.GetActiveMode()
+      current = ""
+      if type(active) = "roAssociativeArray" then
+        if type(active.videomode) = "roString" then current = active.videomode
+      end if
+      if ModeLooks4k60(current) then
+        SafePrint("=== Perform6: HD226 SetMode already 4K60 ===")
+        return false
+      end if
+      SafePrint("=== Perform6: HD226 SetMode " + mode4k + " (may reboot) ===")
+      vm.SetMode(mode4k)
+      return true
+    end if
     SafePrint("=== Perform6: GetScreenModes unavailable - keep default output ===")
     return false
   end if
 
-  ' BrightSign multi-screen pattern (docs): fixed mode per HDMI, never "auto".
-  ' Fleet default 1920x1080x60p — same class as BA multi-out examples; not max 4K.
-  ' No :preferred / auto — EDID fallback (4K then 1080p120) breaks side-by-side canvas.
-  ' :fullres = graphics plane 1:1 with video mode (BrightSign full-resolution graphics).
-  mode1080 = "1920x1080x60p:fullres"
-  if displayMode = "MULTI_NOFULLRES" then
-    mode1080 = "1920x1080x60p"
-  end if
+  ' BrightSign multi-screen pattern: fixed 4K60 per HDMI, never "auto".
+  ' XT dual / XC triple canvas: each tile 3840x2160, columns at 0 / 3840 / 7680.
+  ' :fullres = graphics plane 1:1 with video mode. Default color depth 8-bit.
+  mode4k = FleetVideoMode(displayMode)
+  tileW = FleetOutputWidth()
   needChange = false
-  SafePrint("=== Perform6: BrightSign pattern video_mode=" + mode1080 + " ===")
+  SafePrint("=== Perform6: BrightSign pattern video_mode=" + mode4k + " ===")
+
+  if profile = "HD226" then
+    idx0 = FindScreenIndex(sm, "HDMI-1")
+    if idx0 < 0 then idx0 = FindScreenIndex(sm, "hdmi")
+    if idx0 < 0 then idx0 = 0
+    if not ScreenAlreadyMatches(sm[idx0], mode4k, 0, true) then needChange = true
+    i = 0
+    while i < sm.Count()
+      if i <> idx0 then
+        if type(sm[i]) = "roAssociativeArray" and sm[i].enabled = true then
+          needChange = true
+        end if
+      end if
+      i = i + 1
+    end while
+    if needChange = false then
+      SafePrint("=== Perform6: HD226 already configured (4K60) ===")
+      return false
+    end if
+    ConfigureOutput(sm[idx0], mode4k, 0, true)
+    i = 0
+    while i < sm.Count()
+      if i <> idx0 then ConfigureOutput(sm[i], mode4k, 0, false)
+      i = i + 1
+    end while
+    SafePrint("=== Perform6: SetScreenModes HD226 " + mode4k + " (may reboot) ===")
+    vm.SetScreenModes(sm)
+    return true
+  end if
 
   if profile = "XT2145" then
     LogDisplayIdentity(vm, "HDMI-1")
@@ -2555,8 +2657,8 @@ Function ApplyMultiScreenModes(vm as Object, profile as String, displayMode as S
     if idx1 < 0 then idx1 = 0
     if idx2 < 0 then idx2 = 1
 
-    if not ScreenAlreadyMatches(sm[idx1], mode1080, 0, true) then needChange = true
-    if not ScreenAlreadyMatches(sm[idx2], mode1080, 1920, true) then needChange = true
+    if not ScreenAlreadyMatches(sm[idx1], mode4k, 0, true) then needChange = true
+    if not ScreenAlreadyMatches(sm[idx2], mode4k, tileW, true) then needChange = true
 
     i = 0
     while i < sm.Count()
@@ -2569,21 +2671,21 @@ Function ApplyMultiScreenModes(vm as Object, profile as String, displayMode as S
     end while
 
     if needChange = false then
-      SafePrint("=== Perform6: XT2145 dual HDMI already configured (1080p BrightSign pattern) ===")
+      SafePrint("=== Perform6: XT2145 dual HDMI already configured (4K60) ===")
       return false
     end if
 
-    ConfigureOutput(sm[idx1], mode1080, 0, true)
-    ConfigureOutput(sm[idx2], mode1080, 1920, true)
+    ConfigureOutput(sm[idx1], mode4k, 0, true)
+    ConfigureOutput(sm[idx2], mode4k, tileW, true)
     i = 0
     while i < sm.Count()
       if i <> idx1 and i <> idx2 then
-        ConfigureOutput(sm[i], mode1080, 0, false)
+        ConfigureOutput(sm[i], mode4k, 0, false)
       end if
       i = i + 1
     end while
 
-    SafePrint("=== Perform6: SetScreenModes XT2145 HDMI-1+HDMI-2 " + mode1080 + " (may reboot) ===")
+    SafePrint("=== Perform6: SetScreenModes XT2145 HDMI-1+HDMI-2 " + mode4k + " (may reboot) ===")
     vm.SetScreenModes(sm)
     return true
   end if
@@ -2599,9 +2701,9 @@ Function ApplyMultiScreenModes(vm as Object, profile as String, displayMode as S
     if idx2 < 0 then idx2 = 1
     if idx3 < 0 then idx3 = 2
 
-    if not ScreenAlreadyMatches(sm[idx1], mode1080, 0, true) then needChange = true
-    if not ScreenAlreadyMatches(sm[idx2], mode1080, 1920, true) then needChange = true
-    if not ScreenAlreadyMatches(sm[idx3], mode1080, 3840, true) then needChange = true
+    if not ScreenAlreadyMatches(sm[idx1], mode4k, 0, true) then needChange = true
+    if not ScreenAlreadyMatches(sm[idx2], mode4k, tileW, true) then needChange = true
+    if not ScreenAlreadyMatches(sm[idx3], mode4k, tileW * 2, true) then needChange = true
 
     i = 0
     while i < sm.Count()
@@ -2614,22 +2716,22 @@ Function ApplyMultiScreenModes(vm as Object, profile as String, displayMode as S
     end while
 
     if needChange = false then
-      SafePrint("=== Perform6: XC4055 triple HDMI already configured (1080p BrightSign pattern) ===")
+      SafePrint("=== Perform6: XC4055 triple HDMI already configured (4K60) ===")
       return false
     end if
 
-    ConfigureOutput(sm[idx1], mode1080, 0, true)
-    ConfigureOutput(sm[idx2], mode1080, 1920, true)
-    ConfigureOutput(sm[idx3], mode1080, 3840, true)
+    ConfigureOutput(sm[idx1], mode4k, 0, true)
+    ConfigureOutput(sm[idx2], mode4k, tileW, true)
+    ConfigureOutput(sm[idx3], mode4k, tileW * 2, true)
     i = 0
     while i < sm.Count()
       if i <> idx1 and i <> idx2 and i <> idx3 then
-        ConfigureOutput(sm[i], mode1080, 0, false)
+        ConfigureOutput(sm[i], mode4k, 0, false)
       end if
       i = i + 1
     end while
 
-    SafePrint("=== Perform6: SetScreenModes XC4055 HDMI-1/2/3 " + mode1080 + " (may reboot) ===")
+    SafePrint("=== Perform6: SetScreenModes XC4055 HDMI-1/2/3 " + mode4k + " (may reboot) ===")
     vm.SetScreenModes(sm)
     return true
   end if
@@ -2686,10 +2788,12 @@ Sub Main()
   ' Must be configured before any HTML/video player allocates an audio decoder.
   ConfigureAudioResources(profile)
 
-  width = 1920
-  height = 1080
+  tileW = FleetOutputWidth()
+  tileH = FleetOutputHeight()
+  width = tileW
+  height = tileH
 
-  ' XT/XC use independent 1920x1080 HtmlWidgets per HDMI. HD226 uses native size.
+  ' XT/XC use independent 3840x2160 HtmlWidgets per HDMI. HD226 uses native size.
   if profile <> "XT2145" and profile <> "XC4055" and type(vm) = "roVideoMode" then
     w = vm.GetResX()
     h = vm.GetResY()
@@ -2720,11 +2824,13 @@ Sub Main()
     ' Order (BrightSign multi-out + decoder budget): HtmlWidget Show FIRST, then
     ' exactly ONE HDMI-2 roVideoPlayer. Never allocate a pre-HTML LED player.
     SafePrint("=== Perform6: XT React HDMI-1 + native video HDMI-2 ===")
-    touchRect = CreateObject("roRectangle", 0, 0, 1920, 1080)
-    ledRect = CreateObject("roRectangle", 1920, 0, 1920, 1080)
+    touchRect = CreateObject("roRectangle", 0, 0, tileW, tileH)
+    ledRect = CreateObject("roRectangle", tileW, 0, tileW, tileH)
     if type(touchRect) <> "roRectangle" or type(ledRect) <> "roRectangle" then
       FatalHang("=== Perform6: FATAL no XT output rectangles ===")
     end if
+    LedLog("OUT|RECT|HDMI-1|0,0," + IntToStr(tileW) + "x" + IntToStr(tileH))
+    LedLog("OUT|RECT|HDMI-2|" + IntToStr(tileW) + ",0," + IntToStr(tileW) + "x" + IntToStr(tileH))
 
     ' Prefer SD:/ path first — avoids post-Show SetUrl that orphans BSMessagePort.
     touchUrl = BuildAppUrl("file:///SD:/index.html", identity, profile, "touch")
@@ -2780,12 +2886,15 @@ Sub Main()
   else if profile = "XC4055" and multiOutput then
     ' Same order as XT: HtmlWidget Show first, then one player per LED output.
     SafePrint("=== Perform6: XC React HDMI-1 + native video HDMI-2/3 ===")
-    primaryRect = CreateObject("roRectangle", 0, 0, 1920, 1080)
-    led2Rect = CreateObject("roRectangle", 1920, 0, 1920, 1080)
-    led3Rect = CreateObject("roRectangle", 3840, 0, 1920, 1080)
+    primaryRect = CreateObject("roRectangle", 0, 0, tileW, tileH)
+    led2Rect = CreateObject("roRectangle", tileW, 0, tileW, tileH)
+    led3Rect = CreateObject("roRectangle", tileW * 2, 0, tileW, tileH)
     if type(primaryRect) <> "roRectangle" or type(led2Rect) <> "roRectangle" or type(led3Rect) <> "roRectangle" then
       FatalHang("=== Perform6: FATAL no XC output rectangles ===")
     end if
+    LedLog("OUT|RECT|HDMI-1|0,0," + IntToStr(tileW) + "x" + IntToStr(tileH))
+    LedLog("OUT|RECT|HDMI-2|" + IntToStr(tileW) + ",0," + IntToStr(tileW) + "x" + IntToStr(tileH))
+    LedLog("OUT|RECT|HDMI-3|" + IntToStr(tileW * 2) + ",0," + IntToStr(tileW) + "x" + IntToStr(tileH))
 
     primaryUrl = BuildAppUrl("file:///SD:/index.html", identity, profile, "primary")
     SafePrint("=== Perform6: HDMI-1 primary widget " + primaryUrl + " ===")

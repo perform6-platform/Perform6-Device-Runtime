@@ -40,6 +40,8 @@ export function useVideoPlaybackTelemetry(
           ? video.duration * 1000
           : null;
 
+      const decodeW = video.videoWidth || 0;
+      const decodeH = video.videoHeight || 0;
       reportScreenPlayback({
         screenKey,
         mediaVersionId,
@@ -47,6 +49,8 @@ export function useVideoPlaybackTelemetry(
         positionMs: (video.currentTime || 0) * 1000,
         durationMs,
         isPlaying: !video.paused && !video.ended,
+        output: decodeW > 0 ? `${decodeW}x${decodeH}` : `${window.innerWidth}x${window.innerHeight}`,
+        source: 'HTML_UI',
       });
     };
 
