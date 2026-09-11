@@ -19,11 +19,14 @@ type OutputDiag = {
   type?: string;
   profile?: string;
   primaryMode?: string;
+  bluefinMode?: string;
   ledMode?: string;
+  ledEdidBest?: string;
   colorspace?: string;
   colordepth?: string;
   fps?: string;
   configured4k60?: string;
+  outputHealthy?: string;
 };
 
 function readOutputDiag(): OutputDiag | null {
@@ -75,7 +78,7 @@ function probeOnce(reason: string): void {
   const ledMode = diag?.ledMode || 'missing';
   const fps = diag?.fps || '';
   const depth = diag?.colordepth || '';
-  const hdmiOk = diag?.configured4k60 === '1';
+  const hdmiOk = diag?.outputHealthy === '1';
   const signature = [reason, widget, primaryMode, ledMode, fps, depth, decode, String(widgetOk), String(hdmiOk)].join('|');
   if (signature === lastSignature && reason !== 'boot') return;
   lastSignature = signature;
@@ -85,7 +88,7 @@ function probeOnce(reason: string): void {
   );
   if (diag) {
     console.info(
-      `[Perform6] OUTPUT|HDMI-2|configuredMode=${ledMode}|primaryMode=${primaryMode}|canvasFps=${fps}|primaryDepth=${depth}|primaryColorspace=${diag.colorspace || ''}|configured4k60=${diag.configured4k60 || '0'}|profile=${diag.profile || profile}`,
+      `[Perform6] OUTPUT|HDMI-2|configuredMode=${ledMode}|edidBest=${diag.ledEdidBest || 'unknown'}|refresh=${fps}|outputHealthy=${diag.outputHealthy || '0'}|configured4k60=${diag.configured4k60 || '0'}|canvas=${primaryMode}|primaryDepth=${depth}|primaryColorspace=${diag.colorspace || ''}|profile=${diag.profile || profile}`,
     );
   } else {
     console.warn('[Perform6] OUTPUT|ISSUE|perform6-output-diag.json missing — autorun HDMI mode not confirmed');
@@ -97,7 +100,7 @@ function probeOnce(reason: string): void {
 
   if (profile === 'XT2145' || profile === 'XC4055') {
     console.info(
-      `[Perform6] OUTPUT|LED|native=roVideoPlayer|configured=${LED_W}x${LED_H}|confirm=OUT|CONFIG + OUT|RECT + PlayFile in autorun log`,
+      `[Perform6] OUTPUT|LED|native=roVideoPlayer|configuredMode=${ledMode}|confirm=OUT|CONFIG + OUT|RECT + PlayFile in autorun log`,
     );
   }
 
@@ -108,11 +111,13 @@ function probeOnce(reason: string): void {
   }
   if (diag && !hdmiOk) {
     console.warn(
-      `[Perform6] OUTPUT|ISSUE|HDMI-2 not configured 4K60|mode=${ledMode}|canvasFps=${fps}`,
+      `[Perform6] OUTPUT|ISSUE|HDMI-2 output unhealthy|mode=${ledMode}|refresh=${fps}|edidBest=${diag.ledEdidBest || 'unknown'}`,
     );
   }
   if (widgetOk && hdmiOk) {
-    console.info('[Perform6] OUTPUT|OK|Bluefin widget healthy and HDMI-2 configured 4K60');
+    console.info(
+      `[Perform6] OUTPUT|OK|Bluefin widget healthy and HDMI-2 EDID-compatible|mode=${ledMode}|4k60=${diag?.configured4k60 || '0'}`,
+    );
   }
 }
 

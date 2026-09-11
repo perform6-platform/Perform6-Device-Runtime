@@ -16,15 +16,21 @@ const allowedRuntimeFiles = new Set([
   'src/App.tsx',
   'src/components/status/OutputDiagnostics.tsx',
   'src/hooks/useVideoPlaybackTelemetry.ts',
+  'src/hooks/useOfflineVideoSrc.ts',
   'src/layout/BluefinMasterFrame.tsx',
   'src/main.tsx',
   'src/pages/display/XC4055Display.tsx',
   'src/pages/display/XT2145Display.tsx',
+  'src/pages/Home.tsx',
   'src/platform/xcOutputBridge.ts',
   'src/platform/xtOutputBridge.ts',
   'src/services/deviceLogsApi.ts',
   'src/services/outputResolutionProbe.ts',
+  'src/services/manifest.ts',
   'src/shared/bluefinViewport.ts',
+  'src/shared/types/api.ts',
+  'src/shared/types/runtime.ts',
+  'src/stores/runtimeStore.ts',
 ]);
 
 function fail(message) {
@@ -142,8 +148,8 @@ for (const marker of [
   "phase2: 'SCREEN_4'",
   "'full-program': 'SCREEN_5'",
   "source: 'NATIVE_HDMI'",
-  "output: 'HDMI-2 native (configured 3840x2160x60p)'",
   'reportNativeHdmiTelemetry(status)',
+  'MEDIA|SOURCE|',
 ]) {
   if (!xtBridge.includes(marker)) {
     fail(`XT native HDMI telemetry invariant missing: ${marker}`);

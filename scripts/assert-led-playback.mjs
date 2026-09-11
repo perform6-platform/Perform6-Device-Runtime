@@ -97,7 +97,9 @@ function assertAutorun() {
     'Function BluefinVideoMode()',
     'return "1920x1080x60p:fullres"',
     'ledRect = CreateObject("roRectangle", bluefinW, 0, tileW, tileH)',
-    'ConfigureOutput(sm[idx2], mode4k, bluefinW, true)',
+    'modeLed = SelectXtLedVideoMode(vm, displayMode)',
+    'ConfigureOutput(sm[idx2], modeLed, bluefinW, true)',
+    'OUT|EDID_SELECT|HDMI-2',
   ]) {
     if (!text.includes(needle)) fail(`XT safe mixed-resolution layout missing: ${needle}`);
   }
@@ -125,6 +127,7 @@ function assertJs() {
     fail('XT bridge must be BA-style (PostBSMessage primary)');
   }
   if (!xt.includes('ack-timeout')) fail('XT bridge must SD-fallback on ack-timeout');
+  if (!xt.includes('MEDIA|SOURCE|')) fail('XT bridge must report source media profile');
 
   const xc = fs.readFileSync(path.join(root, 'src', 'platform', 'xcOutputBridge.ts'), 'utf8');
   if (!xc.includes('PostBSMessage')) fail('XC bridge must PostBSMessage');

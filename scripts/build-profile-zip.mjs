@@ -101,7 +101,7 @@ function assertAutorunPlayerAllocation(autorunPath) {
   }
 
   console.log(
-    '[release:zip] autorun player assert OK (XT 1080p Bluefin + HDMI-2×1 4K60, XC HDMI-2×1 HDMI-3×1, no pre-HTML LED)',
+    '[release:zip] autorun player assert OK (XT 1080p Bluefin + HDMI-2×1 EDID-selected 4K60/1080p60, XC HDMI-2×1 HDMI-3×1, no pre-HTML LED)',
   );
 }
 
@@ -404,10 +404,8 @@ function main() {
             ? {
                 outputs: 2,
                 canvas: 'HDMI-1 HtmlWidget + HDMI-2 native roVideoPlayer',
-                outputMap: 'HDMI-1 1920x1080 x=0; HDMI-2 3840x2160 x=1920',
-                mode: displayMode === 'MULTI_NOFULLRES'
-                  ? 'HDMI-1 1920x1080x60p:fullres; HDMI-2 3840x2160x60p'
-                  : 'HDMI-1 1920x1080x60p:fullres; HDMI-2 3840x2160x60p:fullres',
+                outputMap: 'HDMI-1 1920x1080 x=0; HDMI-2 x=1920 with EDID-selected dimensions',
+                mode: 'HDMI-1 1920x1080x60p:fullres; HDMI-2 3840x2160x60p when EDID supports it, otherwise 1920x1080x60p',
                 ledPlayback: 'PlayFile of AssetRealizer .mp4 under SD:/perform6-media; command via perform6-led-playback.json',
                 ledIdleClip: 'led-idle.png (packaged) or led-idle.mp4 override',
                 audioRoute: 'HDMI-1 touch silent; native video audio to HDMI-2',

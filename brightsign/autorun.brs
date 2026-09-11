@@ -2346,9 +2346,17 @@ Sub LogDisplayIdentity(vm as Object, hdmiName as String)
 End Sub
 
 ' Report configured multi-screen modes honestly. On XT, GetActiveMode/GetFPS
-' describe the primary/canvas state; HDMI-2 is verified from GetScreenModes.
+' describe the combined canvas and are not per-output evidence. Verify each HDMI
+' from GetScreenModes and derive its refresh rate from the configured mode.
 Sub LogActiveDisplayModes(vm as Object, profile as String)
   if type(vm) <> "roVideoMode" then return
+
+  bluefinModeText = ""
+  ledModeText = ""
+  if profile = "XT2145" then
+    bluefinModeText = GetConfiguredScreenMode(vm, "HDMI-1")
+    ledModeText = GetConfiguredScreenMode(vm, "HDMI-2")
+  end if
 
   modeText = ""
   colorText = ""
@@ -2359,8 +2367,8 @@ Sub LogActiveDisplayModes(vm as Object, profile as String)
     if type(active.colorspace) = "roString" then colorText = active.colorspace
     if type(active.colordepth) = "roString" then depthText = active.colordepth
     LedLog("=== Perform6: GetActiveMode " + modeText + " " + colorText + " " + depthText + " ===")
-    if profile = "XT2145" and ModeLooks1080p60(modeText) then
-      LedLog("OUT|PRIMARY|ok=1|mode=" + modeText + "|depth=" + depthText)
+    if profile = "XT2145" then
+      LedLog("OUT|CANVAS|mode=" + modeText + "|depth=" + depthText + "|note=combined-multiscreen")
     else if profile <> "XT2145" and ModeLooks4k60(modeText) then
       LedLog("OUT|PRIMARY|ok=1|mode=" + modeText + "|depth=" + depthText)
     else
@@ -2371,15 +2379,29 @@ Sub LogActiveDisplayModes(vm as Object, profile as String)
     LedLog("OUT|ISSUE|GetActiveMode unavailable")
   end if
 
-  fps = vm.GetFPS()
   fpsText = ""
-  if type(fps) = "roInteger" or type(fps) = "Integer" then
-    fpsText = IntToStr(fps)
-    LedLog("=== Perform6: GetFPS " + fpsText + " ===")
-    if fps < 59 or fps > 60 then
-      LedLog("OUT|ISSUE|output fps is not 59.94/60|fps=" + fpsText)
+  if profile = "XT2145" then
+    fpsText = ModeRefreshText(ledModeText)
+    if ModeLooks60p(ledModeText) then
+      LedLog("OUT|FPS|HDMI-2|ok=1|fps=" + fpsText + "|source=screen-mode")
     else
-      LedLog("OUT|FPS|ok=1|fps=" + fpsText)
+      LedLog("OUT|ISSUE|HDMI-2 configured refresh is not 59.94/60|mode=" + ledModeText)
+    end if
+    if ModeLooks1080p60(bluefinModeText) then
+      LedLog("OUT|HDMI-1|ok=1|mode=" + bluefinModeText)
+    else
+      LedLog("OUT|ISSUE|HDMI-1 configured mode unexpected|mode=" + bluefinModeText)
+    end if
+  else
+    fps = vm.GetFPS()
+    if type(fps) = "roInteger" or type(fps) = "Integer" then
+      fpsText = IntToStr(fps)
+      LedLog("=== Perform6: GetFPS " + fpsText + " ===")
+      if fps < 59 or fps > 60 then
+        LedLog("OUT|ISSUE|output fps is not 59.94/60|fps=" + fpsText)
+      else
+        LedLog("OUT|FPS|ok=1|fps=" + fpsText)
+      end if
     end if
   end if
 
@@ -2389,9 +2411,9 @@ Sub LogActiveDisplayModes(vm as Object, profile as String)
     LedLog("OUT|GRAPHICS|" + IntToStr(rx) + "x" + IntToStr(ry))
   end if
 
-  ledModeText = ""
-  if profile = "XT2145" then ledModeText = GetConfiguredScreenMode(vm, "HDMI-2")
-  WriteOutputDiagFile(profile, modeText, ledModeText, colorText, depthText, fpsText)
+  ledBestText = ""
+  if profile = "XT2145" then ledBestText = BestModeForConnector(vm, "HDMI-2")
+  WriteOutputDiagFile(profile, modeText, bluefinModeText, ledModeText, ledBestText, colorText, depthText, fpsText)
 
   ' GetBestMode docs list "hdmi"/"vga"; multi-output also accepts HDMI-N names.
   connectors = CreateObject("roArray", 4, true)
@@ -2409,18 +2431,7 @@ Sub LogActiveDisplayModes(vm as Object, profile as String)
   i = 0
   while i < connectors.Count()
     name = connectors[i]
-    best = vm.GetBestMode(name)
-    if type(best) <> "roString" and type(best) <> "String" then best = ""
-    if Len(best) = 0 and Left(UCase(name), 4) = "HDMI" then
-      ' Docs classic connector is "hdmi"; multi-output uses HDMI-N names.
-      fallback = vm.GetBestMode("hdmi")
-      if type(fallback) = "roString" or type(fallback) = "String" then
-        if Len(fallback) > 0 then
-          best = fallback
-          LedLog("=== Perform6: GetBestMode " + name + " blank — used hdmi=" + best + " ===")
-        end if
-      end if
-    end if
+    best = BestModeForConnector(vm, name)
     if Len(best) = 0 then best = "(blank/no EDID)"
     LedLog("=== Perform6: GetBestMode " + name + "=" + best + " ===")
     if ModeLooks4k60(best) then
@@ -2428,12 +2439,22 @@ Sub LogActiveDisplayModes(vm as Object, profile as String)
     else if profile = "XT2145" and name = "HDMI-1" and Instr(1, LCase(best), "1920x1080") > 0 then
       LedLog("OUT|HDMI-1|best=1080p|" + best)
     else if Instr(1, best, "(blank") = 0 then
-      LedLog("OUT|ISSUE|" + name + " EDID best is not 4K60|" + best)
+      LedLog("OUT|" + name + "|best=" + best + "|note=1080p60-safe-fallback")
     end if
     LogDisplayIdentity(vm, name)
     i = i + 1
   end while
 End Sub
+
+Function BestModeForConnector(vm as Object, hdmiName as String) as String
+  best = vm.GetBestMode(hdmiName)
+  if type(best) <> "roString" and type(best) <> "String" then best = ""
+  if Len(best) = 0 and Left(UCase(hdmiName), 4) = "HDMI" then
+    fallback = vm.GetBestMode("hdmi")
+    if type(fallback) = "roString" or type(fallback) = "String" then best = fallback
+  end if
+  return best
+End Function
 
 Function GetConfiguredScreenMode(vm as Object, hdmiName as String) as String
   sm = vm.GetScreenModes()
@@ -2447,20 +2468,24 @@ Function GetConfiguredScreenMode(vm as Object, hdmiName as String) as String
   return modeText
 End Function
 
-Sub WriteOutputDiagFile(profile as String, primaryModeText as String, ledModeText as String, colorText as String, depthText as String, fpsText as String)
+Sub WriteOutputDiagFile(profile as String, primaryModeText as String, bluefinModeText as String, ledModeText as String, ledBestText as String, colorText as String, depthText as String, fpsText as String)
   q = Chr(34)
   ok = "0"
-  fps = Int(Val(fpsText))
-  if ModeLooks4k60(ledModeText) and fps >= 59 and fps <= 60 then ok = "1"
+  healthy = "0"
+  if ModeLooks4k60(ledModeText) then ok = "1"
+  if ModeLooks60p(ledModeText) then healthy = "1"
   json = "{"
   json = json + q + "type" + q + ":" + q + "output-diag" + q + ","
   json = json + q + "profile" + q + ":" + q + profile + q + ","
   json = json + q + "primaryMode" + q + ":" + q + primaryModeText + q + ","
+  json = json + q + "bluefinMode" + q + ":" + q + bluefinModeText + q + ","
   json = json + q + "ledMode" + q + ":" + q + ledModeText + q + ","
+  json = json + q + "ledEdidBest" + q + ":" + q + ledBestText + q + ","
   json = json + q + "colorspace" + q + ":" + q + colorText + q + ","
   json = json + q + "colordepth" + q + ":" + q + depthText + q + ","
   json = json + q + "fps" + q + ":" + q + fpsText + q + ","
-  json = json + q + "configured4k60" + q + ":" + q + ok + q
+  json = json + q + "configured4k60" + q + ":" + q + ok + q + ","
+  json = json + q + "outputHealthy" + q + ":" + q + healthy + q
   json = json + "}"
   WriteAsciiFile("SD:/perform6-output-diag.json", json)
   WriteAsciiFile("/storage/sd/perform6-output-diag.json", json)
@@ -2577,6 +2602,53 @@ Function ModeLooks1080p60(modeText as String) as Boolean
   if Instr(1, low, "1920x1080") = 0 then return false
   if Instr(1, low, "60") = 0 then return false
   return true
+End Function
+
+Function ModeLooks60p(modeText as String) as Boolean
+  low = LCase(modeText)
+  if Instr(1, low, "x59.94p") > 0 then return true
+  if Instr(1, low, "x60p") > 0 then return true
+  return false
+End Function
+
+Function ModeRefreshText(modeText as String) as String
+  low = LCase(modeText)
+  if Instr(1, low, "x59.94p") > 0 then return "59.94"
+  if Instr(1, low, "x60p") > 0 then return "60"
+  if Instr(1, low, "x50p") > 0 then return "50"
+  if Instr(1, low, "x30p") > 0 then return "30"
+  if Instr(1, low, "x29.97p") > 0 then return "29.97"
+  return "unknown"
+End Function
+
+Function OutputWidthForMode(modeText as String) as Integer
+  low = LCase(modeText)
+  if Instr(1, low, "3840x2160") > 0 then return 3840
+  if Instr(1, low, "1920x1080") > 0 then return 1920
+  return FleetOutputWidth()
+End Function
+
+Function OutputHeightForMode(modeText as String) as Integer
+  low = LCase(modeText)
+  if Instr(1, low, "3840x2160") > 0 then return 2160
+  if Instr(1, low, "1920x1080") > 0 then return 1080
+  return FleetOutputHeight()
+End Function
+
+' Deterministic XT policy: use 4K60 only when HDMI-2 EDID advertises it;
+' otherwise use the universally compatible 1080p60 fallback. Both outputs
+' remain at the same refresh rate as required by BrightSign multiscreen mode.
+Function SelectXtLedVideoMode(vm as Object, displayMode as String) as String
+  best = BestModeForConnector(vm, "HDMI-2")
+  if ModeLooks4k60(best) then
+    selected = FleetVideoMode(displayMode)
+    LedLog("OUT|EDID_SELECT|HDMI-2|best=" + best + "|selected=" + selected + "|fallback=0")
+    return selected
+  end if
+  selected = "1920x1080x60p:fullres"
+  if Len(best) = 0 then best = "unavailable"
+  LedLog("OUT|EDID_SELECT|HDMI-2|best=" + best + "|selected=" + selected + "|fallback=1")
+  return selected
 End Function
 
 Function AsIntCoord(value as Dynamic) as Integer
@@ -2698,9 +2770,10 @@ Function ApplyMultiScreenModes(vm as Object, profile as String, displayMode as S
     if idx2 < 0 then idx2 = 1
 
     modeBluefin = BluefinVideoMode()
+    modeLed = SelectXtLedVideoMode(vm, displayMode)
     bluefinW = BluefinOutputWidth()
     if not ScreenAlreadyMatches(sm[idx1], modeBluefin, 0, true) then needChange = true
-    if not ScreenAlreadyMatches(sm[idx2], mode4k, bluefinW, true) then needChange = true
+    if not ScreenAlreadyMatches(sm[idx2], modeLed, bluefinW, true) then needChange = true
 
     i = 0
     while i < sm.Count()
@@ -2713,12 +2786,12 @@ Function ApplyMultiScreenModes(vm as Object, profile as String, displayMode as S
     end while
 
     if needChange = false then
-      SafePrint("=== Perform6: XT2145 HDMI-1 1080p60 + HDMI-2 4K60 already configured ===")
+      SafePrint("=== Perform6: XT2145 EDID-compatible HDMI modes already configured ===")
       return false
     end if
 
     ConfigureOutput(sm[idx1], modeBluefin, 0, true)
-    ConfigureOutput(sm[idx2], mode4k, bluefinW, true)
+    ConfigureOutput(sm[idx2], modeLed, bluefinW, true)
     i = 0
     while i < sm.Count()
       if i <> idx1 and i <> idx2 then
@@ -2727,7 +2800,7 @@ Function ApplyMultiScreenModes(vm as Object, profile as String, displayMode as S
       i = i + 1
     end while
 
-    SafePrint("=== Perform6: SetScreenModes XT2145 HDMI-1=" + modeBluefin + " HDMI-2=" + mode4k + " (may reboot) ===")
+    SafePrint("=== Perform6: SetScreenModes XT2145 HDMI-1=" + modeBluefin + " HDMI-2=" + modeLed + " (may reboot) ===")
     vm.SetScreenModes(sm)
     return true
   end if
@@ -2832,6 +2905,11 @@ Sub Main()
 
   tileW = FleetOutputWidth()
   tileH = FleetOutputHeight()
+  if profile = "XT2145" and type(vm) = "roVideoMode" then
+    configuredLedMode = GetConfiguredScreenMode(vm, "HDMI-2")
+    tileW = OutputWidthForMode(configuredLedMode)
+    tileH = OutputHeightForMode(configuredLedMode)
+  end if
   width = tileW
   height = tileH
 
