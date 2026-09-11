@@ -10,6 +10,7 @@ import type {
 import { createId } from '../shared/createId';
 import { DEFAULT_VOLUME, clampDisplayVolume } from '../lib/displayVolumePrefs';
 import { runtimeConfig } from '../config/runtime';
+import type { MediaSourceProfile } from '../shared/types/api';
 import { isHttpUrl, toLedPlayableSrc } from '../services/playbackSrc';
 
 /** BrightAuthor-style: never HTTPS VOD on-device (no on-demand). Local SD / file:// OK. */
@@ -42,6 +43,7 @@ interface RuntimeStoreState {
     title: string | null;
     /** Local SD fallback for LED (never HTTPS on device). Simulator may use remote URL. */
     fallbackSrc: string | null;
+    sourceProfile: MediaSourceProfile | null;
   } | null;
   displayPaused: boolean;
   displayMuted: boolean;
@@ -66,6 +68,7 @@ interface RuntimeStoreState {
       mediaVersionId?: string | null;
       title?: string | null;
       fallbackSrc?: string | null;
+      sourceProfile?: MediaSourceProfile | null;
     } | null,
   ) => void;
   resetDisplayControls: () => void;
@@ -153,6 +156,7 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
           mediaVersionId: meta?.mediaVersionId ?? null,
           title: meta?.title ?? null,
           fallbackSrc: safeFallback,
+          sourceProfile: meta?.sourceProfile ?? null,
         }
       : null;
     const mediaChanged =

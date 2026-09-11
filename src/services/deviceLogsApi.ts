@@ -18,6 +18,7 @@ const CANARY_FILES = [
   'SD:/perform6-boot-canary.txt',
   'SD:/perform6-heartbeat.txt',
   'SD:/perform6-playfile-attempt.txt',
+  'SD:/perform6-output-diag.json',
 ] as const;
 
 function readCanaryEntries(): DeviceLogUploadEntry[] {
@@ -78,7 +79,9 @@ function autorunTailToNewEntries(tail: string): DeviceLogUploadEntry[] {
     level:
       message.includes('ERROR') || message.includes('FAILED') || message.includes('FN|break')
         ? 'ERROR'
-        : message.includes('unparsed') || message.includes('ping — no')
+        : message.includes('OUT|ISSUE') ||
+            message.includes('unparsed') ||
+            message.includes('ping — no')
           ? 'WARN'
           : 'INFO',
     source: 'AUTORUN' as const,

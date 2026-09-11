@@ -51,7 +51,7 @@ function assertPathRules() {
 function assertAutorun() {
   const text = fs.readFileSync(path.join(root, 'brightsign', 'autorun.brs'), 'utf8');
   const lines = text.split(/\r?\n/).length;
-  if (lines > 3400) fail(`autorun still too thick (${lines} lines) — expected thin <3400`);
+  if (lines > 3600) fail(`autorun still too thick (${lines} lines) — expected thin <3600`);
   for (const needle of [
     'BA-style zones',
     'NORMAL PATH: JS PostBSMessage',
@@ -93,6 +93,16 @@ function assertAutorun() {
   if (!text.includes('profile = "XT2145" or profile = "XC4055"')) {
     fail('autorun must poll LED fallback bus for XT+XC');
   }
+  for (const needle of [
+    'Function BluefinVideoMode()',
+    'return "1920x1080x60p:fullres"',
+    'ledRect = CreateObject("roRectangle", bluefinW, 0, tileW, tileH)',
+    'modeLed = SelectXtLedVideoMode(vm, displayMode)',
+    'ConfigureOutput(sm[idx2], modeLed, bluefinW, true)',
+    'OUT|EDID_SELECT|HDMI-2',
+  ]) {
+    if (!text.includes(needle)) fail(`XT safe mixed-resolution layout missing: ${needle}`);
+  }
   ok(`autorun BA-style zones (${lines} lines)`);
 }
 
@@ -117,6 +127,7 @@ function assertJs() {
     fail('XT bridge must be BA-style (PostBSMessage primary)');
   }
   if (!xt.includes('ack-timeout')) fail('XT bridge must SD-fallback on ack-timeout');
+  if (!xt.includes('MEDIA|SOURCE|')) fail('XT bridge must report source media profile');
 
   const xc = fs.readFileSync(path.join(root, 'src', 'platform', 'xcOutputBridge.ts'), 'utf8');
   if (!xc.includes('PostBSMessage')) fail('XC bridge must PostBSMessage');

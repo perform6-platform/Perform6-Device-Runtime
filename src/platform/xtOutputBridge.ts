@@ -39,6 +39,7 @@ let pendingSdFallback = false;
 let nativeTelemetrySignature = '';
 let nativeTelemetryStartedAt = 0;
 let nativeTelemetryScreenKey = '';
+let lastSourceTelemetrySignature = '';
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
@@ -73,6 +74,10 @@ function buildPayload(): {
   muted: string;
   volumePercent: string;
   restartNonce: string;
+  sourceCodec: string;
+  sourceResolution: string;
+  sourceFps: string;
+  sourcePixelFormat: string;
 } {
   const state = useRuntimeStore.getState();
   const meta = state.displayPlaybackMeta;
@@ -96,6 +101,12 @@ function buildPayload(): {
         : Math.max(0, Math.min(100, Math.round(state.displayVolume * 100))),
     ),
     restartNonce,
+    sourceCodec: meta?.sourceProfile?.codec ?? '',
+    sourceResolution: meta?.sourceProfile?.resolution ?? '',
+    sourceFps: meta?.sourceProfile?.frameRate == null
+      ? ''
+      : String(meta.sourceProfile.frameRate),
+    sourcePixelFormat: meta?.sourceProfile?.pixelFormat ?? '',
   };
 }
 
@@ -113,6 +124,32 @@ function writeSdFallback(
   };
   if (fileOk) {
     console.info('[Perform6] XT HDMI-2 command persisted (native SD transport)', detail);
+    const sourceSignature = [
+      payload.mediaVersionId,
+      payload.sourceResolution,
+      payload.sourceFps,
+      payload.sourceCodec,
+      payload.sourcePixelFormat,
+    ].join('|');
+    if (sourceSignature !== lastSourceTelemetrySignature) {
+      lastSourceTelemetrySignature = sourceSignature;
+      const sourceFps = Number(payload.sourceFps);
+      const sourceVerified = Boolean(
+        payload.sourceResolution &&
+        Number.isFinite(sourceFps) &&
+        payload.sourceCodec &&
+        payload.sourcePixelFormat,
+      );
+      const brightSign4k60 =
+        /^(3840|4096)x2160$/i.test(payload.sourceResolution) &&
+        sourceFps >= 59 &&
+        sourceFps <= 60.5 &&
+        /^(h264|hevc)$/i.test(payload.sourceCodec) &&
+        payload.sourcePixelFormat.toLowerCase() === 'yuv420p';
+      console.info(
+        `[Perform6] MEDIA|SOURCE|id=${payload.mediaVersionId || 'unknown'}|resolution=${payload.sourceResolution || 'unknown'}|fps=${payload.sourceFps || 'unknown'}|codec=${payload.sourceCodec || 'unknown'}|pixelFormat=${payload.sourcePixelFormat || 'unknown'}|verified=${sourceVerified ? 1 : 0}|brightsign4k60=${brightSign4k60 ? 1 : 0}`,
+      );
+    }
   } else {
     console.warn('[Perform6] XT HDMI-2 command persistence failed', detail);
   }
@@ -164,7 +201,7 @@ function reportNativeHdmiTelemetry(status: ReturnType<typeof readXtPlaybackStatu
     positionMs: nativeTelemetryStartedAt > 0 ? Date.now() - nativeTelemetryStartedAt : 0,
     durationMs: null,
     isPlaying: started && !ended && !state.displayPaused,
-    output: 'HDMI-2',
+    output: 'HDMI-2 native (EDID-compatible mode)',
     source: 'NATIVE_HDMI',
     requestId: `xt-${nonce}`,
     stage: ended ? 'ended' : (status.state ?? (started ? 'started' : 'pending')),
