@@ -2353,9 +2353,11 @@ Sub LogActiveDisplayModes(vm as Object, profile as String)
 
   bluefinModeText = ""
   ledModeText = ""
+  ledBestText = ""
   if profile = "XT2145" then
     bluefinModeText = GetConfiguredScreenMode(vm, "HDMI-1")
     ledModeText = GetConfiguredScreenMode(vm, "HDMI-2")
+    ledBestText = BestModeForConnector(vm, "HDMI-2")
   end if
 
   modeText = ""
@@ -2392,6 +2394,11 @@ Sub LogActiveDisplayModes(vm as Object, profile as String)
     else
       LedLog("OUT|ISSUE|HDMI-1 configured mode unexpected|mode=" + bluefinModeText)
     end if
+    if ModeLooks4k60(ledBestText) and not ModeLooks4k60(ledModeText) then
+      LedLog("OUT|ISSUE|HDMI-2 mode does not match 4K60 EDID selection|best=" + ledBestText + "|mode=" + ledModeText)
+    else if not ModeLooks4k60(ledBestText) and not ModeLooks1080p60(ledModeText) then
+      LedLog("OUT|ISSUE|HDMI-2 mode does not match safe EDID fallback|best=" + ledBestText + "|mode=" + ledModeText)
+    end if
   else
     fps = vm.GetFPS()
     if type(fps) = "roInteger" or type(fps) = "Integer" then
@@ -2411,8 +2418,6 @@ Sub LogActiveDisplayModes(vm as Object, profile as String)
     LedLog("OUT|GRAPHICS|" + IntToStr(rx) + "x" + IntToStr(ry))
   end if
 
-  ledBestText = ""
-  if profile = "XT2145" then ledBestText = BestModeForConnector(vm, "HDMI-2")
   WriteOutputDiagFile(profile, modeText, bluefinModeText, ledModeText, ledBestText, colorText, depthText, fpsText)
 
   ' GetBestMode docs list "hdmi"/"vga"; multi-output also accepts HDMI-N names.
@@ -2473,7 +2478,8 @@ Sub WriteOutputDiagFile(profile as String, primaryModeText as String, bluefinMod
   ok = "0"
   healthy = "0"
   if ModeLooks4k60(ledModeText) then ok = "1"
-  if ModeLooks60p(ledModeText) then healthy = "1"
+  if ModeLooks4k60(ledBestText) and ModeLooks4k60(ledModeText) then healthy = "1"
+  if not ModeLooks4k60(ledBestText) and ModeLooks1080p60(ledModeText) then healthy = "1"
   json = "{"
   json = json + q + "type" + q + ":" + q + "output-diag" + q + ","
   json = json + q + "profile" + q + ":" + q + profile + q + ","
