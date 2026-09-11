@@ -4,12 +4,14 @@ import { apiFetchData } from './api';
 import { flushDeviceLogs } from './deviceLogsApi';
 import { peekDeviceLogCount } from './deviceLogCollector';
 import type { DeviceRemoteCommand } from './remoteCommandBridge';
+import type { RecoveryProvisioningConfiguration } from './recoveryProvisioning';
 import { getKeepaliveBridgeSnapshot } from './bridgeKeepalive';
 import { getTouchUiState } from './touchUiTelemetry';
 
 export interface DeviceHeartbeatResult {
   success: boolean;
   remoteCommands?: DeviceRemoteCommand[];
+  recovery?: RecoveryProvisioningConfiguration | null;
 }
 
 export async function sendDeviceHeartbeat(

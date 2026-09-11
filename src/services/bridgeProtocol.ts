@@ -43,6 +43,7 @@ export const BridgeMsg = {
   OPS_RELOAD: 'led-ops-reload',
   OPS_WRITE: 'led-ops-write',
   OPS_CONFIG: 'led-ops-config',
+  RECOVERY_CONFIG: 'led-recovery-config',
 } as const;
 
 export type BridgeMsgType = (typeof BridgeMsg)[keyof typeof BridgeMsg];

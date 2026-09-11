@@ -32,6 +32,7 @@ import { registerDeviceRemoteControlHooks } from '../services/deviceRemoteContro
 import type { RemoteSyncNowOptions } from '../services/deviceRemoteControl';
 import { cancelOtaInstall } from '../services/otaApply';
 import { processRemoteCommands } from '../services/remoteCommandBridge';
+import { provisionRecoveryAfterHealthyHeartbeat } from '../services/recoveryProvisioning';
 import { startBridgeKeepalive } from '../services/bridgeKeepalive';
 import { probeBrightSignAssetPool } from '../services/assetPoolProbe';
 import {
@@ -1144,6 +1145,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
             if (result.remoteCommands?.length) {
               void processRemoteCommands(result.remoteCommands);
             }
+            provisionRecoveryAfterHealthyHeartbeat(result.recovery);
           })
           .catch((error) => {
             setHeartbeat({ at: new Date().toISOString(), ok: false });

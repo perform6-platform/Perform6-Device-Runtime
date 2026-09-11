@@ -2008,6 +2008,45 @@ Sub EnableDiagnosticWebServer()
   end if
 End Sub
 
+' Persist the BrightSignOS Recovery URL only after the fully running JS app has
+' authenticated with Perform6 and proved the duplex bridge healthy. This does
+' not reboot, touch media, format storage, or activate encryption.
+Sub HandleRecoveryConfig(payload as Object)
+  url = PayloadString(payload, "url")
+  serial = PayloadString(payload, "serial")
+  safeVersion = PayloadString(payload, "safeVersion")
+  trustedPrefix = "https://portal.perform6.com/api/v1/recovery/brightsign/"
+
+  if Instr(1, url, trustedPrefix) <> 1 or Instr(1, url, "?token=") = 0 then
+    LedLog("RECOVERY|CONFIG|REJECTED|untrusted-url")
+    return
+  end if
+
+  reg = CreateObject("roRegistrySection", "networking")
+  if type(reg) <> "roRegistrySection" then
+    LedLog("RECOVERY|CONFIG|FAILED|registry-unavailable")
+    return
+  end if
+
+  current = reg.Read("ru")
+  if type(current) = "roString" or type(current) = "String" then
+    if current = url then
+      LedLog("RECOVERY|CONFIG|READY|serial=" + serial + "|safe=" + safeVersion)
+      return
+    end if
+  end if
+
+  reg.Write("ru", url)
+  reg.Flush()
+  verified = reg.Read("ru")
+  if (type(verified) = "roString" or type(verified) = "String") and verified = url then
+    WriteAsciiFile("SD:/perform6-recovery-provisioned.txt", "ready")
+    LedLog("RECOVERY|CONFIG|PROVISIONED|serial=" + serial + "|safe=" + safeVersion)
+  else
+    LedLog("RECOVERY|CONFIG|FAILED|verify")
+  end if
+End Sub
+
 Function CollectDeviceIdentity() as Object
   info = CreateObject("roAssociativeArray")
   info.serial = ""
@@ -3248,6 +3287,8 @@ Sub Main()
               HandleLedOpsReload(payload, ledStates)
             else if msgType = "led-ops-write" then
               HandleLedOpsWrite(payload)
+            else if msgType = "led-recovery-config" then
+              HandleRecoveryConfig(payload)
             else if Len(msgType) = 0 then
               LedLog("=== Perform6: JS message empty type ===")
             else
