@@ -12,6 +12,8 @@ export interface RecoveryProvisioningConfiguration {
 }
 
 let lastPostedUrl = '';
+let lastPostedAt = 0;
+const RETRY_INTERVAL_MS = 60_000;
 
 function isTrustedRecoveryUrl(value: string): boolean {
   try {
@@ -36,7 +38,14 @@ function isTrustedRecoveryUrl(value: string): boolean {
 export function provisionRecoveryAfterHealthyHeartbeat(
   config: RecoveryProvisioningConfiguration | null | undefined,
 ): boolean {
-  if (!config || config.recoveryUrl === lastPostedUrl) return false;
+  if (!config) return false;
+  const now = Date.now();
+  if (
+    config.recoveryUrl === lastPostedUrl &&
+    now - lastPostedAt < RETRY_INTERVAL_MS
+  ) {
+    return false;
+  }
   if (!isTrustedRecoveryUrl(config.recoveryUrl)) {
     console.warn('[Perform6] BOS recovery URL rejected by runtime trust policy');
     return false;
@@ -56,6 +65,7 @@ export function provisionRecoveryAfterHealthyHeartbeat(
       safeVersion: config.safeVersion,
     });
     lastPostedUrl = config.recoveryUrl;
+    lastPostedAt = now;
     console.info('[Perform6] BOS recovery provisioning requested after healthy heartbeat', {
       serial: config.serial,
       safeVersion: config.safeVersion,
@@ -69,4 +79,5 @@ export function provisionRecoveryAfterHealthyHeartbeat(
 
 export function resetRecoveryProvisioningForTests(): void {
   lastPostedUrl = '';
+  lastPostedAt = 0;
 }
