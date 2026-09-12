@@ -24,11 +24,29 @@ const allowedRuntimeFiles = new Set([
   'src/pages/display/XT2145Display.tsx',
   'src/platform/xcOutputBridge.ts',
   'src/platform/xtOutputBridge.ts',
+  'src/platform/bsMessagePort.ts',
+  'src/platform/ledPlaybackFile.ts',
+  'src/services/autorunCapabilities.ts',
+  'src/services/autorunDiag.ts',
+  'src/services/bridgeKeepalive.ts',
   'src/services/deviceLogsApi.ts',
   'src/services/assetPoolBootstrap.ts',
   'src/services/mediaAssetPool.ts',
+  'src/services/mediaEncryption.ts',
+  'src/services/otaAssetPool.ts',
   'src/services/outputResolutionProbe.ts',
+  'src/services/sync.ts',
+  'src/services/syncEngine.ts',
+  'src/shared/types/api.ts',
   'src/shared/bluefinViewport.ts',
+]);
+
+// Retained only as evidence for the completed 1.5.44–1.5.46 lab probes.
+// The release builder packages none of these into current candidates.
+const historicalLabOnly = new Set([
+  'brightsign/encryption-test/perform6-encrypted-probe.p6enc',
+  'src/services/encryptedPlaybackInteropProbe.ts',
+  'src/services/mediaKeyInteropProbe.ts',
 ]);
 
 function fail(message) {
@@ -43,7 +61,8 @@ function git(args) {
 const changed = git(['diff', '--name-only', baseline, '--'])
   .split(/\r?\n/)
   .filter(Boolean)
-  .filter((file) => !file.startsWith('scripts/') && file !== 'package.json');
+  .filter((file) => !file.startsWith('scripts/') && file !== 'package.json')
+  .filter((file) => !historicalLabOnly.has(file));
 
 for (const file of changed) {
   if (!allowedRuntimeFiles.has(file)) {
@@ -141,10 +160,7 @@ const xtBridge = fs.readFileSync(
   'utf8',
 );
 for (const marker of [
-  "'start-here': 'SCREEN_2'",
-  "phase1: 'SCREEN_3'",
-  "phase2: 'SCREEN_4'",
-  "'full-program': 'SCREEN_5'",
+  "const screenKey = 'SCREEN_2'",
   "source: 'NATIVE_HDMI'",
   "output: 'HDMI-2 native (configured 3840x2160x60p)'",
   'reportNativeHdmiTelemetry(status)',
@@ -152,6 +168,23 @@ for (const marker of [
   if (!xtBridge.includes(marker)) {
     fail(`XT native HDMI telemetry invariant missing: ${marker}`);
   }
+}
+for (const obsolete of [
+  "phase1: 'SCREEN_3'",
+  "phase2: 'SCREEN_4'",
+  "'full-program': 'SCREEN_5'",
+]) {
+  if (xtBridge.includes(obsolete)) {
+    fail(`XT program slot still masquerades as a physical output: ${obsolete}`);
+  }
+}
+
+const releaseBuilder = fs.readFileSync(
+  path.join(root, 'scripts', 'build-profile-zip.mjs'),
+  'utf8',
+);
+if (!releaseBuilder.includes("version === '1.5.45' || version === '1.5.46'")) {
+  fail('historical encrypted fixture packaging is not constrained to completed lab versions');
 }
 
 const homeHero = fs.readFileSync(
