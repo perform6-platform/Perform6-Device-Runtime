@@ -22,7 +22,6 @@ import {
   clearScreenPlayback,
   reportScreenPlayback,
 } from '../services/playbackTelemetry';
-import { getTouchUiState } from '../services/touchUiTelemetry';
 import { useRuntimeStore } from '../stores/runtimeStore';
 import { encryptionAssetId } from '../services/mediaEncryption';
 
@@ -147,15 +146,10 @@ function reportNativeHdmiTelemetry(status: ReturnType<typeof readXtPlaybackStatu
   const started = isLedStatusStarted(status);
   const ended = status.ended === '1' || status.state === 'ended';
   const failed = status.state === 'error' || status.ok === '0';
-  const slot = getTouchUiState().currentContent?.slot ?? 'touch-default';
-  const screenKeyBySlot: Record<string, string> = {
-    'touch-default': 'SCREEN_1',
-    'start-here': 'SCREEN_2',
-    phase1: 'SCREEN_3',
-    phase2: 'SCREEN_4',
-    'full-program': 'SCREEN_5',
-  };
-  const screenKey = screenKeyBySlot[slot] ?? 'SCREEN_2';
+  // XT2145 has two physical outputs. Program slots (Start Here, Phase 1,
+  // Phase 2, Full Program) all play through the same LED output and must not
+  // be reported as additional screens.
+  const screenKey = 'SCREEN_2';
   if (nativeTelemetryScreenKey && nativeTelemetryScreenKey !== screenKey) {
     clearScreenPlayback(nativeTelemetryScreenKey);
   }
