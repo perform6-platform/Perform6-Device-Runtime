@@ -47,3 +47,35 @@ this gate.
 Existing Default and Start Here files are expected to remain plaintext because
 they predate encryption. No full-library replacement is permitted until the
 three post-encryption assets pass the physical verification.
+
+## Mandatory pre-OTA package gate
+
+Every XT candidate must pass `scripts/assert-xt-ota-candidate.mjs` against the
+final folder and ZIP before upload. The package builder runs this automatically
+before its R2 upload step and fails closed. The gate requires:
+
+- byte-identical `autorun.brs` relative to the field-proven 1.5.23 baseline;
+- zero unresolved bare BrightScript calls;
+- successful detection of the historical 1.5.33 undefined `JsonEscape` failure;
+- only the two reviewed clean-card media-pool runtime deltas;
+- no encryption, formatting, cache wipe, sync-on-boot, or automatic OTA action;
+- exact folder/ZIP file and SHA-256 parity with no extra paths or symlinks.
+
+Passing this gate reduces preventable packaging and startup risk; it does not
+claim that any field OTA has literally zero hardware, power, storage, or OS risk.
+
+## Authoritative field evidence
+
+The CMS sync-job label is advisory and must not be used alone to approve an OTA,
+retry, cache clear, or encryption step. A failed job can remain visible after a
+later device-side retry succeeds. Require all applicable device evidence:
+
+- current heartbeat and runtime version;
+- AssetPool collection/file result;
+- AssetRealizer completion;
+- SD inventory or `SD cache reconcile` counts;
+- a local `SD:/perform6-media/*.mp4` playback path with `PlayFile ... ok=1`.
+
+On 2026-09-12, the CMS still displayed Failed after the 1.5.23 player retried,
+realized eight files, reconciled `filesOnSd: 8`, and played a local MP4. That
+incident is the regression case for this rule.

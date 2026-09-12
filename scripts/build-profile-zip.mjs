@@ -556,6 +556,18 @@ function main() {
   // Optional single-file package for cloud / R2 / email
   zipDirectory(outFolder, outZip);
 
+  // A field XT release is not uploadable until the final folder and ZIP pass
+  // the fail-closed safety inspection. This runs after packaging and before
+  // any R2 upload, so the exact bytes destined for production are checked.
+  if (profileKey === 'XT2145') {
+    run(process.execPath, [
+      path.join(root, 'scripts', 'assert-xt-ota-candidate.mjs'),
+      version,
+      outFolder,
+      outZip,
+    ]);
+  }
+
   uploadProfileToR2(profile.slug);
 
   console.log(`\n[release:zip] Folder: ${path.relative(root, outFolder)}`);
