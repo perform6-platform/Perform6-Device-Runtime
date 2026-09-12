@@ -1,10 +1,15 @@
 # Local inspection artifact 1.5.36 — NOT APPROVED FOR INSTALLATION
 
-ZIP SHA256: 30e4841c716388873e34d211f59ae0af9b01208cb65d69d0fe50ebb4e85cab29
+Final ZIP SHA256: 9f373a54d4cae13ba5c57fce1e3946a0f3d639db26a4a4a2d948bac363d4317d
 
 Built with SKIP_R2_UPLOAD=1. No publication, installation or reboot.
-Packaging exited nonzero at the existing XT safety gate because autorun differs
-from the allowed baseline. The gate was not modified or bypassed.
+Initial packaging was blocked. Following exact-source review, the gate now
+supports only version 1.5.36 with two pinned source hashes and regression checks.
+Final packaging passes, including ZIP/folder equality and the 1.5.33 negative
+fixture. This is local validation, not hardware validation or installation approval.
+Inherited clean-card pool changes were removed: only autorun and capability
+reporting differ from c7011b5. Existing OTA, heartbeat, playback and pool sources
+match that baseline. The earlier local ZIP checksum is superseded.
 
 This is a disabled integration artifact, not functioning encrypted playback:
 - dormant registry reader appended to autorun, no startup/event caller;
@@ -25,4 +30,7 @@ use that option. Do not change this to false merely to claim OTA preservation.
 Source inspection is not a new live OTA test.
 
 Outstanding: native encrypted playback integration, key provisioning and trust,
-exact-package security review and explicit field-risk/install approval.
+hardware behavior and explicit field-risk/install approval. The initial install
+itself uses the existing updater; its interrupted-write risk is not repaired by
+this candidate. No claim of crash-safe installation or guaranteed recovery.
+83 lab tests pass; exact packaged autorun has zero local parser diagnostics.

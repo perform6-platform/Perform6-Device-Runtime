@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
 const source = fs.readFileSync('brightsign/autorun.brs', 'utf8');
-const baseline = execFileSync('git', ['show', '7d9dfad:brightsign/autorun.brs'], { encoding: 'utf8' });
+const baseline = execFileSync('git', ['show', 'c7011b5:brightsign/autorun.brs'], { encoding: 'utf8' });
 const marker = "\n' Dormant helpers. No event or startup path invokes these in this candidate.\n";
 test('existing autorun is byte-identical except informational hello fields', () => {
   const parts = source.split(marker);
@@ -18,6 +18,10 @@ test('existing autorun is byte-identical except informational hello fields', () 
 test('dormant helper has no caller in existing autorun', () => {
   const active = source.split(marker)[0];
   assert.equal(active.includes('P6Lab'), false);
+});
+test('only reviewed probe files differ from 1.5.23 runtime', () => {
+  const changed = execFileSync('git', ['diff', '--name-only', 'c7011b5', '--', 'src', 'brightsign'], { encoding: 'utf8' }).trim().split('\n').sort();
+  assert.deepEqual(changed, ['brightsign/autorun.brs', 'src/services/autorunCapabilities.ts']);
 });
 test('shipped dormant reader matches independently inspected source', () => {
   const standalone = fs.readFileSync('scripts/encryption-lab/native-key-reader.brs', 'utf8');

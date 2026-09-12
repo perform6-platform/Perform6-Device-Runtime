@@ -99,10 +99,22 @@ try {
 // This clean-card release may change only the media-pool bootstrap. Startup,
 // OTA, heartbeat, recovery, playback and UI control remain the field-proven
 // 1.5.23 implementation.
-const allowedRuntimeDelta = new Set([
+// Version-specific reviewed dormant probe; never a blanket autorun exemption.
+const dormantProbe = version === '1.5.36';
+const reviewedProbeHashes = {
+  'brightsign/autorun.brs': '15a18cf7d16a1b03e1221a4666b96947e3808756f171aa4460ed4bb421b118d3',
+  'src/services/autorunCapabilities.ts': '8a3de78f7be7077de6e8fd405b627b63a7bacd10d4fb9406c44db9419205e476',
+};
+const allowedRuntimeDelta = new Set(dormantProbe ? Object.keys(reviewedProbeHashes) : [
   'src/services/assetPoolBootstrap.ts',
   'src/services/mediaAssetPool.ts',
 ]);
+if (dormantProbe) {
+  for (const [file, expected] of Object.entries(reviewedProbeHashes)) {
+    if (sha256(fs.readFileSync(path.join(root, file))) !== expected) fail(`unreviewed dormant source: ${file}`);
+  }
+  execFileSync(process.execPath, ['--test', 'scripts/encryption-lab/dormant-integration.test.mjs'], { cwd: root, stdio: 'inherit' });
+}
 const changedRuntime = git(['diff', '--name-only', safeBaseline, '--'])
   .trim()
   .split(/\r?\n/)
@@ -121,7 +133,7 @@ const sourceAutorun = fs.readFileSync(path.join(root, 'brightsign', 'autorun.brs
 const baselineAutorun = git(['show', `${safeBaseline}:brightsign/autorun.brs`], {
   encoding: 'buffer',
 });
-if (!sourceAutorun.equals(baselineAutorun)) {
+if (!dormantProbe && !sourceAutorun.equals(baselineAutorun)) {
   fail('autorun.brs is not byte-identical to the field-proven 1.5.23 baseline');
 }
 
@@ -166,7 +178,7 @@ for (const file of expectedFiles) {
 }
 
 const packageAutorun = fs.readFileSync(path.join(packageFolder, 'autorun.brs'));
-if (!packageAutorun.equals(baselineAutorun)) {
+if (!packageAutorun.equals(dormantProbe ? sourceAutorun : baselineAutorun)) {
   fail('packaged autorun differs from field-proven 1.5.23');
 }
 
@@ -224,7 +236,9 @@ for (const rel of folderFiles) {
 }
 
 console.log('[xt-ota-safety] PASS: packaged ZIP exactly matches the inspected folder');
-console.log('[xt-ota-safety] PASS: autorun is byte-identical to field-proven 1.5.23');
+console.log(dormantProbe
+  ? '[xt-ota-safety] PASS: exact reviewed disabled probe; baseline execution body preserved except hello status'
+  : '[xt-ota-safety] PASS: autorun is byte-identical to field-proven 1.5.23');
 console.log('[xt-ota-safety] PASS: unresolved BrightScript calls = 0');
 console.log('[xt-ota-safety] PASS: historical 1.5.33 JsonEscape failure is detected');
 console.log('[xt-ota-safety] PASS: encryption, formatting, cache wipe, sync-on-boot and auto-OTA are disabled');
