@@ -33,8 +33,8 @@ test('temporary-write failure retains active file', () => {
   const f = fixture('write'); assert.throws(f.run);
   assert.equal(f.files.get('/active'), 'old');
 });
-test('KNOWN HAZARD: rename failure after unlink leaves active path absent', () => {
+test('rename failure retains the active path and leaves the complete temporary file', () => {
   const f = fixture('rename'); assert.throws(f.run);
-  assert.equal(f.files.has('/active'), false);
+  assert.equal(f.files.get('/active'), 'old');
   assert.equal(f.files.get('/active.perform6-new'), 'new');
 });

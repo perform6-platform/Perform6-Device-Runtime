@@ -13,6 +13,7 @@ import type { DisplayTarget, HardwareProfile } from '../shared/types';
 
 export interface SyncCheckOptions {
   cachedMediaVersionIds?: string[];
+  encryptedCachedMediaVersionIds?: string[];
   displayTarget?: DisplayTarget;
   clusterMember?: SyncCheckRequest['clusterMember'];
   hardwareProfile?: HardwareProfile;
@@ -50,6 +51,7 @@ export async function checkSync(
   const body: SyncCheckRequest = {
     runtimeVersion: runtimeConfig.runtimeVersion,
     cachedMediaVersionIds: options.cachedMediaVersionIds ?? [],
+    encryptedCachedMediaVersionIds: options.encryptedCachedMediaVersionIds ?? [],
   };
 
   if (displayTarget) {

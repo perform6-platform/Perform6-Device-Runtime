@@ -208,6 +208,8 @@ Function TryCreateHtmlWidget(rect as Object, msgPort as Object, url as String) a
 
   cfg = CreateObject("roAssociativeArray")
   cfg.url = url
+  ' BrightSign roHtmlWidget contract: when initialization properties are used,
+  ' supply port here instead of calling SetPort() after construction.
   cfg.port = msgPort
   cfg.mouse_enabled = true
   cfg.brightsign_js_objects_enabled = true
@@ -215,8 +217,8 @@ Function TryCreateHtmlWidget(rect as Object, msgPort as Object, url as String) a
   cfg.nodejs_enabled = true
   html = CreateObject("roHtmlWidget", rect, cfg)
   if type(html) = "roHtmlWidget" then
-    AttachHtmlWidgetPort(html, msgPort)
-    SafePrint("=== Perform6: HtmlWidget modern config OK (nodejs) ===")
+    LedLog("BRIDGE|WIDGET_PORT|attach=constructor-only|nodejs=1")
+    SafePrint("=== Perform6: HtmlWidget modern config OK (nodejs; constructor port only) ===")
     return html
   end if
 
@@ -227,8 +229,7 @@ Function TryCreateHtmlWidget(rect as Object, msgPort as Object, url as String) a
   cfg2.javascript_enabled = true
   html = CreateObject("roHtmlWidget", rect, cfg2)
   if type(html) = "roHtmlWidget" then
-    AttachHtmlWidgetPort(html, msgPort)
-    SafePrint("=== Perform6: HtmlWidget minimal config OK ===")
+    SafePrint("=== Perform6: HtmlWidget minimal config OK (constructor port only) ===")
     return html
   end if
 
@@ -240,8 +241,7 @@ Function TryCreateHtmlWidget(rect as Object, msgPort as Object, url as String) a
   cfg3.javascript_enabled = true
   html = CreateObject("roHtmlWidget", rect, cfg3)
   if type(html) = "roHtmlWidget" then
-    AttachHtmlWidgetPort(html, msgPort)
-    SafePrint("=== Perform6: HtmlWidget url+port config OK ===")
+    SafePrint("=== Perform6: HtmlWidget url+port config OK (constructor port only) ===")
     return html
   end if
 
@@ -381,7 +381,15 @@ End Function
 Sub PostJsToWidget(html as Object, msg as Object)
   if type(html) <> "roHtmlWidget" then return
   if type(msg) <> "roAssociativeArray" then return
-  html.PostJSMessage(msg)
+  accepted = html.PostJSMessage(msg)
+  ' Only hello replies: fixed status, never payloads or key material.
+  if PayloadString(msg, "type") = "led-hello-ack" then
+    if accepted = true then
+      LedLog("BRIDGE|POST_JS|hello-ack|accepted=1|delivery=unconfirmed")
+    else
+      LedLog("BRIDGE|POST_JS|hello-ack|accepted=0|delivery=unconfirmed")
+    end if
+  end if
 End Sub
 
 ' One PostJSMessage per event — BrightSign: one port per widget.
@@ -1036,6 +1044,9 @@ Sub HandleLedHello(payload as Object, states as Object)
   ' Always log first ack + every 10th / version change so SD log proves JS→autorun.
   if helloCount = 1 or helloCount mod 10 = 0 or jsVersion <> lastJs then
     g.p6LastHelloJs = jsVersion
+    ' Independent SD-log evidence; contains no key material and does not
+    ' depend on the JS return channel. Constructor readiness is not playback.
+    LedLog("MEDIA|PROBE|disabled|registry=" + cryptoProbe.registry + "|keyContainer=" + cryptoProbe.keyContainer)
     if Len(jsVersion) > 0 then
       LedLog("=== Perform6: led-hello-ack protocol=2 js=" + jsVersion + " ===")
     else
@@ -1412,6 +1423,49 @@ Sub PlayNativeSrc(st as Object, src as String, msgPort as Object, states as Obje
   FlushLedLog()
 End Sub
 
+Function PlayEncryptedNativeSrc(st as Object, src as String, assetId as String) as Boolean
+  if type(st) <> "roAssociativeArray" or type(st.vp) <> "roVideoPlayer" then return false
+  if not P6MediaAssetIdValid(assetId) then return false
+  src = NormalizeLocalSrc(src)
+  if IsNetworkSrc(src) or not IsPlayableNativeSrc(src) then return false
+  material = P6LabReadPlaybackKey(assetId)
+  if type(material) <> "roByteArray" or material.Count() <> 32 then
+    material = invalid
+    LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=rejected|reason=key-unavailable|asset=" + assetId + "|secretLogged=0")
+    return false
+  end if
+  params = CreateObject("roAssociativeArray")
+  params.Filename = src
+  params.ProbeString = "mp4"
+  params.EncryptionAlgorithm = "AesCtr"
+  params.EncryptionKey = material
+  accepted = st.vp.PlayFile(params)
+  params = invalid
+  material = invalid
+  if accepted = true then
+    st.playingUrl = src
+    st.idleShown = false
+    st.vp.SetLoopMode(st.loopMode)
+    if st.paused then
+      st.vp.Pause()
+    else
+      st.vp.Resume()
+    end if
+    LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=native-accepted|asset=" + assetId + "|secretLogged=0")
+  else
+    LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=native-rejected|asset=" + assetId + "|secretLogged=0")
+  end if
+  FlushLedLog()
+  return accepted = true
+End Function
+
+Function P6EncryptedPlaybackReady(assetId as String) as Boolean
+  material = P6LabReadPlaybackKey(assetId)
+  ready = type(material) = "roByteArray" and material.Count() = 32
+  material = invalid
+  return ready
+End Function
+
 Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, states as Object)
   TraceFnEnter("ApplyNativePlayback", st.key)
   if type(st) <> "roAssociativeArray" then
@@ -1425,11 +1479,29 @@ Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, stat
     TraceFnExit("ApplyNativePlayback", "no-vp")
     return
   end if
-
   src = PayloadString(payload, "src")
   fallbackSrc = PayloadString(payload, "fallbackSrc")
   mediaId = PayloadString(payload, "mediaVersionId")
+  encryptionAssetId = PayloadString(payload, "encryptionAssetId")
   TraceLog("PLAY|ApplyNative|src=" + src + "|fb=" + fallbackSrc + "|id=" + mediaId)
+  ' Fail before mutating transport state. A missing/mismatched key must leave
+  ' the currently playing plaintext asset and all control paths untouched.
+  if Len(encryptionAssetId) > 0 then
+    if encryptionAssetId <> mediaId then
+      LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=rejected|reason=id-mismatch|secretLogged=0")
+      PostPlaybackAck(states, st, payload, false, "encrypted id mismatch")
+      WriteXtPlaybackStatus(st, "encrypted id mismatch", false)
+      TraceFnExit("ApplyNativePlayback", "encrypted-id-mismatch")
+      return
+    end if
+    if P6EncryptedPlaybackReady(encryptionAssetId) <> true then
+      LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=rejected|reason=key-unavailable|asset=" + encryptionAssetId + "|secretLogged=0")
+      PostPlaybackAck(states, st, payload, false, "encrypted key unavailable")
+      WriteXtPlaybackStatus(st, "encrypted key unavailable", false)
+      TraceFnExit("ApplyNativePlayback", "encrypted-key-unavailable")
+      return
+    end if
+  end if
   if not IsPlayableNativeSrc(src) then
     TraceLog("PLAY|gate|primary-not-playable")
     src = fallbackSrc
@@ -1474,7 +1546,18 @@ Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, stat
     st.playingUrl = ""
   end if
 
-  PlayNativeSrc(st, src, msgPort, states)
+  if Len(encryptionAssetId) > 0 then
+    encryptedOk = PlayEncryptedNativeSrc(st, src, encryptionAssetId)
+    if encryptedOk <> true then
+      ' Preserve the already-running source on an encrypted swap failure.
+      PostPlaybackAck(states, st, payload, false, "encrypted play rejected")
+      WriteXtPlaybackStatus(st, "encrypted play rejected", false)
+      TraceFnExit("ApplyNativePlayback", "encrypted-play-rejected")
+      return
+    end if
+  else
+    PlayNativeSrc(st, src, msgPort, states)
+  end if
   ApplyLedVolume(st, payload)
   ApplyLedPauseState(st)
   ok = false
@@ -2357,6 +2440,13 @@ Sub LogDisplayIdentity(vm as Object, hdmiName as String)
   LedLog("=== Perform6: " + hdmiName + " EDID " + manufacturer + " / " + monitorName + " ===")
 End Sub
 
+Function DiagnosticModeIs60p(modeText as String, dimensions as String) as Boolean
+  mode = LCase(modeText)
+  suffix = Instr(1, mode, ":")
+  if suffix > 0 then mode = Left(mode, suffix - 1)
+  return mode = dimensions + "x60p" or mode = dimensions + "x59.94p"
+End Function
+
 ' Report configured multi-screen modes honestly. On XT, GetActiveMode/GetFPS
 ' describe the primary/canvas state; HDMI-2 is verified from GetScreenModes.
 Sub LogActiveDisplayModes(vm as Object, profile as String)
@@ -2371,9 +2461,16 @@ Sub LogActiveDisplayModes(vm as Object, profile as String)
     if type(active.colorspace) = "roString" then colorText = active.colorspace
     if type(active.colordepth) = "roString" then depthText = active.colordepth
     LedLog("=== Perform6: GetActiveMode " + modeText + " " + colorText + " " + depthText + " ===")
-    if profile = "XT2145" and ModeLooks1080p60(modeText) then
-      LedLog("OUT|PRIMARY|ok=1|mode=" + modeText + "|depth=" + depthText)
-    else if profile <> "XT2145" and ModeLooks4k60(modeText) then
+    if profile = "XT2145" then
+      ' Multi-screen active mode can describe the combined graphics canvas.
+      primaryScreenMode = GetConfiguredScreenMode(vm, "HDMI-1")
+      LedLog("OUT|CANVAS|mode=" + modeText + "|depth=" + depthText)
+      if DiagnosticModeIs60p(primaryScreenMode, "1920x1080") then
+        LedLog("OUT|PRIMARY|ok=1|configuredMode=" + primaryScreenMode)
+      else
+        LedLog("OUT|ISSUE|HDMI-1 configured mode unexpected or unavailable|mode=" + primaryScreenMode)
+      end if
+    else if profile <> "XT2145" and DiagnosticModeIs60p(modeText, "3840x2160") then
       LedLog("OUT|PRIMARY|ok=1|mode=" + modeText + "|depth=" + depthText)
     else
       LedLog("OUT|ISSUE|primary output mode unexpected|mode=" + modeText + "|depth=" + depthText)
@@ -2388,7 +2485,9 @@ Sub LogActiveDisplayModes(vm as Object, profile as String)
   if type(fps) = "roInteger" or type(fps) = "Integer" then
     fpsText = IntToStr(fps)
     LedLog("=== Perform6: GetFPS " + fpsText + " ===")
-    if fps < 59 or fps > 60 then
+    if profile = "XT2145" then
+      LedLog("OUT|CANVAS|reportedFps=" + fpsText + "|notPerOutputPlaybackFps=1")
+    else if fps < 59 or fps > 60 then
       LedLog("OUT|ISSUE|output fps is not 59.94/60|fps=" + fpsText)
     else
       LedLog("OUT|FPS|ok=1|fps=" + fpsText)
@@ -2435,7 +2534,7 @@ Sub LogActiveDisplayModes(vm as Object, profile as String)
     end if
     if Len(best) = 0 then best = "(blank/no EDID)"
     LedLog("=== Perform6: GetBestMode " + name + "=" + best + " ===")
-    if ModeLooks4k60(best) then
+    if DiagnosticModeIs60p(best, "3840x2160") then
       LedLog("OUT|" + name + "|best=4K60|" + best)
     else if profile = "XT2145" and name = "HDMI-1" and Instr(1, LCase(best), "1920x1080") > 0 then
       LedLog("OUT|HDMI-1|best=1080p|" + best)
@@ -2462,8 +2561,8 @@ End Function
 Sub WriteOutputDiagFile(profile as String, primaryModeText as String, ledModeText as String, colorText as String, depthText as String, fpsText as String)
   q = Chr(34)
   ok = "0"
-  fps = Int(Val(fpsText))
-  if ModeLooks4k60(ledModeText) and fps >= 59 and fps <= 60 then ok = "1"
+  ' This flag describes configured HDMI-2 mode, not canvas or decoded FPS.
+  if DiagnosticModeIs60p(ledModeText, "3840x2160") then ok = "1"
   json = "{"
   json = json + q + "type" + q + ":" + q + "output-diag" + q + ","
   json = json + q + "profile" + q + ":" + q + profile + q + ","
@@ -3254,6 +3353,8 @@ Sub Main()
               HandleLedOtaInstall(payload, msgPort, ledStates)
             else if msgType = "led-ota-cancel" then
               HandleLedOtaCancel(ledStates)
+            else if msgType = "p6-media-key-store" then
+              HandleP6MediaKeyStore(payload)
             else if msgType = "led-ota-reboot" then
               RebootDeviceAfterOta()
             else if msgType = "led-ops-reload" then
@@ -3298,6 +3399,8 @@ Sub Main()
           else if target = "led3" then
             ApplyNativePlayback(led3State, payload, msgPort, ledStates)
           end if
+        else if msgType = "p6-media-key-store" then
+          HandleP6MediaKeyStore(payload)
         else if msgType = "led-ota-reboot" then
           RebootDeviceAfterOta()
         else if Len(msgType) > 0 then
@@ -3366,3 +3469,62 @@ Function P6LabReadPlaybackKey(assetId as String) as Dynamic
   if material.Count() <> 32 then return invalid
   return material
 End Function
+
+Function P6MediaAssetIdValid(assetId as String) as Boolean
+  if Len(assetId) < 1 or Len(assetId) > 80 then return false
+  for i = 1 to Len(assetId)
+    if Instr(1, "abcdefghijklmnopqrstuvwxyz0123456789_-", Mid(assetId, i, 1)) = 0 then return false
+  end for
+  return true
+End Function
+
+' Production key staging is isolated from playback and storage. It accepts only
+' fixed-size AES-CTR material, persists it in the player registry, and reports
+' status without secrets. No SD, startup, OTA, output, or reboot operation exists.
+Sub HandleP6MediaKeyStore(payload as Object)
+  if type(payload) <> "roAssociativeArray" then
+    LedLog("MEDIA|KEY_STORE|state=rejected|reason=invalid-payload|secretLogged=0")
+    return
+  end if
+  assetId = LCase(PayloadString(payload, "assetId"))
+  algorithm = PayloadString(payload, "algorithm")
+  keyHex = LCase(PayloadString(payload, "keyHex"))
+  ivHex = LCase(PayloadString(payload, "ivHex"))
+  if not P6MediaAssetIdValid(assetId) or algorithm <> "AesCtr" or not P6LabIsHex32(keyHex) or not P6LabIsHex32(ivHex) then
+    payload.keyHex = ""
+    payload.ivHex = ""
+    LedLog("MEDIA|KEY_STORE|state=rejected|reason=invalid-material|secretLogged=0")
+    return
+  end if
+  section = CreateObject("roRegistrySection", "perform6_media_keys")
+  if type(section) <> "roRegistrySection" then
+    payload.keyHex = ""
+    payload.ivHex = ""
+    LedLog("MEDIA|KEY_STORE|state=rejected|reason=registry-unavailable|secretLogged=0")
+    return
+  end if
+  record = CreateObject("roAssociativeArray")
+  record.version = 1
+  record.algorithm = "AesCtr"
+  record.keyHex = keyHex
+  record.ivHex = ivHex
+  wrote = section.Write("asset_" + assetId, FormatJson(record))
+  flushed = false
+  if wrote = true then flushed = section.Flush()
+  payload.keyHex = ""
+  payload.ivHex = ""
+  record.keyHex = ""
+  record.ivHex = ""
+  keyHex = ""
+  ivHex = ""
+  record = invalid
+  section = invalid
+  readback = invalid
+  if wrote = true and flushed = true then readback = P6LabReadPlaybackKey(assetId)
+  if type(readback) = "roByteArray" and readback.Count() = 32 then
+    LedLog("MEDIA|KEY_STORE|state=stored-readback-ok|asset=" + assetId + "|bytes=32|secretLogged=0")
+  else
+    LedLog("MEDIA|KEY_STORE|state=failed|asset=" + assetId + "|secretLogged=0")
+  end if
+  readback = invalid
+End Sub

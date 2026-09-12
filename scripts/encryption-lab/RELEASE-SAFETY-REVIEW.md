@@ -10,8 +10,9 @@ Status: NOT INSTALLABLE. Local lab tests are not a hardware certification.
 - 1.5.34 was local-only, not the installed cause of that incident.
 - An OS recovery URL and same-card backup are not proof that an arbitrary
   runtime crash recovers. Never use endpoint reachability as that proof.
-- Existing OTA replacement unlinks before rename. Mock test reproduces a
-  missing active file after failure; passing test documents an unresolved risk.
+- OTA replacement no longer unlinks the active path before rename. The mock
+  proves a rejected rename retains the active file; hardware crash durability
+  remains unproven.
 - Existing autorun capability probe can time out or find no message port.
   Encryption must not interpret local message acceptance as a remote ack.
 

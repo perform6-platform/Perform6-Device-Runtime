@@ -40,16 +40,16 @@ function describeMessagePortModule(): Record<string, unknown> {
           : ((mod as { MessagePort?: new () => Record<string, unknown> }).MessagePort ??
             (mod as { default?: new () => Record<string, unknown> }).default);
       if (typeof Ctor === 'function') {
-        const inst = new Ctor();
+        // Inspect metadata only. Diagnostics must never construct another
+        // native message port or interfere with the shared bridge lifetime.
         ctorProbe = Object.getOwnPropertyNames(
-          Object.getPrototypeOf(inst) ?? {},
+          Ctor.prototype ?? {},
         )
-          .concat(Object.getOwnPropertyNames(inst))
           .slice(0, 25)
           .join(',');
       }
     } catch (e) {
-      ctorProbe = `construct threw: ${String(e)}`;
+      ctorProbe = `prototype inspection threw: ${String(e)}`;
     }
     return { require: true, type: t, keys, ctorProbe };
   } catch (e) {

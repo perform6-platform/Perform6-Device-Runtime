@@ -5,13 +5,14 @@ upload, installation, reboot, encryption, or live configuration change.
 
 ## Findings
 
-- `src/services/otaAssetPool.ts`, `replaceFile`: writes a temporary file,
-  unlinks the destination, then renames. A rename failure leaves the active
-  pathname missing. The offline test exercises this actual function body.
-- `activateStagedPackage` attempts restoration in a catch block, but restoration
-  needs the same filesystem and uses the same replacement primitive. It cannot
-  cover process death or an inaccessible SD mount. This test does not exercise
-  the entire activation transaction or imply every rename failure is fatal.
+- `src/services/otaAssetPool.ts`, `replaceFile` now writes a complete temporary
+  file and renames it directly over the destination on the same SD filesystem.
+  It never unlinks the active path first; a rejected rename retains the active
+  file and the complete temporary file. The offline test exercises the actual
+  function body.
+- `activateStagedPackage` also attempts restoration in a catch block. It still
+  cannot cover an inaccessible SD mount or prove filesystem crash durability;
+  the local test establishes only the no-unlink failure invariant.
 - Active files, staging, and backups all reside under `/storage/sd`. These are
   not independent recovery storage. Encryption/mount/key failure can affect all.
 - `otaApply.ts` installs autorun last. This is helpful ordering, not a complete
@@ -26,10 +27,10 @@ Do not call the custom design safer than BrightSign's documented provisioning
 flow. Additional preflight checks reduce certain mistakes but extra code adds
 failure paths. Public documentation does not provide comparative failure rates.
 
-Before selecting an updater change, verify overwrite-rename semantics on the
-target filesystem/OS and package-level crash consistency. Do not simply remove
-unlink and claim hardware-safe atomicity. Local mock tests cannot establish
-durability, encrypted mount behavior, or recovery independence.
+The direct rename follows Node's replacement contract and fails closed in the
+mock. Hardware filesystem crash durability, encrypted mount behavior and
+recovery independence remain separate field unknowns; do not call this a
+complete transactional package updater.
 
 Keep the present player unchanged. Keep encryption activation blocked until
 these storage/control dependencies are resolved. No vendor contact or source

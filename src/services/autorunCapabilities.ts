@@ -221,7 +221,7 @@ export async function probeAutorunCapabilities(
           probedAt: Date.now(),
           autorunRelease: null,
         };
-        console.warn(
+        console.info(
           '[Perform6] Autorun bridge quiet — no led-hello-ack within ' +
             String(timeoutMs) +
             'ms (handshake may still be open; LED uses SD bus). Flash matching autorun+JS v' +

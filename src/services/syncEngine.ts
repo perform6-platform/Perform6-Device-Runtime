@@ -26,6 +26,12 @@ import {
   reportSyncStatus,
 } from './sync';
 import { isMediaSyncPaused } from './perform6Ops';
+import {
+  clearEncryptedMediaCached,
+  encryptedCachedMediaVersionIds,
+  markEncryptedMediaCached,
+  stageEncryptedMediaKeys,
+} from './mediaEncryption';
 
 export interface SyncEngineResult {
   success: boolean;
@@ -123,9 +129,16 @@ export async function runSyncEngine(
 
     const syncData = await checkSync(auth, {
       cachedMediaVersionIds: verifiedCachedIds,
+      encryptedCachedMediaVersionIds:
+        encryptedCachedMediaVersionIds(verifiedCachedIds),
     });
 
+    // Key staging is isolated from storage and playback. The server supplies
+    // encryption metadata only for an explicitly allow-listed device+asset.
+    stageEncryptedMediaKeys(syncData.media ?? []);
+
     if (syncData.evictMediaVersionIds?.length) {
+      clearEncryptedMediaCached(syncData.evictMediaVersionIds);
       await evictCachedMedia(syncData.evictMediaVersionIds);
       removeCachedMediaVersionIds(syncData.evictMediaVersionIds);
     }
@@ -294,6 +307,7 @@ export async function runSyncEngine(
       for (const item of mediaItems) {
         if (downloaded.includes(item.mediaVersionId)) {
           addCachedMediaVersionId(item.mediaVersionId);
+          if (item.encryption) markEncryptedMediaCached(item.mediaVersionId);
           try {
             await reportDownloadCompleteWithRetry(auth, {
               syncJobId: syncData.syncJobId,
@@ -308,6 +322,7 @@ export async function runSyncEngine(
           }
         } else if (succeeded.includes(item.mediaVersionId)) {
           addCachedMediaVersionId(item.mediaVersionId);
+          if (item.encryption) markEncryptedMediaCached(item.mediaVersionId);
           try {
             await reportDownloadCompleteWithRetry(auth, {
               syncJobId: syncData.syncJobId,
