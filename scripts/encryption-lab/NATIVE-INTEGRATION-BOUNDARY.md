@@ -25,6 +25,14 @@ roVideoPlayer key+IV handoff. No dummy callback or empty container may stand in
 for this implementation in a release gate. Do not fall back to the ordinary SD
 command if the secret-capable transport is unavailable.
 
+`native-encrypted-playback.brs` now implements the isolated native handoff for
+the documented AesCtr interface. It accepts only the canonical
+`SD:/perform6-encrypted-media/<assetId>.p6enc` path, resolves the 32-byte key+IV
+from the native registry reader, and has no plaintext fallback. It has no Main
+or production caller and therefore is not a deployed capability. Ciphertext
+delivery, authenticated device key provisioning, and field interoperability
+remain required before activation.
+
 The combined validator is offline evidence only. Timeouts suppress late success
 and later key processing; arbitrary iterators are not cancellable. Production
 file readers must support abort and bounded resources. Synchronous crypto cannot

@@ -100,11 +100,18 @@ try {
 // OTA, heartbeat, recovery, playback and UI control remain the field-proven
 // 1.5.23 implementation.
 // Version-specific reviewed dormant probe; never a blanket autorun exemption.
-const dormantProbe = version === '1.5.36';
-const reviewedProbeHashes = {
-  'brightsign/autorun.brs': '15a18cf7d16a1b03e1221a4666b96947e3808756f171aa4460ed4bb421b118d3',
-  'src/services/autorunCapabilities.ts': '8a3de78f7be7077de6e8fd405b627b63a7bacd10d4fb9406c44db9419205e476',
+const reviewedProbeHashesByVersion = {
+  '1.5.36': {
+    'brightsign/autorun.brs': '15a18cf7d16a1b03e1221a4666b96947e3808756f171aa4460ed4bb421b118d3',
+    'src/services/autorunCapabilities.ts': '8a3de78f7be7077de6e8fd405b627b63a7bacd10d4fb9406c44db9419205e476',
+  },
+  '1.5.37': {
+    'brightsign/autorun.brs': 'f5318ea1f2d9ba7f7a80107bda578a3ff21b334a74ea13bbeea8c1fbaaa68dbf',
+    'src/services/autorunCapabilities.ts': '90659ef642585235750f9992ac03c6f2f0060d0bdcb5a802f6693da2e57ddf18',
+  },
 };
+const reviewedProbeHashes = reviewedProbeHashesByVersion[version];
+const dormantProbe = reviewedProbeHashes != null;
 const allowedRuntimeDelta = new Set(dormantProbe ? Object.keys(reviewedProbeHashes) : [
   'src/services/assetPoolBootstrap.ts',
   'src/services/mediaAssetPool.ts',

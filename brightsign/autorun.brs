@@ -1013,9 +1013,18 @@ Sub HandleLedHello(payload as Object, states as Object)
   msg.AddReplace("protocolVersion", "2")
   msg.AddReplace("features", "ota-ping,ota-reboot,playback-ack,sd-led-bus")
   msg.AddReplace("autorunRelease", "1.5.8")
-  ' Informational only; no registry access or encryption activation here.
+  ' Read-only capability probe. It creates no key, reads/writes no entry, and
+  ' never invokes encrypted playback. Existing playback already proves the
+  ' active roVideoPlayer exists in this autorun environment.
+  cryptoProbe = P6LabProbeCryptoSupport()
   msg.AddReplace("encryptedMediaState", "disabled")
-  msg.AddReplace("encryptedMediaActivation", "unavailable")
+  if cryptoProbe.ready = true then
+    msg.AddReplace("encryptedMediaActivation", "probe-ready")
+  else
+    msg.AddReplace("encryptedMediaActivation", "unavailable")
+  end if
+  msg.AddReplace("encryptedMediaRegistry", cryptoProbe.registry)
+  msg.AddReplace("encryptedMediaKeyContainer", cryptoProbe.keyContainer)
   PostJsMessage(html, msg)
   g = GetGlobalAA()
   lastJs = ""
@@ -3307,7 +3316,23 @@ Sub Main()
   end while
 End Sub
 
-' Dormant helpers. No event or startup path invokes these in this candidate.
+' Encryption remains disabled. Hello invokes only the read-only constructor
+' probe; key reading and encrypted playback remain dormant.
+Function P6LabProbeCryptoSupport() as Object
+  probe = CreateObject("roAssociativeArray")
+  probe.ready = false
+  probe.registry = "unavailable"
+  probe.keyContainer = "unavailable"
+  section = CreateObject("roRegistrySection", "perform6_media_keys")
+  if type(section) = "roRegistrySection" then probe.registry = "ready"
+  material = CreateObject("roByteArray")
+  if type(material) = "roByteArray" then probe.keyContainer = "ready"
+  if probe.registry = "ready" and probe.keyContainer = "ready" then probe.ready = true
+  section = invalid
+  material = invalid
+  return probe
+End Function
+
 Function P6LabIsHex32(value as Dynamic) as Boolean
   if type(value) <> "roString" and type(value) <> "String" then return false
   if Len(value) <> 32 then return false
