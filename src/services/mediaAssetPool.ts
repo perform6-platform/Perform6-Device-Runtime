@@ -29,6 +29,8 @@ import {
 } from './downloadProgress';
 import { labelForMediaVersionId } from './touchProgramGate';
 import { probeBrightSignAssetPool } from './assetPoolProbe';
+import { getNodeFs } from '../platform/brightSignNode';
+import { ensureAssetPoolDirectory } from './assetPoolBootstrap';
 
 /** AssetPool constructor path (/storage/sd/perform6-media-pool on OS 9.1). */
 export const MEDIA_POOL_PATH = MEDIA_ASSET_POOL_DIR;
@@ -83,6 +85,7 @@ type FileEventDetail = {
   index?: number;
   responseCode?: number;
   error?: string;
+  failureReason?: string;
 };
 
 type FileEvent = FileEventDetail & { detail?: FileEventDetail };
@@ -98,6 +101,8 @@ type AssetPoolFetcherInstance = {
     type: string,
     handler: (event: ProgressEvent | FileEvent) => void,
   ) => void;
+  /** Available on BrightSign implementations that expose ifAssetFetcher. */
+  getFailureReason?: () => string | Promise<string>;
 };
 
 type AssetPoolFilesInstance = {
@@ -165,6 +170,31 @@ function recreateFetcher(): AssetPoolFetcherInstance | null {
   }
 }
 
+async function fetcherFailureReason(
+  target: AssetPoolFetcherInstance,
+): Promise<string | null> {
+  if (typeof target.getFailureReason !== 'function') return null;
+  try {
+    const value = await Promise.resolve(target.getFailureReason());
+    const reason = String(value ?? '').trim();
+    return reason || null;
+  } catch (error) {
+    return `getFailureReason failed: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
+function downloadOrigins(assets: MediaAsset[]): string[] {
+  const origins = new Set<string>();
+  for (const asset of assets) {
+    try {
+      origins.add(new URL(asset.link).origin);
+    } catch {
+      origins.add('(invalid-or-relative-url)');
+    }
+  }
+  return [...origins];
+}
+
 function getRequire(): BrightSignRequire | null {
   const g = globalThis as { require?: BrightSignRequire };
   if (typeof g.require === 'function') return g.require;
@@ -204,6 +234,18 @@ function loadModules(): boolean {
     const PoolClass = req('@brightsign/assetpool') as AssetPoolCtor;
     const FetcherClass = req('@brightsign/assetpoolfetcher') as AssetPoolFetcherCtor;
     FetcherClassRef = FetcherClass;
+
+    const directory = ensureAssetPoolDirectory(getNodeFs(), MEDIA_POOL_PATH);
+    if (directory.created) {
+      console.info('[Perform6] Media asset pool directory created', {
+        path: MEDIA_POOL_PATH,
+      });
+    } else if (!directory.ready) {
+      console.warn('[Perform6] Media asset pool directory unavailable', {
+        path: MEDIA_POOL_PATH,
+        reason: directory.reason,
+      });
+    }
 
     let lastErr: unknown = null;
     for (const path of pathCandidates) {
@@ -509,6 +551,8 @@ export async function downloadMediaItemsViaAssetPool(
   let lastProgressBytes = 0;
   let lastProgressFile = '';
   let sawPoolActivity = false;
+  let collectionFailureCode: number | null = null;
+  let collectionFailureText: string | null = null;
 
   const clearStallTimer = () => {
     if (stallTimer != null) {
@@ -588,9 +632,18 @@ export async function downloadMediaItemsViaAssetPool(
       lastProgressBytes = -1;
       const item = byName.get(name);
       if (!item) {
+        const collectionCode = detail.responseCode;
+        const collectionOk =
+          collectionCode === 200 || collectionCode === 226 || collectionCode === 0;
+        if (!collectionOk && collectionCode != null) {
+          collectionFailureCode = collectionCode;
+          collectionFailureText =
+            detail.error || detail.failureReason || `collection code ${collectionCode}`;
+        }
         console.info('[Perform6] Media asset pool collection event', {
           type: detail.type ?? event.type ?? null,
           responseCode: detail.responseCode ?? null,
+          error: detail.error ?? detail.failureReason ?? null,
         });
         return;
       }
@@ -657,6 +710,9 @@ export async function downloadMediaItemsViaAssetPool(
       already: already.length,
       pool: MEDIA_POOL_PATH,
       startTimeoutSec: POOL_START_MS / 1000,
+      origins: downloadOrigins(needFetch),
+      hashed: needFetch.filter((asset) => Boolean(asset.hash)).length,
+      sized: needFetch.filter((asset) => asset.size != null).length,
     });
 
     const startPromise = runFetcher.start(needFetch);
@@ -709,8 +765,20 @@ export async function downloadMediaItemsViaAssetPool(
       totalCount: items.length,
     });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.warn('[Perform6] Media asset pool fetch failed', msg);
+    const rejected = e instanceof Error ? e.message : String(e);
+    const nativeReason = await fetcherFailureReason(runFetcher);
+    const detail = [
+      rejected || null,
+      nativeReason ? `native=${nativeReason}` : null,
+      collectionFailureCode != null ? `collectionCode=${collectionFailureCode}` : null,
+      collectionFailureText ? `collection=${collectionFailureText}` : null,
+    ].filter(Boolean);
+    const msg = detail.join(' | ') || 'Asset pool fetch failed';
+    console.warn('[Perform6] Media asset pool fetch failed', {
+      reason: msg,
+      pool: MEDIA_POOL_PATH,
+      origins: downloadOrigins(needFetch),
+    });
     for (const asset of needFetch) {
       const item = byName.get(asset.name)!;
       if (succeeded.includes(item.mediaVersionId)) continue;
