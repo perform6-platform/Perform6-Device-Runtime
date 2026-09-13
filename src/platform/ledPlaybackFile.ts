@@ -20,6 +20,7 @@ export interface LedPlaybackCommand {
   src: string;
   fallbackSrc: string;
   mediaVersionId: string;
+  encryptionAssetId?: string;
   mediaTitle: string;
   screenKey: string;
   loop: string;
@@ -68,6 +69,7 @@ function signatureOf(file: LedPlaybackFile): string {
         c.target,
         c.src,
         c.mediaVersionId,
+        c.encryptionAssetId,
         c.restartNonce,
         c.volumePercent,
         c.loop,
@@ -124,6 +126,7 @@ function writeFileSync(file: LedPlaybackFile): boolean {
       src: ledCmd.src,
       fallbackSrc: ledCmd.fallbackSrc,
       mediaVersionId: ledCmd.mediaVersionId,
+      encryptionAssetId: ledCmd.encryptionAssetId,
       mediaTitle: ledCmd.mediaTitle,
       screenKey: ledCmd.screenKey,
       loop: ledCmd.loop,
@@ -174,6 +177,7 @@ export function toLedPlaybackCommand(
     src: playSrc,
     fallbackSrc: fallbackSrc || '',
     mediaVersionId: partial.mediaVersionId ?? '',
+    encryptionAssetId: partial.encryptionAssetId ?? '',
     mediaTitle: partial.mediaTitle ?? '',
     screenKey: partial.screenKey ?? 'SCREEN_1',
     loop: partial.loop ?? 'true',
@@ -319,6 +323,7 @@ export function writeXtPlaybackFile(
         src: record.src,
         fallbackSrc: record.fallbackSrc ?? '',
         mediaVersionId: record.mediaVersionId ?? '',
+        encryptionAssetId: record.encryptionAssetId ?? '',
         mediaTitle: record.mediaTitle ?? '',
         screenKey: record.screenKey ?? 'SCREEN_1',
         loop: record.loop ?? 'true',

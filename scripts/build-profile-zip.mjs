@@ -315,6 +315,18 @@ function main() {
   fs.mkdirSync(outFolder, { recursive: true });
 
   fs.copyFileSync(autorun, path.join(outFolder, 'autorun.brs'));
+  if (profileKey === 'XT2145' && (version === '1.5.45' || version === '1.5.46' || version === '1.5.51')) {
+    const encryptedFixture = path.join(
+      root,
+      'brightsign',
+      'encryption-test',
+      'perform6-encrypted-probe.p6enc',
+    );
+    if (!fs.existsSync(encryptedFixture)) fail(`Missing ${version} encrypted interoperability fixture`);
+    const fixtureDir = path.join(outFolder, 'perform6-encryption-test');
+    fs.mkdirSync(fixtureDir, { recursive: true });
+    fs.copyFileSync(encryptedFixture, path.join(fixtureDir, 'perform6-encrypted-probe.p6enc'));
+  }
   // BrightSign Chromium can retain stable local asset URLs across a soft reboot.
   // Give each release a distinct subresource URL so a successful OTA cannot
   // boot the newly written index.html while executing the previous app.js.
@@ -389,7 +401,7 @@ function main() {
         displayMode,
         storageEncryption: {
           enabled: false,
-          note: 'Plaintext SD — HtmlWidget requires readable index.html. Media downloads use AssetPool and playback uses AssetRealizer .mp4 paths.',
+          note: 'Full-card encryption is disabled so startup and OTA remain readable. Exact allow-listed media assets may use native AES-CTR playback.',
         },
         mediaCache: {
           path: 'SD:/perform6-media',
@@ -437,6 +449,9 @@ function main() {
           'perform6-ops.json',
           'perform6-ops.emergency.json',
           ...(profileKey === 'XT2145' || profileKey === 'XC4055' ? ['led-idle.png'] : []),
+          ...(profileKey === 'XT2145' && (version === '1.5.45' || version === '1.5.46' || version === '1.5.51')
+            ? ['perform6-encryption-test/perform6-encrypted-probe.p6enc']
+            : []),
           'README-SD.txt',
         ],
         entryScript: 'assets/app.js',
@@ -553,6 +568,18 @@ function main() {
 
   // Optional single-file package for cloud / R2 / email
   zipDirectory(outFolder, outZip);
+
+  // A field XT release is not uploadable until the final folder and ZIP pass
+  // the fail-closed safety inspection. This runs after packaging and before
+  // any R2 upload, so the exact bytes destined for production are checked.
+  if (profileKey === 'XT2145') {
+    run(process.execPath, [
+      path.join(root, 'scripts', 'assert-xt-ota-candidate.mjs'),
+      version,
+      outFolder,
+      outZip,
+    ]);
+  }
 
   uploadProfileToR2(profile.slug);
 

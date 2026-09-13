@@ -118,10 +118,16 @@ function publishBridgeState(reason: string): void {
   if (next === bridgeState) return;
   const prev = bridgeState;
   bridgeState = next;
-  const level = next === 'bridging' || next === 'up' ? 'info' : 'warn';
   const line = `[Perform6] Bridge state ${prev} → ${next} (${reason})`;
-  if (level === 'info') console.info(line, { duplexReady, graceMs: graceRemainingMs() });
-  else console.warn(line, { duplexReady, missStreak });
+  // XT2145 uses the SD command/status bus as its authoritative transport.
+  // A missing optional HtmlWidget round-trip is diagnostic information, not a
+  // playback, heartbeat, or OTA fault.
+  console.info(line, {
+    duplexReady,
+    missStreak,
+    graceMs: graceRemainingMs(),
+    authoritativeTransport: 'sd-bus',
+  });
   if (next === 'down' || next === 'degraded') flushLogsSoon();
 }
 
@@ -313,7 +319,7 @@ export function startBridgeKeepalive(): void {
     graceEndTimer = null;
     scheduleHelloRetries();
     if (!duplexReady) {
-      console.warn(
+      console.info(
         '[Perform6] Bridge grace ended without hello-ack — LED still uses SD bus; not forcing recycle',
         { transport: getBridgeTransport() },
       );

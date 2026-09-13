@@ -17,6 +17,7 @@ import {
   hasSdCachedMedia,
   listSdCachedMediaVersionIds,
   reconcileSdCacheMarksFromDisk,
+  reconcileEncryptedSdRepresentations,
 } from './sdCacheBridge';
 import { touchProgramMediaVersionIds } from './touchProgramGate';
 import {
@@ -26,6 +27,12 @@ import {
   reportSyncStatus,
 } from './sync';
 import { isMediaSyncPaused } from './perform6Ops';
+import {
+  clearEncryptedMediaCached,
+  encryptedCachedMediaVersionIds,
+  markEncryptedMediaCached,
+  stageEncryptedMediaKeys,
+} from './mediaEncryption';
 
 export interface SyncEngineResult {
   success: boolean;
@@ -123,9 +130,32 @@ export async function runSyncEngine(
 
     const syncData = await checkSync(auth, {
       cachedMediaVersionIds: verifiedCachedIds,
+      encryptedCachedMediaVersionIds:
+        encryptedCachedMediaVersionIds(verifiedCachedIds),
     });
 
+    // Key staging is isolated from storage and playback. The server supplies
+    // encryption metadata only for an explicitly allow-listed device+asset.
+    stageEncryptedMediaKeys(syncData.media ?? []);
+
+    // A prior runtime may have persisted the plaintext URL for this same
+    // media-version ID. Adopt the encrypted representation only after its
+    // exact manifest-derived filename and byte length are present on SD.
+    let repairedEncryptedIds: string[] = [];
+    try {
+      repairedEncryptedIds = await reconcileEncryptedSdRepresentations(
+        syncData.media ?? [],
+      );
+    } catch (error) {
+      console.warn(
+        '[Perform6] Encrypted SD representation repair failed safely',
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+    for (const id of repairedEncryptedIds) markEncryptedMediaCached(id);
+
     if (syncData.evictMediaVersionIds?.length) {
+      clearEncryptedMediaCached(syncData.evictMediaVersionIds);
       await evictCachedMedia(syncData.evictMediaVersionIds);
       removeCachedMediaVersionIds(syncData.evictMediaVersionIds);
     }
@@ -294,6 +324,7 @@ export async function runSyncEngine(
       for (const item of mediaItems) {
         if (downloaded.includes(item.mediaVersionId)) {
           addCachedMediaVersionId(item.mediaVersionId);
+          if (item.encryption) markEncryptedMediaCached(item.mediaVersionId);
           try {
             await reportDownloadCompleteWithRetry(auth, {
               syncJobId: syncData.syncJobId,
@@ -308,6 +339,7 @@ export async function runSyncEngine(
           }
         } else if (succeeded.includes(item.mediaVersionId)) {
           addCachedMediaVersionId(item.mediaVersionId);
+          if (item.encryption) markEncryptedMediaCached(item.mediaVersionId);
           try {
             await reportDownloadCompleteWithRetry(auth, {
               syncJobId: syncData.syncJobId,
