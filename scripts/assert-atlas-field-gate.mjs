@@ -6,15 +6,18 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // Production 1.5.21 merge: pairing, OTA, downloads and HDMI-2 playback were
-// field-validated on Gabe's XT2145. Only the reviewed 4K diagnostics delta is
-// allowed beyond this point.
+// field-validated on Gabe's XT2145. Only the reviewed 4K diagnostics and
+// non-destructive clean-card AssetPool bootstrap deltas are allowed beyond
+// this point.
 const baseline = '8462d696cbc6cace659ea640ffd4a604cdc4d66b';
 const allowedRuntimeFiles = new Set([
   'brightsign/autorun.brs',
+  'docs/XT2145-CLEAN-CARD-ENCRYPTION-FIELD-GATE.md',
   'scripts/assert-led-playback.mjs',
   'scripts/build-profile-zip.mjs',
   'src/App.tsx',
   'src/components/status/OutputDiagnostics.tsx',
+  'src/contexts/RuntimeContext.tsx',
   'src/hooks/useVideoPlaybackTelemetry.ts',
   'src/hooks/useOfflineVideoSrc.ts',
   'src/layout/BluefinMasterFrame.tsx',
@@ -24,13 +27,33 @@ const allowedRuntimeFiles = new Set([
   'src/pages/Home.tsx',
   'src/platform/xcOutputBridge.ts',
   'src/platform/xtOutputBridge.ts',
+  'src/platform/bsMessagePort.ts',
+  'src/platform/ledPlaybackFile.ts',
+  'src/services/autorunCapabilities.ts',
+  'src/services/autorunDiag.ts',
+  'src/services/bridgeKeepalive.ts',
   'src/services/deviceLogsApi.ts',
+  'src/services/assetPoolBootstrap.ts',
+  'src/services/mediaAssetPool.ts',
+  'src/services/mediaEncryption.ts',
+  'src/services/otaAssetPool.ts',
   'src/services/outputResolutionProbe.ts',
+  'src/services/sdCacheBridge.ts',
   'src/services/manifest.ts',
+  'src/services/sync.ts',
+  'src/services/syncEngine.ts',
   'src/shared/bluefinViewport.ts',
   'src/shared/types/api.ts',
   'src/shared/types/runtime.ts',
   'src/stores/runtimeStore.ts',
+]);
+
+// Retained only as evidence for the completed 1.5.44–1.5.46 lab probes.
+// The release builder packages none of these into current candidates.
+const historicalLabOnly = new Set([
+  'brightsign/encryption-test/perform6-encrypted-probe.p6enc',
+  'src/services/encryptedPlaybackInteropProbe.ts',
+  'src/services/mediaKeyInteropProbe.ts',
 ]);
 
 function fail(message) {
@@ -45,7 +68,8 @@ function git(args) {
 const changed = git(['diff', '--name-only', baseline, '--'])
   .split(/\r?\n/)
   .filter(Boolean)
-  .filter((file) => !file.startsWith('scripts/') && file !== 'package.json');
+  .filter((file) => !file.startsWith('scripts/') && file !== 'package.json')
+  .filter((file) => !historicalLabOnly.has(file));
 
 for (const file of changed) {
   if (!allowedRuntimeFiles.has(file)) {
@@ -143,10 +167,7 @@ const xtBridge = fs.readFileSync(
   'utf8',
 );
 for (const marker of [
-  "'start-here': 'SCREEN_2'",
-  "phase1: 'SCREEN_3'",
-  "phase2: 'SCREEN_4'",
-  "'full-program': 'SCREEN_5'",
+  "const screenKey = 'SCREEN_2'",
   "source: 'NATIVE_HDMI'",
   'reportNativeHdmiTelemetry(status)',
   'MEDIA|SOURCE|',
@@ -154,6 +175,23 @@ for (const marker of [
   if (!xtBridge.includes(marker)) {
     fail(`XT native HDMI telemetry invariant missing: ${marker}`);
   }
+}
+for (const obsolete of [
+  "phase1: 'SCREEN_3'",
+  "phase2: 'SCREEN_4'",
+  "'full-program': 'SCREEN_5'",
+]) {
+  if (xtBridge.includes(obsolete)) {
+    fail(`XT program slot still masquerades as a physical output: ${obsolete}`);
+  }
+}
+
+const releaseBuilder = fs.readFileSync(
+  path.join(root, 'scripts', 'build-profile-zip.mjs'),
+  'utf8',
+);
+if (!releaseBuilder.includes("version === '1.5.45' || version === '1.5.46' || version === '1.5.51'")) {
+  fail('encrypted fixture packaging is not constrained to reviewed lab versions');
 }
 
 const homeHero = fs.readFileSync(

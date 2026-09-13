@@ -389,6 +389,68 @@ export async function reconcileSdCacheMarksFromDisk(): Promise<{
   return { restored, dropped };
 }
 
+/**
+ * Repair a stale plaintext ready-map entry after the API switches a media
+ * version to an encrypted derivative. The manifest is authoritative only
+ * after the exact derivative filename (and, when supplied, byte length) is
+ * verified on SD. This never downloads, deletes, remounts, or rewrites media.
+ */
+export async function reconcileEncryptedSdRepresentations(
+  items: SyncMediaItem[],
+): Promise<string[]> {
+  if (runtimeConfig.isSimulator || items.length === 0) return [];
+
+  const encryptedItems = items.filter((item) => Boolean(item.encryption));
+  if (encryptedItems.length === 0) return [];
+
+  const listing = await listSdPath(MEDIA_STORE_SD, 12_000);
+  if (!listing.ok) {
+    console.warn(
+      '[Perform6] Encrypted SD representation reconcile skipped',
+      listing.error,
+    );
+    return [];
+  }
+
+  const onDisk = new Map<string, number>();
+  for (const entry of listing.entries) {
+    if (entry.kind !== 'file' || entry.name.endsWith('.part')) continue;
+    onDisk.set(entry.name, entry.size);
+  }
+
+  const repaired: string[] = [];
+  for (const item of encryptedItems) {
+    const expectedUrl = resolveMediaFileUrl(item.fileUrl);
+    const expectedName = cacheNameFor(expectedUrl);
+    const actualBytes = onDisk.get(expectedName) ?? 0;
+    const declaredBytes = Number(item.fileSize ?? 0);
+    const sizeVerified =
+      actualBytes >= 1024 &&
+      (!Number.isFinite(declaredBytes) ||
+        declaredBytes < 1024 ||
+        actualBytes === declaredBytes);
+    if (!sizeVerified) continue;
+
+    const previousUrl = getSdCachedUrl(item.mediaVersionId);
+    if (previousUrl && normalizeCacheUrl(previousUrl) === normalizeCacheUrl(expectedUrl)) {
+      markSdDownloadConfirmed(item.mediaVersionId);
+      continue;
+    }
+
+    markSdCached(item.mediaVersionId, expectedUrl);
+    markSdDownloadConfirmed(item.mediaVersionId);
+    repaired.push(item.mediaVersionId);
+    console.info('[Perform6] Encrypted SD representation mapping repaired', {
+      mediaVersionId: item.mediaVersionId,
+      from: previousUrl ? cacheNameFor(previousUrl) : null,
+      to: expectedName,
+      bytes: actualBytes,
+    });
+  }
+
+  return repaired;
+}
+
 function prefetchRole(): string {
   if (runtimeConfig.hardwareProfile === 'XC4055') return 'primary';
   if (runtimeConfig.hardwareProfile === 'XT2145') return 'touch';
@@ -1179,14 +1241,21 @@ export function resolveSdPlaybackUrl(
   mediaVersionId: string,
   fallbackFileUrl?: string | null,
 ): string | null {
-  // If an extension-bearing file is already present, repair its mark first.
-  if (fallbackFileUrl && realizePoolPathToCache(mediaVersionId, fallbackFileUrl)) {
-    const ready = getSdCachedUrl(mediaVersionId);
-    if (ready) return sdCacheFileUrl(ready);
-  }
-
+  // The ready map records the exact representation that sync most recently
+  // downloaded and verified. It must win over the manifest fallback URL.
+  // This matters when one media-version ID transitions from plaintext to an
+  // encrypted derivative: the manifest still carries the CMS source URL, and
+  // probing that file first would overwrite the encrypted URL with the old
+  // plaintext path while also attaching the decryption key.
   const readyUrl = getSdCachedUrl(mediaVersionId);
   if (readyUrl) return sdCacheFileUrl(readyUrl);
+
+  // Repair legacy/plaintext state only when sync has not already selected a
+  // concrete downloaded representation for this media version.
+  if (fallbackFileUrl && realizePoolPathToCache(mediaVersionId, fallbackFileUrl)) {
+    const repairedUrl = getSdCachedUrl(mediaVersionId);
+    if (repairedUrl) return sdCacheFileUrl(repairedUrl);
+  }
 
   const poolPath = getMediaPoolPath(mediaVersionId);
   if (poolPath) return poolPathToFileUrl(poolPath);

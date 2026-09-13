@@ -315,7 +315,8 @@ function replaceFile(
   ensureParentDir(fs, destination);
   const temporary = `${destination}.perform6-new`;
   fs.writeFileSync(temporary, data);
-  if (fs.existsSync(destination)) fs.unlinkSync(destination);
+  // Node rename replaces an existing file on the same filesystem. Never
+  // unlink first: if rename is rejected, the proven active file must remain.
   fs.renameSync(temporary, destination);
 }
 

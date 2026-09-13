@@ -2,14 +2,17 @@
  * BrightSign / BrightAuthor: one BSMessagePort per HtmlWidget = normal zone messaging.
  * Recreating the port drops autorun→JS replies onto a dead instance.
  *
- * On nodejs_enabled widgets, duplex requires @brightsign/messageport (Node).
- * DOM BSMessagePort can PostBSMessage but often never receives PostJSMessage.
+ * This application is a nodejs_enabled widget. Its field-proven control
+ * object is @brightsign/messageport; playback, OTA and reboot all share it.
+ * BrightSign allows only one BSMessagePort instance per roHtmlWidget, so never
+ * create a browser-global observer beside this object.
  */
 let sharedPort: BrightSignMessagePort | null | undefined;
 const bsMessageListeners = new Set<(event: BrightSignMessagePortEvent) => void>();
 
 export type BridgeTransport = 'node-messageport' | 'dom-bsmessageport' | 'none';
 let activeTransport: BridgeTransport = 'none';
+let inboundCallbackObserved = false;
 
 export function getBridgeTransport(): BridgeTransport {
   return activeTransport;
@@ -17,7 +20,7 @@ export function getBridgeTransport(): BridgeTransport {
 
 /** True when inbound PostJSMessage is expected to work (BA-style duplex). */
 export function isBridgeDuplexTransport(): boolean {
-  return activeTransport === 'node-messageport';
+  return inboundCallbackObserved;
 }
 
 function dispatchBsMessage(event: BrightSignMessagePortEvent): void {
@@ -31,16 +34,9 @@ function dispatchBsMessage(event: BrightSignMessagePortEvent): void {
 }
 
 /**
- * autorun `roHtmlWidget.PostJSMessage()` and the DOM `window.BSMessagePort`
- * `bsmessage` event are NOT the same channel on a Node-enabled HtmlWidget.
- * When `nodejs_enabled` is set on the widget (this app requires it for
- * `@brightsign/assetpool`, `@brightsign/system`, …) inbound BrightScript→JS
- * messages are delivered to the Node `@brightsign/messageport` object only.
- * The DOM `BSMessagePort` can still `PostBSMessage` (JS→autorun) but never
- * fires `bsmessage`/`onbsmessage` — the classic "outbound ok, zero pongs,
- * lastRoundTripAt=null" one-way bridge. So resolve the Node port first and
- * fall back to the DOM ctor only when `require` is unavailable (browser /
- * simulator / non-Node widget).
+ * Field versions 1.5.23-1.5.42 prove that this Node object carries outbound
+ * playback and OTA commands on the XT2145. The browser-global class is only a
+ * fallback for widgets where the Node module is unavailable.
  */
 function resolveNodeMessagePortCtor(): (new () => BrightSignMessagePort) | null {
   try {
@@ -61,6 +57,16 @@ function resolveNodeMessagePortCtor(): (new () => BrightSignMessagePort) | null 
 
 /** Node MessagePort passes the raw AA; DOM passes an event with `.data`. */
 function normalizeInbound(arg: unknown): BrightSignMessagePortEvent {
+  // The Node module delivers the AA itself. Some legitimate messages may
+  // contain a field named `data`, so a top-level protocol discriminator must
+  // win over DOM-style unwrapping.
+  if (
+    arg &&
+    typeof arg === 'object' &&
+    'type' in (arg as Record<string, unknown>)
+  ) {
+    return { data: arg as Record<string, unknown> };
+  }
   if (
     arg &&
     typeof arg === 'object' &&
@@ -73,12 +79,23 @@ function normalizeInbound(arg: unknown): BrightSignMessagePortEvent {
   return { data: (arg ?? {}) as Record<string, unknown> };
 }
 
-function bindInbound(port: BrightSignMessagePort): void {
-  // Some OS builds fire both addEventListener('bsmessage') and onbsmessage
-  // for one message — dedupe by type within a short window.
+function bindInbound(
+  port: BrightSignMessagePort,
+  transport: 'node-messageport' | 'dom-bsmessageport',
+): void {
+  // Keep duplicate suppression for DOM fallbacks that may surface the same
+  // event through both callback styles. The official Node path binds once.
   let lastDispatchAt = 0;
   let lastType = '';
+  let callbackSeen = false;
   const onMsg = (raw: unknown) => {
+    if (!callbackSeen) {
+      callbackSeen = true;
+      inboundCallbackObserved = true;
+      try {
+        console.info('[Perform6] BRIDGE|RECEIVE|callback-entered=1');
+      } catch { /* diagnostics must not interrupt message dispatch */ }
+    }
     const event = normalizeInbound(raw);
     const type = String(event?.data?.type ?? '');
     const now = Date.now();
@@ -87,55 +104,72 @@ function bindInbound(port: BrightSignMessagePort): void {
     lastDispatchAt = now;
     dispatchBsMessage(event);
   };
-  try {
-    if (typeof port.addEventListener === 'function') {
-      port.addEventListener('bsmessage', onMsg);
+  let listenerRegistration = transport === 'dom-bsmessageport' ? 'skipped-dom-standard' : 'missing';
+  let propertyAssignment = transport === 'node-messageport' ? 'skipped-node-standard' : 'missing';
+  // Use one exact, documented receiving surface per constructor. BrightSign's
+  // browser-global example uses onbsmessage; its Node-enabled cookbook uses
+  // addEventListener('bsmessage'). Mixing both on one native instance makes a
+  // field failure ambiguous and can replace a single native callback slot.
+  if (transport === 'dom-bsmessageport') {
+    try {
+      (port as BrightSignMessagePort & { onbsmessage?: (event: unknown) => void }).onbsmessage =
+        onMsg;
+      propertyAssignment = 'returned';
+    } catch {
+      propertyAssignment = 'threw';
     }
-  } catch {
-    /* not supported on this port variant */
+  } else {
+    try {
+      if (typeof port.addEventListener === 'function') {
+        port.addEventListener('bsmessage', onMsg);
+        listenerRegistration = 'returned';
+      }
+    } catch {
+      listenerRegistration = 'threw';
+    }
   }
+  // A call returning without throwing is not proof of delivery or duplex.
   try {
-    (port as BrightSignMessagePort & { onbsmessage?: (event: unknown) => void }).onbsmessage =
-      onMsg;
-  } catch {
-    /* older OS may not allow assignment */
-  }
+    console.info('[Perform6] BRIDGE|LISTENER', {
+      listenerRegistration,
+      propertyAssignment,
+      delivery: 'unconfirmed',
+    });
+  } catch { /* diagnostics must not invalidate a working port */ }
 }
 
 function createMessagePort(): BrightSignMessagePort | null {
   try {
+    // Preserve the field-proven control surface for every outbound
+    // playback/OTA/reboot command and construct exactly one port.
     const NodeCtor = resolveNodeMessagePortCtor();
     if (NodeCtor) {
       try {
         const port = new NodeCtor();
-        bindInbound(port);
+        bindInbound(port, 'node-messageport');
         activeTransport = 'node-messageport';
-        console.info('[Perform6] BSMessagePort ready (Node @brightsign/messageport — duplex)');
+        console.info('[Perform6] BSMessagePort ready (Node control; inbound unconfirmed)');
         return port;
       } catch (error) {
         console.warn(
-          '[Perform6] Node @brightsign/messageport construct failed — falling back to DOM',
+          '[Perform6] Node control port construct failed — trying DOM-only fallback',
           error,
         );
       }
     }
 
-    const ctor = window.BSMessagePort;
-    if (typeof ctor !== 'function') {
-      console.warn('[Perform6] BSMessagePort constructor missing');
-      return null;
+    // Compatibility fallback for non-Node widgets only.
+    const DomCtor = window.BSMessagePort;
+    if (typeof DomCtor === 'function') {
+      const port = new DomCtor();
+      bindInbound(port, 'dom-bsmessageport');
+      activeTransport = 'dom-bsmessageport';
+      console.warn('[Perform6] BSMessagePort ready (DOM-only fallback)');
+      return port;
     }
-    const port = new ctor();
-    bindInbound(port);
-    activeTransport = 'dom-bsmessageport';
-    if (NodeCtor == null) {
-      console.info('[Perform6] BSMessagePort ready (DOM — no Node require)');
-    } else {
-      console.warn(
-        '[Perform6] BSMessagePort ready (DOM fallback) — inbound autorun→JS may be one-way on a Node widget',
-      );
-    }
-    return port;
+
+    console.warn('[Perform6] BSMessagePort constructors missing');
+    return null;
   } catch (error) {
     console.warn('[Perform6] BSMessagePort unavailable', error);
     return null;

@@ -4,6 +4,7 @@ import type { ClusterMember } from './runtime';
 export interface SyncCheckRequest {
   runtimeVersion: string;
   cachedMediaVersionIds?: string[];
+  encryptedCachedMediaVersionIds?: string[];
   displayTarget?: string;
   clusterMember?: ClusterMember;
 }
@@ -82,6 +83,11 @@ export interface SyncMediaItem {
   weekRole?: 'current' | 'prefetch' | 'previous' | string;
   cached?: boolean;
   sourceProfile?: MediaSourceProfile | null;
+  encryption?: {
+    algorithm: 'AesCtr';
+    keyHex: string;
+    ivHex: string;
+  };
 }
 
 export interface MediaSourceProfile {

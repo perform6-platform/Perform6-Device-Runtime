@@ -22,8 +22,8 @@ import {
   clearScreenPlayback,
   reportScreenPlayback,
 } from '../services/playbackTelemetry';
-import { getTouchUiState } from '../services/touchUiTelemetry';
 import { useRuntimeStore } from '../stores/runtimeStore';
+import { encryptionAssetId } from '../services/mediaEncryption';
 
 const ACK_WAIT_MS = 2_500;
 const REASSERT_MS = 5_000;
@@ -31,7 +31,7 @@ const REASSERT_MS = 5_000;
 let initialized = false;
 let ignoreLedEndedUntil = 0;
 let lastPostedNonce = '';
-let lastStatusEndedNonce = '';
+let lastStatusEndedSignature = '';
 let lastReassertAt = 0;
 let lastBridgeAckNonce = '';
 let ackTimer: number | null = null;
@@ -67,6 +67,7 @@ function buildPayload(): {
   src: string;
   fallbackSrc: string;
   mediaVersionId: string;
+  encryptionAssetId: string;
   mediaTitle: string;
   screenKey: string;
   loop: string;
@@ -90,6 +91,7 @@ function buildPayload(): {
     src,
     fallbackSrc: toLedPlayableSrc(meta?.fallbackSrc),
     mediaVersionId: meta?.mediaVersionId ?? '',
+    encryptionAssetId: encryptionAssetId(meta?.mediaVersionId),
     mediaTitle: meta?.title ?? '',
     screenKey: meta?.screenKey ?? 'SCREEN_1',
     loop: state.displayVideoLoop ? 'true' : 'false',
@@ -181,15 +183,10 @@ function reportNativeHdmiTelemetry(status: ReturnType<typeof readXtPlaybackStatu
   const started = isLedStatusStarted(status);
   const ended = status.ended === '1' || status.state === 'ended';
   const failed = status.state === 'error' || status.ok === '0';
-  const slot = getTouchUiState().currentContent?.slot ?? 'touch-default';
-  const screenKeyBySlot: Record<string, string> = {
-    'touch-default': 'SCREEN_1',
-    'start-here': 'SCREEN_2',
-    phase1: 'SCREEN_3',
-    phase2: 'SCREEN_4',
-    'full-program': 'SCREEN_5',
-  };
-  const screenKey = screenKeyBySlot[slot] ?? 'SCREEN_2';
+  // XT2145 has two physical outputs. Program slots (Start Here, Phase 1,
+  // Phase 2, Full Program) all play through the same LED output and must not
+  // be reported as additional screens.
+  const screenKey = 'SCREEN_2';
   if (nativeTelemetryScreenKey && nativeTelemetryScreenKey !== screenKey) {
     clearScreenPlayback(nativeTelemetryScreenKey);
   }
@@ -266,13 +263,14 @@ function pollPlaybackStatus(port: BrightSignMessagePort | null): void {
 
   if (status?.ended === '1') {
     const nonce = asString(status.restartNonce);
-    if (nonce && nonce === lastStatusEndedNonce) return;
-    if (nonce) lastStatusEndedNonce = nonce;
+    const endedSignature = `${nonce}|${asString(status.src)}|${asString(status.wantUrl)}`;
+    if (endedSignature === lastStatusEndedSignature) return;
+    lastStatusEndedSignature = endedSignature;
     if (Date.now() < ignoreLedEndedUntil) {
       console.info('[Perform6] Ignoring LED ended (status file) after restart');
       return;
     }
-    console.info('[Perform6] LED ended via SD status file');
+    console.info('[Perform6] LED media-ended event received via SD status');
     useRuntimeStore.getState().displayVideoEndedHandler?.();
     return;
   }
@@ -353,10 +351,17 @@ export function initXtOutputBridge(): void {
     }
   });
 
+  window.addEventListener('perform6-encrypted-media-ready', () => {
+    // Re-emit the current command only after the encrypted derivative is
+    // durably downloaded and realized. The native preflight preserves the
+    // prior source if registry readback is unavailable.
+    postTouchPlayback(port, true);
+  });
+
   useRuntimeStore.subscribe((state, previous) => {
     if (state.displayRestartNonce !== previous.displayRestartNonce) {
       ignoreLedEndedUntil = Date.now() + 1500;
-      lastStatusEndedNonce = '';
+      lastStatusEndedSignature = '';
       lastBridgeAckNonce = '';
     }
     if (
