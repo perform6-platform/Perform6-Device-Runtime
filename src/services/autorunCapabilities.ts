@@ -19,6 +19,7 @@ export interface AutorunCapabilities {
   encryptedMediaActivation?: 'probe-ready' | 'unavailable' | 'unknown';
   encryptedMediaRegistry?: 'ready' | 'unavailable' | 'unknown';
   encryptedMediaKeyContainer?: 'ready' | 'unavailable' | 'unknown';
+  encryptedMediaNativeDecryption?: 'supported' | 'unsupported' | 'probe-unavailable' | 'unknown';
 }
 
 let caps: AutorunCapabilities = {
@@ -70,6 +71,14 @@ function applyAck(data: Record<string, unknown>): void {
         : data.encryptedMediaKeyContainer === 'unavailable'
           ? 'unavailable'
           : 'unknown',
+    encryptedMediaNativeDecryption:
+      data.encryptedMediaNativeDecryption === 'supported'
+        ? 'supported'
+        : data.encryptedMediaNativeDecryption === 'unsupported'
+          ? 'unsupported'
+          : data.encryptedMediaNativeDecryption === 'probe-unavailable'
+            ? 'probe-unavailable'
+            : 'unknown',
   };
   console.info('[Perform6] Autorun hello ack', caps);
   if (

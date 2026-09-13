@@ -104,6 +104,20 @@ try {
 // 1.5.23 implementation.
 // Version-specific reviewed dormant probe; never a blanket autorun exemption.
 const reviewedProbeHashesByVersion = {
+  '1.5.49': {
+    'brightsign/autorun.brs': '390e9c0991956f7c5e36589461f8e53ec61a85111493aa47c9cc553a1ce79662',
+    'src/platform/bsMessagePort.ts': 'f89c56c0df586b86e4f13fd1f00a8d88fd5fc625fdb9ecc9985ec336e029d44b',
+    'src/platform/ledPlaybackFile.ts': '0b2c954d9ed398510b939da6c950d1db6b1a14483f0ca569d29a5db6f375824d',
+    'src/platform/xtOutputBridge.ts': '77a13ff96c98d3ec80da534af31f53d864b230028304c664c2622cd8a331ee55',
+    'src/services/autorunCapabilities.ts': '1b02ab696b1b49a0f94f0b6e2d4b1b465a6b5fc3d2105fbc7dd7b0905d39e998',
+    'src/services/autorunDiag.ts': '54db79cc9f8c156a9042b1c0422f4024772f4319852a6b0f7cff89891d609a27',
+    'src/services/bridgeKeepalive.ts': '75425ab1433feb1b0f3d74a2b5596ba18bf5974347c4fe33fce87f7520a6616c',
+    'src/services/mediaEncryption.ts': 'f592b880a89986d8344e322ed8a9475abdd4587aec1f6f24cf36cdf4eec8ac1c',
+    'src/services/otaAssetPool.ts': '00d541c4c50c5b7549446eb7615fa5b9abfc0d25f518c575b33ade262a410834',
+    'src/services/sync.ts': '2f1e8208b81bbe48575a5747b83d6f162c0b7d9830c7006319c1752cfcfe38b8',
+    'src/services/syncEngine.ts': 'e376031b90d5c008864b2994e0425dfa56d2a7fa15baa916602452e7ac120b6d',
+    'src/shared/types/api.ts': 'c04ebb8863456aab1ea0e573940bd4319cac0e6850db9b1ac7bc1a9e5b9148c5',
+  },
   '1.5.48': {
     'brightsign/autorun.brs': '8da4309d521998404b9689ae272988b905d9dc8a4d5e7b45bf44cdf8c6bb8e13',
     'src/platform/bsMessagePort.ts': 'f89c56c0df586b86e4f13fd1f00a8d88fd5fc625fdb9ecc9985ec336e029d44b',
@@ -217,7 +231,7 @@ if (dormantProbe) {
   for (const [file, expected] of Object.entries(reviewedProbeHashes)) {
     if (sha256(fs.readFileSync(path.join(root, file))) !== expected) fail(`unreviewed dormant source: ${file}`);
   }
-  if (version !== '1.5.47' && version !== '1.5.48') {
+  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49') {
     execFileSync(
       process.execPath,
       ['--test', 'scripts/encryption-lab/dormant-integration.test.mjs'],
@@ -249,7 +263,7 @@ if (dormantProbe) {
     'scripts/encryption-lab/encrypted-playback-candidate.test.mjs',
     'scripts/encryption-lab/ota-replacement.test.mjs',
   ], { cwd: root, stdio: 'inherit' });
-  if (version === '1.5.47' || version === '1.5.48') execFileSync(
+  if (version === '1.5.47' || version === '1.5.48' || version === '1.5.49') execFileSync(
     process.execPath,
     ['--test', 'scripts/encryption-lab/production-media-encryption.test.mjs'],
     { cwd: root, stdio: 'inherit' },
@@ -267,7 +281,7 @@ const historicalLabOnly = new Set([
 const changedRuntime = [...new Set([...trackedRuntime, ...untrackedRuntime])]
   .filter((file) => file.startsWith('src/') || file.startsWith('brightsign/'))
   .filter((file) => !(
-    (version === '1.5.47' || version === '1.5.48') && historicalLabOnly.has(file)
+    (version === '1.5.47' || version === '1.5.48' || version === '1.5.49') && historicalLabOnly.has(file)
   ));
 for (const file of changedRuntime) {
   if (!allowedRuntimeDelta.has(file)) {

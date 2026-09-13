@@ -744,6 +744,10 @@ Function CreateLedState(vp as Object, key as String) as Object
   st.volumePercent = -1
   st.ignoreEnded = false
   st.ignoreEndedSpan = invalid
+  st.encryptedPlaybackActive = false
+  st.encryptedPlaybackSawPlaying = false
+  st.encryptedFallbackSrc = ""
+  st.encryptedPlaybackSpan = invalid
   st.stream = invalid
   st.xfer = invalid
   st.xferUrl = ""
@@ -1033,6 +1037,7 @@ Sub HandleLedHello(payload as Object, states as Object)
   end if
   msg.AddReplace("encryptedMediaRegistry", cryptoProbe.registry)
   msg.AddReplace("encryptedMediaKeyContainer", cryptoProbe.keyContainer)
+  msg.AddReplace("encryptedMediaNativeDecryption", cryptoProbe.mediaDecryption)
   PostJsMessage(html, msg)
   g = GetGlobalAA()
   lastJs = ""
@@ -1046,7 +1051,7 @@ Sub HandleLedHello(payload as Object, states as Object)
     g.p6LastHelloJs = jsVersion
     ' Independent SD-log evidence; contains no key material and does not
     ' depend on the JS return channel. Constructor readiness is not playback.
-    LedLog("MEDIA|PROBE|disabled|registry=" + cryptoProbe.registry + "|keyContainer=" + cryptoProbe.keyContainer)
+    LedLog("MEDIA|PROBE|disabled|registry=" + cryptoProbe.registry + "|keyContainer=" + cryptoProbe.keyContainer + "|nativeDecryption=" + cryptoProbe.mediaDecryption)
     if Len(jsVersion) > 0 then
       LedLog("=== Perform6: led-hello-ack protocol=2 js=" + jsVersion + " ===")
     else
@@ -1428,6 +1433,16 @@ Function PlayEncryptedNativeSrc(st as Object, src as String, assetId as String) 
   if not P6MediaAssetIdValid(assetId) then return false
   src = NormalizeLocalSrc(src)
   if IsNetworkSrc(src) or not IsPlayableNativeSrc(src) then return false
+  nativeDecryption = P6NativeMediaDecryptionSupport()
+  if nativeDecryption <> "supported" then
+    LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=rejected|reason=native-decryption-" + nativeDecryption + "|asset=" + assetId + "|secretLogged=0")
+    return false
+  end if
+  ' Stat/Exists may report a false negative for playable files on some exFAT
+  ' cards, so this is diagnostic-only. PlayFile remains authoritative.
+  fileBytes = PartFileBytes(src)
+  fileProbe = "miss"
+  if fileBytes > 0 then fileProbe = "present"
   material = P6LabReadPlaybackKey(assetId)
   if type(material) <> "roByteArray" or material.Count() <> 32 then
     material = invalid
@@ -1436,24 +1451,22 @@ Function PlayEncryptedNativeSrc(st as Object, src as String, assetId as String) 
   end if
   params = CreateObject("roAssociativeArray")
   params.Filename = src
-  params.ProbeString = "mp4"
   params.EncryptionAlgorithm = "AesCtr"
   params.EncryptionKey = material
   accepted = st.vp.PlayFile(params)
   params = invalid
   material = invalid
   if accepted = true then
+    st.encryptedFallbackSrc = st.playingUrl
+    st.encryptedPlaybackActive = true
+    st.encryptedPlaybackSawPlaying = false
+    st.encryptedPlaybackSpan = CreateObject("roTimespan")
+    if type(st.encryptedPlaybackSpan) = "roTimespan" then st.encryptedPlaybackSpan.Mark()
     st.playingUrl = src
     st.idleShown = false
-    st.vp.SetLoopMode(st.loopMode)
-    if st.paused then
-      st.vp.Pause()
-    else
-      st.vp.Resume()
-    end if
-    LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=native-accepted|asset=" + assetId + "|secretLogged=0")
+    LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=native-accepted|contract=official-minimal|feature=supported|fileProbe=" + fileProbe + "|fileBytes=" + Str(fileBytes) + "|asset=" + assetId + "|secretLogged=0")
   else
-    LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=native-rejected|asset=" + assetId + "|secretLogged=0")
+    LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=native-rejected|reason=playfile-returned-false|contract=official-minimal|feature=supported|fileProbe=" + fileProbe + "|fileBytes=" + Str(fileBytes) + "|asset=" + assetId + "|secretLogged=0")
   end if
   FlushLedLog()
   return accepted = true
@@ -1518,12 +1531,42 @@ Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, stat
     return
   end if
 
-  st.loopMode = PayloadBool(payload, "loop", true)
-  st.paused = PayloadBool(payload, "paused", false)
+  requestedLoop = PayloadBool(payload, "loop", true)
+  requestedPaused = PayloadBool(payload, "paused", false)
   restartNonce = PayloadInt(payload, "restartNonce", 0)
   forceRestart = restartNonce <> st.nonce
+
+  ' Encrypted swaps are transactional: do not change state or stop the proven
+  ' source until the documented native PlayFile call has accepted the asset.
+  if Len(encryptionAssetId) > 0 then
+    encryptedOk = PlayEncryptedNativeSrc(st, src, encryptionAssetId)
+    if encryptedOk <> true then
+      PostPlaybackAck(states, st, payload, false, "encrypted play rejected")
+      WriteXtPlaybackStatus(st, "encrypted play rejected", false)
+      TraceFnExit("ApplyNativePlayback", "encrypted-play-rejected")
+      return
+    end if
+    st.loopMode = requestedLoop
+    st.paused = requestedPaused
+    st.nonce = restartNonce
+    st.wantUrl = src
+    st.vp.SetLoopMode(st.loopMode)
+    ApplyLedVolume(st, payload)
+    ApplyLedPauseState(st)
+    PostPlaybackAck(states, st, payload, true, "encrypted-play")
+    WriteXtPlaybackStatus(st, "encrypted-play", false)
+    TraceFnExit("ApplyNativePlayback", "encrypted-play-accepted")
+    return
+  end if
+
+  st.loopMode = requestedLoop
+  st.paused = requestedPaused
   st.nonce = restartNonce
   st.wantUrl = src
+  st.encryptedPlaybackActive = false
+  st.encryptedPlaybackSawPlaying = false
+  st.encryptedFallbackSrc = ""
+  st.encryptedPlaybackSpan = invalid
   WriteXtPlaybackStatus(st, "accepted", false)
 
   ' Idle splash must never short-circuit as "already playing".
@@ -1546,18 +1589,7 @@ Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, stat
     st.playingUrl = ""
   end if
 
-  if Len(encryptionAssetId) > 0 then
-    encryptedOk = PlayEncryptedNativeSrc(st, src, encryptionAssetId)
-    if encryptedOk <> true then
-      ' Preserve the already-running source on an encrypted swap failure.
-      PostPlaybackAck(states, st, payload, false, "encrypted play rejected")
-      WriteXtPlaybackStatus(st, "encrypted play rejected", false)
-      TraceFnExit("ApplyNativePlayback", "encrypted-play-rejected")
-      return
-    end if
-  else
-    PlayNativeSrc(st, src, msgPort, states)
-  end if
+  PlayNativeSrc(st, src, msgPort, states)
   ApplyLedVolume(st, payload)
   ApplyLedPauseState(st)
   ok = false
@@ -3172,12 +3204,60 @@ Sub Main()
   while true
     ev = wait(100, msgPort)
     MaybeFlushLedLog()
+    ' If PlayFile accepted but the decoder never reports Playing or Error,
+    ' restore the proven source instead of leaving HDMI-2 stuck indefinitely.
+    if profile = "XT2145" and type(ledState) = "roAssociativeArray" and ledState.encryptedPlaybackActive = true and ledState.encryptedPlaybackSawPlaying <> true then
+      if type(ledState.encryptedPlaybackSpan) = "roTimespan" and ledState.encryptedPlaybackSpan.TotalMilliseconds() > 30000 then
+        restoreSrc = ledState.encryptedFallbackSrc
+        ledState.encryptedPlaybackActive = false
+        ledState.encryptedPlaybackSawPlaying = false
+        ledState.encryptedFallbackSrc = ""
+        ledState.encryptedPlaybackSpan = invalid
+        if IsPlayableNativeSrc(restoreSrc) then
+          PlayNativeSrc(ledState, restoreSrc, msgPort, ledStates)
+          LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=start-timeout-restored|secretLogged=0")
+        else
+          LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=start-timeout-no-fallback|secretLogged=0")
+        end if
+      end if
+    end if
     ' SD file = fallback only; bridge xt/xc-playback is the normal LED zone path.
     if profile = "XT2145" or profile = "XC4055" then MaybePollLedPlaybackFile(ledStates, msgPort)
     if type(ev) = "roVideoEvent" then
       videoCode = ev.GetInt()
       if videoCode <> 8 then
         LedLog("=== Perform6: roVideoEvent " + VideoEventName(videoCode) + " ===")
+      end if
+      ' A native encrypted call can be accepted before the decoder validates
+      ' the ciphertext. Preserve the prior source and restore it immediately
+      ' on a later decoder error; this never touches startup, OTA, or storage.
+      if profile = "XT2145" and type(ledState) = "roAssociativeArray" and ledState.encryptedPlaybackActive = true then
+        if videoCode = 3 then
+          if ledState.encryptedPlaybackSawPlaying <> true then
+            ledState.encryptedPlaybackSawPlaying = true
+            ledState.encryptedPlaybackSpan = invalid
+            LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=decoded-playing|secretLogged=0")
+          end if
+        else if videoCode = 16 then
+          restoreSrc = ledState.encryptedFallbackSrc
+          sawPlaying = ledState.encryptedPlaybackSawPlaying
+          ledState.encryptedPlaybackActive = false
+          ledState.encryptedPlaybackSawPlaying = false
+          ledState.encryptedFallbackSrc = ""
+          ledState.encryptedPlaybackSpan = invalid
+          if IsPlayableNativeSrc(restoreSrc) then
+            PlayNativeSrc(ledState, restoreSrc, msgPort, ledStates)
+            LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=decoder-error-restored|sawPlaying=" + BoolToStr(sawPlaying) + "|secretLogged=0")
+          else
+            LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=decoder-error-no-fallback|sawPlaying=" + BoolToStr(sawPlaying) + "|secretLogged=0")
+          end if
+        else if videoCode = 8 then
+          ledState.encryptedPlaybackActive = false
+          ledState.encryptedPlaybackSawPlaying = false
+          ledState.encryptedFallbackSrc = ""
+          ledState.encryptedPlaybackSpan = invalid
+          LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=decoded-ended|secretLogged=0")
+        end if
       end if
       ' 8 = MediaEnded - notify touch UI for non-looping XT playback.
       if videoCode = 8 and profile = "XT2145" and type(htmlTouch) = "roHtmlWidget" then
@@ -3426,14 +3506,24 @@ Function P6LabProbeCryptoSupport() as Object
   probe.ready = false
   probe.registry = "unavailable"
   probe.keyContainer = "unavailable"
+  probe.mediaDecryption = P6NativeMediaDecryptionSupport()
   section = CreateObject("roRegistrySection", "perform6_media_keys")
   if type(section) = "roRegistrySection" then probe.registry = "ready"
   material = CreateObject("roByteArray")
   if type(material) = "roByteArray" then probe.keyContainer = "ready"
-  if probe.registry = "ready" and probe.keyContainer = "ready" then probe.ready = true
+  if probe.registry = "ready" and probe.keyContainer = "ready" and probe.mediaDecryption = "supported" then probe.ready = true
   section = invalid
   material = invalid
   return probe
+End Function
+
+' BrightSign's documented gate for AES media playback. This probe is read-only:
+' it does not create a player, touch storage, alter output, or start playback.
+Function P6NativeMediaDecryptionSupport() as String
+  di = CreateObject("roDeviceInfo")
+  if type(di) <> "roDeviceInfo" then return "probe-unavailable"
+  if di.HasFeature("media_decryption") = true then return "supported"
+  return "unsupported"
 End Function
 
 Function P6LabIsHex32(value as Dynamic) as Boolean
