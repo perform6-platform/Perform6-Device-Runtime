@@ -1431,13 +1431,16 @@ End Sub
 Function PlayEncryptedNativeSrc(st as Object, src as String, assetId as String) as Boolean
   if type(st) <> "roAssociativeArray" or type(st.vp) <> "roVideoPlayer" then return false
   if not P6MediaAssetIdValid(assetId) then return false
+  if P6ProductionPilotAssetAllowed(assetId) <> true then
+    LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=rejected|reason=asset-not-pilot-allowlisted|asset=" + assetId + "|secretLogged=0")
+    return false
+  end if
   src = NormalizeLocalSrc(src)
   if IsNetworkSrc(src) or not IsPlayableNativeSrc(src) then return false
   nativeDecryption = P6NativeMediaDecryptionSupport()
-  if nativeDecryption <> "supported" then
-    LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=rejected|reason=native-decryption-" + nativeDecryption + "|asset=" + assetId + "|secretLogged=0")
-    return false
-  end if
+  ' HasFeature("media decryption") is advisory on this XT2145/BOS build: the
+  ' 1.5.51 field fixture produced Playing -> MediaEnded with the documented
+  ' AES-CTR PlayFile contract even though HasFeature returned false.
   ' Stat/Exists may report a false negative for playable files on some exFAT
   ' cards, so this is diagnostic-only. PlayFile remains authoritative.
   fileBytes = PartFileBytes(src)
@@ -1451,6 +1454,9 @@ Function PlayEncryptedNativeSrc(st as Object, src as String, assetId as String) 
   end if
   params = CreateObject("roAssociativeArray")
   params.Filename = src
+  ' Ciphertext hides the MP4 signature from the container probe. The XT2145
+  ' 1.5.51 field fixture proved this explicit hint reaches Playing/MediaEnded.
+  params.ProbeString = "mp4"
   params.EncryptionAlgorithm = "AesCtr"
   params.EncryptionKey = material
   accepted = st.vp.PlayFile(params)
@@ -1464,12 +1470,18 @@ Function PlayEncryptedNativeSrc(st as Object, src as String, assetId as String) 
     if type(st.encryptedPlaybackSpan) = "roTimespan" then st.encryptedPlaybackSpan.Mark()
     st.playingUrl = src
     st.idleShown = false
-    LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=native-accepted|contract=official-minimal|feature=supported|fileProbe=" + fileProbe + "|fileBytes=" + Str(fileBytes) + "|asset=" + assetId + "|secretLogged=0")
+    LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=native-accepted|contract=encrypted-mp4-probe|feature=" + nativeDecryption + "|fileProbe=" + fileProbe + "|fileBytes=" + Str(fileBytes) + "|asset=" + assetId + "|secretLogged=0")
   else
-    LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=native-rejected|reason=playfile-returned-false|contract=official-minimal|feature=supported|fileProbe=" + fileProbe + "|fileBytes=" + Str(fileBytes) + "|asset=" + assetId + "|secretLogged=0")
+    LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=native-rejected|reason=playfile-returned-false|contract=encrypted-mp4-probe|feature=" + nativeDecryption + "|fileProbe=" + fileProbe + "|fileBytes=" + Str(fileBytes) + "|asset=" + assetId + "|secretLogged=0")
   end if
   FlushLedLog()
   return accepted = true
+End Function
+
+' Candidate 1.5.52 is deliberately locked to the one server-side pilot. The
+' API independently locks delivery to UTF54M000145 and this media-version ID.
+Function P6ProductionPilotAssetAllowed(assetId as String) as Boolean
+  return assetId = "92744b7c-237d-41eb-b7a3-02300e6368c3"
 End Function
 
 Function P6EncryptedPlaybackReady(assetId as String) as Boolean
@@ -1505,6 +1517,13 @@ Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, stat
       PostPlaybackAck(states, st, payload, false, "encrypted id mismatch")
       WriteXtPlaybackStatus(st, "encrypted id mismatch", false)
       TraceFnExit("ApplyNativePlayback", "encrypted-id-mismatch")
+      return
+    end if
+    if P6ProductionPilotAssetAllowed(encryptionAssetId) <> true then
+      LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=rejected|reason=asset-not-pilot-allowlisted|asset=" + encryptionAssetId + "|secretLogged=0")
+      PostPlaybackAck(states, st, payload, false, "encrypted asset not pilot allowlisted")
+      WriteXtPlaybackStatus(st, "encrypted asset not pilot allowlisted", false)
+      TraceFnExit("ApplyNativePlayback", "encrypted-asset-not-allowlisted")
       return
     end if
     if P6EncryptedPlaybackReady(encryptionAssetId) <> true then
@@ -3499,8 +3518,8 @@ Sub Main()
   end while
 End Sub
 
-' Encryption remains disabled. Hello invokes only the read-only constructor
-' probe; key reading and encrypted playback remain dormant.
+' Capability telemetry is read-only. The exact production pilot is activated
+' only through the existing media-selection path after its key is available.
 Function P6LabProbeCryptoSupport() as Object
   probe = CreateObject("roAssociativeArray")
   probe.ready = false
@@ -3525,7 +3544,7 @@ Function P6NativeMediaDecryptionSupport() as String
   ' BrightSign documents this feature token with a literal space. Unknown
   ' tokens may return false, so do not normalize it to an underscore.
   if di.HasFeature("media decryption") = true then return "supported"
-  return "unsupported"
+  return "unreported-field-verified"
 End Function
 
 Function P6LabIsHex32(value as Dynamic) as Boolean

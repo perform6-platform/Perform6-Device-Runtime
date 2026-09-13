@@ -6,6 +6,7 @@ const autorun = fs.readFileSync('brightsign/autorun.brs', 'utf8');
 const syncEngine = fs.readFileSync('src/services/syncEngine.ts', 'utf8');
 const sync = fs.readFileSync('src/services/sync.ts', 'utf8');
 const mediaEncryption = fs.readFileSync('src/services/mediaEncryption.ts', 'utf8');
+const sdCacheBridge = fs.readFileSync('src/services/sdCacheBridge.ts', 'utf8');
 const runtime = fs.readFileSync('src/contexts/RuntimeContext.tsx', 'utf8');
 
 function block(start, end) {
@@ -28,6 +29,22 @@ test('encrypted cache identity is reported separately and marked only after succ
   assert.doesNotMatch(mediaEncryption.match(/export function stageEncryptedMediaKeys[\s\S]*?\n\}/)?.[0] ?? '', /map\[item\.mediaVersionId\] =/);
 });
 
+test('verified encrypted URL cannot be replaced by the plaintext manifest fallback', () => {
+  const start = sdCacheBridge.indexOf('export function resolveSdPlaybackUrl(');
+  const end = sdCacheBridge.indexOf('\nexport function cacheFileNameForMedia', start);
+  assert.ok(start >= 0 && end > start, 'resolveSdPlaybackUrl source must exist');
+  const resolve = sdCacheBridge.slice(start, end);
+  const verified = resolve.indexOf('const readyUrl = getSdCachedUrl(mediaVersionId)');
+  const plaintextRepair = resolve.indexOf(
+    'fallbackFileUrl && realizePoolPathToCache(mediaVersionId, fallbackFileUrl)',
+  );
+  assert.ok(verified >= 0 && plaintextRepair >= 0);
+  assert.ok(
+    verified < plaintextRepair,
+    'sync-verified representation must win before legacy plaintext repair',
+  );
+});
+
 test('native key preflight occurs before playback state mutation or StopClear', () => {
   const apply = block('Sub ApplyNativePlayback', 'End Sub');
   const preflight = apply.indexOf('P6EncryptedPlaybackReady(encryptionAssetId)');
@@ -47,17 +64,20 @@ test('encrypted rejection cannot mutate playback state or stop the proven source
   assert.doesNotMatch(apply.slice(encryptedCall, encryptedReject), /Stop|playingUrl\s*=|st\.nonce\s*=|st\.wantUrl\s*=/);
 });
 
-test('production encrypted playback uses the documented minimal AES-CTR contract and cannot mutate boot or storage', () => {
+test('production encrypted MP4 playback uses the field-proven container hint and cannot mutate boot or storage', () => {
   const play = block('Function PlayEncryptedNativeSrc', 'End Function');
   const store = block('Sub HandleP6MediaKeyStore', 'End Sub');
-  assert.doesNotMatch(play, /ProbeString/);
+  assert.match(play, /params\.ProbeString = "mp4"/);
+  assert.ok(play.indexOf('params.ProbeString = "mp4"') < play.indexOf('st.vp.PlayFile(params)'));
   assert.match(play, /params\.EncryptionAlgorithm = "AesCtr"/);
   assert.match(play, /params\.EncryptionKey = material/);
   assert.match(play, /P6NativeMediaDecryptionSupport\(\)/);
-  assert.match(play, /reason=native-decryption-/);
+  assert.doesNotMatch(play, /nativeDecryption <> "supported"/);
+  assert.doesNotMatch(play, /reason=native-decryption-/);
+  assert.match(play, /P6ProductionPilotAssetAllowed\(assetId\)/);
   assert.match(play, /fileProbe = "miss"/);
   assert.doesNotMatch(play, /reason=file-unavailable/);
-  assert.match(play, /reason=playfile-returned-false\|contract=official-minimal/);
+  assert.match(play, /reason=playfile-returned-false\|contract=encrypted-mp4-probe/);
   assert.match(store, /section\.Flush\(\)/);
   assert.match(store, /stored-readback-ok/);
   for (const source of [play, store]) {
@@ -65,10 +85,26 @@ test('production encrypted playback uses the documented minimal AES-CTR contract
   }
 });
 
+test('production playback is locked locally to the exact pilot media version', () => {
+  const allowlist = block('Function P6ProductionPilotAssetAllowed', 'End Function');
+  const apply = block('Sub ApplyNativePlayback', 'End Sub');
+  assert.match(
+    allowlist,
+    /return assetId = "92744b7c-237d-41eb-b7a3-02300e6368c3"/,
+  );
+  assert.match(apply, /P6ProductionPilotAssetAllowed\(encryptionAssetId\)/);
+  assert.match(apply, /asset-not-pilot-allowlisted/);
+  assert.ok(
+    apply.indexOf('P6ProductionPilotAssetAllowed(encryptionAssetId)') <
+      apply.indexOf('P6EncryptedPlaybackReady(encryptionAssetId)'),
+  );
+});
+
 test('native media-decryption capability probe is read-only and reported over existing telemetry', () => {
   const probe = block('Function P6NativeMediaDecryptionSupport', 'End Function');
   assert.match(probe, /HasFeature\("media decryption"\)/);
   assert.doesNotMatch(probe, /HasFeature\("media_decryption"\)/);
+  assert.match(probe, /return "unreported-field-verified"/);
   assert.doesNotMatch(probe, /PlayFile|Write|Delete|Format|EncryptStorage|Reboot/i);
   const labProbe = block('Function P6LabProbeCryptoSupport', 'End Function');
   assert.match(labProbe, /probe\.mediaDecryption = P6NativeMediaDecryptionSupport\(\)/);

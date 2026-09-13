@@ -104,6 +104,93 @@ try {
 // 1.5.23 implementation.
 // Version-specific reviewed dormant probe; never a blanket autorun exemption.
 const reviewedProbeHashesByVersion = {
+  '1.5.55': {
+    'brightsign/autorun.brs': '22008bdb09a63f92716661786aa1585dca09a053dbc3a644f7346dabe75fd30c',
+    'brightsign/encryption-test/perform6-encrypted-probe.p6enc': '63ecf15060f348f9d6dc5ebf391b6cdcd0a672a2b4233acb2d43597e6ceba7c7',
+    'src/platform/bsMessagePort.ts': 'f89c56c0df586b86e4f13fd1f00a8d88fd5fc625fdb9ecc9985ec336e029d44b',
+    'src/platform/ledPlaybackFile.ts': '0b2c954d9ed398510b939da6c950d1db6b1a14483f0ca569d29a5db6f375824d',
+    'src/platform/xtOutputBridge.ts': '77a13ff96c98d3ec80da534af31f53d864b230028304c664c2622cd8a331ee55',
+    'src/services/autorunCapabilities.ts': '1b02ab696b1b49a0f94f0b6e2d4b1b465a6b5fc3d2105fbc7dd7b0905d39e998',
+    'src/services/autorunDiag.ts': '54db79cc9f8c156a9042b1c0422f4024772f4319852a6b0f7cff89891d609a27',
+    'src/services/bridgeKeepalive.ts': '75425ab1433feb1b0f3d74a2b5596ba18bf5974347c4fe33fce87f7520a6616c',
+    'src/services/encryptedPlaybackInteropProbe.ts': '679ef0a620995a04d8f6496ee774978a7640eb2c6b970e31b89059d2283dc655',
+    'src/services/mediaEncryption.ts': 'f592b880a89986d8344e322ed8a9475abdd4587aec1f6f24cf36cdf4eec8ac1c',
+    'src/services/mediaKeyInteropProbe.ts': '197263f9db72f163798efd358df3969096861f6553416eabbf4cd94944fc86e5',
+    'src/services/otaAssetPool.ts': '00d541c4c50c5b7549446eb7615fa5b9abfc0d25f518c575b33ade262a410834',
+    'src/services/sdCacheBridge.ts': 'c78bac1e12f9496db2c749da25d55bafc8d814e9c8d0d5c748c5aade2fc279be',
+    'src/services/sync.ts': '2f1e8208b81bbe48575a5747b83d6f162c0b7d9830c7006319c1752cfcfe38b8',
+    'src/services/syncEngine.ts': 'bf8fe806e7a86efa2f77c3cc9274944d3cd84979e624c81dacedd2e9e5d95b4d',
+    'src/shared/types/api.ts': 'c04ebb8863456aab1ea0e573940bd4319cac0e6850db9b1ac7bc1a9e5b9148c5',
+  },
+  '1.5.54': {
+    'brightsign/autorun.brs': '22008bdb09a63f92716661786aa1585dca09a053dbc3a644f7346dabe75fd30c',
+    'brightsign/encryption-test/perform6-encrypted-probe.p6enc': '63ecf15060f348f9d6dc5ebf391b6cdcd0a672a2b4233acb2d43597e6ceba7c7',
+    'src/platform/bsMessagePort.ts': 'f89c56c0df586b86e4f13fd1f00a8d88fd5fc625fdb9ecc9985ec336e029d44b',
+    'src/platform/ledPlaybackFile.ts': '0b2c954d9ed398510b939da6c950d1db6b1a14483f0ca569d29a5db6f375824d',
+    'src/platform/xtOutputBridge.ts': '77a13ff96c98d3ec80da534af31f53d864b230028304c664c2622cd8a331ee55',
+    'src/services/autorunCapabilities.ts': '1b02ab696b1b49a0f94f0b6e2d4b1b465a6b5fc3d2105fbc7dd7b0905d39e998',
+    'src/services/autorunDiag.ts': '54db79cc9f8c156a9042b1c0422f4024772f4319852a6b0f7cff89891d609a27',
+    'src/services/bridgeKeepalive.ts': '75425ab1433feb1b0f3d74a2b5596ba18bf5974347c4fe33fce87f7520a6616c',
+    'src/services/encryptedPlaybackInteropProbe.ts': '679ef0a620995a04d8f6496ee774978a7640eb2c6b970e31b89059d2283dc655',
+    'src/services/mediaEncryption.ts': 'f592b880a89986d8344e322ed8a9475abdd4587aec1f6f24cf36cdf4eec8ac1c',
+    'src/services/mediaKeyInteropProbe.ts': '197263f9db72f163798efd358df3969096861f6553416eabbf4cd94944fc86e5',
+    'src/services/otaAssetPool.ts': '00d541c4c50c5b7549446eb7615fa5b9abfc0d25f518c575b33ade262a410834',
+    'src/services/sdCacheBridge.ts': '92095b4f66b29af4c8d26d5c9c1561838175191787f2360275b60595102d92cf',
+    'src/services/sync.ts': '2f1e8208b81bbe48575a5747b83d6f162c0b7d9830c7006319c1752cfcfe38b8',
+    'src/services/syncEngine.ts': 'e376031b90d5c008864b2994e0425dfa56d2a7fa15baa916602452e7ac120b6d',
+    'src/shared/types/api.ts': 'c04ebb8863456aab1ea0e573940bd4319cac0e6850db9b1ac7bc1a9e5b9148c5',
+  },
+  '1.5.53': {
+    'brightsign/autorun.brs': '22008bdb09a63f92716661786aa1585dca09a053dbc3a644f7346dabe75fd30c',
+    'brightsign/encryption-test/perform6-encrypted-probe.p6enc': '63ecf15060f348f9d6dc5ebf391b6cdcd0a672a2b4233acb2d43597e6ceba7c7',
+    'src/platform/bsMessagePort.ts': 'f89c56c0df586b86e4f13fd1f00a8d88fd5fc625fdb9ecc9985ec336e029d44b',
+    'src/platform/ledPlaybackFile.ts': '0b2c954d9ed398510b939da6c950d1db6b1a14483f0ca569d29a5db6f375824d',
+    'src/platform/xtOutputBridge.ts': '77a13ff96c98d3ec80da534af31f53d864b230028304c664c2622cd8a331ee55',
+    'src/services/autorunCapabilities.ts': '1b02ab696b1b49a0f94f0b6e2d4b1b465a6b5fc3d2105fbc7dd7b0905d39e998',
+    'src/services/autorunDiag.ts': '54db79cc9f8c156a9042b1c0422f4024772f4319852a6b0f7cff89891d609a27',
+    'src/services/bridgeKeepalive.ts': '75425ab1433feb1b0f3d74a2b5596ba18bf5974347c4fe33fce87f7520a6616c',
+    'src/services/encryptedPlaybackInteropProbe.ts': '679ef0a620995a04d8f6496ee774978a7640eb2c6b970e31b89059d2283dc655',
+    'src/services/mediaEncryption.ts': 'f592b880a89986d8344e322ed8a9475abdd4587aec1f6f24cf36cdf4eec8ac1c',
+    'src/services/mediaKeyInteropProbe.ts': '197263f9db72f163798efd358df3969096861f6553416eabbf4cd94944fc86e5',
+    'src/services/otaAssetPool.ts': '00d541c4c50c5b7549446eb7615fa5b9abfc0d25f518c575b33ade262a410834',
+    'src/services/sync.ts': '2f1e8208b81bbe48575a5747b83d6f162c0b7d9830c7006319c1752cfcfe38b8',
+    'src/services/syncEngine.ts': 'e376031b90d5c008864b2994e0425dfa56d2a7fa15baa916602452e7ac120b6d',
+    'src/shared/types/api.ts': 'c04ebb8863456aab1ea0e573940bd4319cac0e6850db9b1ac7bc1a9e5b9148c5',
+  },
+  '1.5.52': {
+    'brightsign/autorun.brs': '90cfb4ef984401b36c99023d24888ae99d2880a748cde69ad35e35c9dd4bf91f',
+    'brightsign/encryption-test/perform6-encrypted-probe.p6enc': '63ecf15060f348f9d6dc5ebf391b6cdcd0a672a2b4233acb2d43597e6ceba7c7',
+    'src/platform/bsMessagePort.ts': 'f89c56c0df586b86e4f13fd1f00a8d88fd5fc625fdb9ecc9985ec336e029d44b',
+    'src/platform/ledPlaybackFile.ts': '0b2c954d9ed398510b939da6c950d1db6b1a14483f0ca569d29a5db6f375824d',
+    'src/platform/xtOutputBridge.ts': '77a13ff96c98d3ec80da534af31f53d864b230028304c664c2622cd8a331ee55',
+    'src/services/autorunCapabilities.ts': '1b02ab696b1b49a0f94f0b6e2d4b1b465a6b5fc3d2105fbc7dd7b0905d39e998',
+    'src/services/autorunDiag.ts': '54db79cc9f8c156a9042b1c0422f4024772f4319852a6b0f7cff89891d609a27',
+    'src/services/bridgeKeepalive.ts': '75425ab1433feb1b0f3d74a2b5596ba18bf5974347c4fe33fce87f7520a6616c',
+    'src/services/encryptedPlaybackInteropProbe.ts': '679ef0a620995a04d8f6496ee774978a7640eb2c6b970e31b89059d2283dc655',
+    'src/services/mediaEncryption.ts': 'f592b880a89986d8344e322ed8a9475abdd4587aec1f6f24cf36cdf4eec8ac1c',
+    'src/services/mediaKeyInteropProbe.ts': '197263f9db72f163798efd358df3969096861f6553416eabbf4cd94944fc86e5',
+    'src/services/otaAssetPool.ts': '00d541c4c50c5b7549446eb7615fa5b9abfc0d25f518c575b33ade262a410834',
+    'src/services/sync.ts': '2f1e8208b81bbe48575a5747b83d6f162c0b7d9830c7006319c1752cfcfe38b8',
+    'src/services/syncEngine.ts': 'e376031b90d5c008864b2994e0425dfa56d2a7fa15baa916602452e7ac120b6d',
+    'src/shared/types/api.ts': 'c04ebb8863456aab1ea0e573940bd4319cac0e6850db9b1ac7bc1a9e5b9148c5',
+  },
+  '1.5.51': {
+    'brightsign/autorun.brs': '6a112fa2a627e6267379373f1d93b5c37d773caaa708991175511a6dd85147df',
+    'brightsign/encryption-test/perform6-encrypted-probe.p6enc': '63ecf15060f348f9d6dc5ebf391b6cdcd0a672a2b4233acb2d43597e6ceba7c7',
+    'src/contexts/RuntimeContext.tsx': '193926d6b81519e974cf9f49acc686a2c5958580783e0a10830c6ac85b683532',
+    'src/platform/bsMessagePort.ts': 'f89c56c0df586b86e4f13fd1f00a8d88fd5fc625fdb9ecc9985ec336e029d44b',
+    'src/platform/ledPlaybackFile.ts': '0b2c954d9ed398510b939da6c950d1db6b1a14483f0ca569d29a5db6f375824d',
+    'src/platform/xtOutputBridge.ts': '77a13ff96c98d3ec80da534af31f53d864b230028304c664c2622cd8a331ee55',
+    'src/services/autorunCapabilities.ts': '1b02ab696b1b49a0f94f0b6e2d4b1b465a6b5fc3d2105fbc7dd7b0905d39e998',
+    'src/services/autorunDiag.ts': '54db79cc9f8c156a9042b1c0422f4024772f4319852a6b0f7cff89891d609a27',
+    'src/services/bridgeKeepalive.ts': '75425ab1433feb1b0f3d74a2b5596ba18bf5974347c4fe33fce87f7520a6616c',
+    'src/services/encryptedPlaybackInteropProbe.ts': '679ef0a620995a04d8f6496ee774978a7640eb2c6b970e31b89059d2283dc655',
+    'src/services/mediaEncryption.ts': 'f592b880a89986d8344e322ed8a9475abdd4587aec1f6f24cf36cdf4eec8ac1c',
+    'src/services/otaAssetPool.ts': '00d541c4c50c5b7549446eb7615fa5b9abfc0d25f518c575b33ade262a410834',
+    'src/services/sync.ts': '2f1e8208b81bbe48575a5747b83d6f162c0b7d9830c7006319c1752cfcfe38b8',
+    'src/services/syncEngine.ts': 'e376031b90d5c008864b2994e0425dfa56d2a7fa15baa916602452e7ac120b6d',
+    'src/shared/types/api.ts': 'c04ebb8863456aab1ea0e573940bd4319cac0e6850db9b1ac7bc1a9e5b9148c5',
+  },
   '1.5.50': {
     'brightsign/autorun.brs': 'f898ac9ec1828c6e45350ab229d17a740fd744e361e5926df2f73f07a458adae',
     'src/platform/bsMessagePort.ts': 'f89c56c0df586b86e4f13fd1f00a8d88fd5fc625fdb9ecc9985ec336e029d44b',
@@ -245,7 +332,7 @@ if (dormantProbe) {
   for (const [file, expected] of Object.entries(reviewedProbeHashes)) {
     if (sha256(fs.readFileSync(path.join(root, file))) !== expected) fail(`unreviewed dormant source: ${file}`);
   }
-  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50') {
+  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55') {
     execFileSync(
       process.execPath,
       ['--test', 'scripts/encryption-lab/dormant-integration.test.mjs'],
@@ -277,6 +364,23 @@ if (dormantProbe) {
     'scripts/encryption-lab/encrypted-playback-candidate.test.mjs',
     'scripts/encryption-lab/ota-replacement.test.mjs',
   ], { cwd: root, stdio: 'inherit' });
+  if (version === '1.5.51') execFileSync(process.execPath, ['--test',
+    'scripts/encryption-lab/bridge-diagnostic.test.mjs',
+    'scripts/encryption-lab/bridge-observability.test.mjs',
+    'scripts/encryption-lab/widget-port-binding.test.mjs',
+    'scripts/encryption-lab/rohtml-contract-audit.test.mjs',
+    'scripts/encryption-lab/encrypted-playback-candidate.test.mjs',
+    'scripts/encryption-lab/ota-replacement.test.mjs',
+  ], { cwd: root, stdio: 'inherit' });
+  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55') execFileSync(process.execPath, ['--test',
+    'scripts/encryption-lab/bridge-diagnostic.test.mjs',
+    'scripts/encryption-lab/bridge-observability.test.mjs',
+    'scripts/encryption-lab/widget-port-binding.test.mjs',
+    'scripts/encryption-lab/rohtml-contract-audit.test.mjs',
+    'scripts/encryption-lab/production-media-encryption.test.mjs',
+    'scripts/encryption-lab/encrypted-representation-routing.test.mjs',
+    'scripts/encryption-lab/ota-replacement.test.mjs',
+  ], { cwd: root, stdio: 'inherit' });
   if (version === '1.5.47' || version === '1.5.48' || version === '1.5.49' || version === '1.5.50') execFileSync(
     process.execPath,
     ['--test', 'scripts/encryption-lab/production-media-encryption.test.mjs'],
@@ -296,7 +400,8 @@ const changedRuntime = [...new Set([...trackedRuntime, ...untrackedRuntime])]
   .filter((file) => file.startsWith('src/') || file.startsWith('brightsign/'))
   .filter((file) => !(
     (version === '1.5.47' || version === '1.5.48' || version === '1.5.49' || version === '1.5.50') && historicalLabOnly.has(file)
-  ));
+  ))
+  .filter((file) => !(version === '1.5.51' && file === 'src/services/mediaKeyInteropProbe.ts'));
 for (const file of changedRuntime) {
   if (!allowedRuntimeDelta.has(file)) {
     fail(`unreviewed runtime delta relative to 1.5.23: ${file}`);
@@ -346,7 +451,7 @@ const expectedFiles = new Set([
   'perform6-profile.txt',
   'perform6-release.json',
 ]);
-if (version === '1.5.45' || version === '1.5.46') {
+if (version === '1.5.45' || version === '1.5.46' || version === '1.5.51') {
   expectedFiles.add('perform6-encryption-test/perform6-encrypted-probe.p6enc');
 }
 const folderFiles = listFiles(packageFolder);

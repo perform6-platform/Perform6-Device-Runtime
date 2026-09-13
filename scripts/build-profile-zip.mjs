@@ -315,7 +315,7 @@ function main() {
   fs.mkdirSync(outFolder, { recursive: true });
 
   fs.copyFileSync(autorun, path.join(outFolder, 'autorun.brs'));
-  if (profileKey === 'XT2145' && (version === '1.5.45' || version === '1.5.46')) {
+  if (profileKey === 'XT2145' && (version === '1.5.45' || version === '1.5.46' || version === '1.5.51')) {
     const encryptedFixture = path.join(
       root,
       'brightsign',
@@ -451,7 +451,7 @@ function main() {
           'perform6-ops.json',
           'perform6-ops.emergency.json',
           ...(profileKey === 'XT2145' || profileKey === 'XC4055' ? ['led-idle.png'] : []),
-          ...(profileKey === 'XT2145' && (version === '1.5.45' || version === '1.5.46')
+          ...(profileKey === 'XT2145' && (version === '1.5.45' || version === '1.5.46' || version === '1.5.51')
             ? ['perform6-encryption-test/perform6-encrypted-probe.p6enc']
             : []),
           'README-SD.txt',

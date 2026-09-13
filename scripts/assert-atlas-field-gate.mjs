@@ -17,6 +17,7 @@ const allowedRuntimeFiles = new Set([
   'scripts/build-profile-zip.mjs',
   'src/App.tsx',
   'src/components/status/OutputDiagnostics.tsx',
+  'src/contexts/RuntimeContext.tsx',
   'src/hooks/useVideoPlaybackTelemetry.ts',
   'src/layout/BluefinMasterFrame.tsx',
   'src/main.tsx',
@@ -183,8 +184,8 @@ const releaseBuilder = fs.readFileSync(
   path.join(root, 'scripts', 'build-profile-zip.mjs'),
   'utf8',
 );
-if (!releaseBuilder.includes("version === '1.5.45' || version === '1.5.46'")) {
-  fail('historical encrypted fixture packaging is not constrained to completed lab versions');
+if (!releaseBuilder.includes("version === '1.5.45' || version === '1.5.46' || version === '1.5.51'")) {
+  fail('encrypted fixture packaging is not constrained to reviewed lab versions');
 }
 
 const homeHero = fs.readFileSync(

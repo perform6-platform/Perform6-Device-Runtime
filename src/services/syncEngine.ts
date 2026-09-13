@@ -17,6 +17,7 @@ import {
   hasSdCachedMedia,
   listSdCachedMediaVersionIds,
   reconcileSdCacheMarksFromDisk,
+  reconcileEncryptedSdRepresentations,
 } from './sdCacheBridge';
 import { touchProgramMediaVersionIds } from './touchProgramGate';
 import {
@@ -136,6 +137,22 @@ export async function runSyncEngine(
     // Key staging is isolated from storage and playback. The server supplies
     // encryption metadata only for an explicitly allow-listed device+asset.
     stageEncryptedMediaKeys(syncData.media ?? []);
+
+    // A prior runtime may have persisted the plaintext URL for this same
+    // media-version ID. Adopt the encrypted representation only after its
+    // exact manifest-derived filename and byte length are present on SD.
+    let repairedEncryptedIds: string[] = [];
+    try {
+      repairedEncryptedIds = await reconcileEncryptedSdRepresentations(
+        syncData.media ?? [],
+      );
+    } catch (error) {
+      console.warn(
+        '[Perform6] Encrypted SD representation repair failed safely',
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+    for (const id of repairedEncryptedIds) markEncryptedMediaCached(id);
 
     if (syncData.evictMediaVersionIds?.length) {
       clearEncryptedMediaCached(syncData.evictMediaVersionIds);

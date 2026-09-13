@@ -1,5 +1,5 @@
 /**
- * 1.5.46-only event-correlated AES-CTR playback interoperability probe.
+ * 1.5.51-only event-correlated AES-CTR playback interoperability probe.
  *
  * This is deliberately not the production key-delivery design. The bundled
  * ciphertext is a synthetic two-second test pattern and the matching lab key
@@ -12,8 +12,8 @@
 import { runtimeConfig } from '../config/runtime';
 import { getSharedMessagePort } from '../platform/bsMessagePort';
 
-const CANDIDATE_VERSION = '1.5.46';
-const PROBE_ID = 'probe_1_5_46';
+const CANDIDATE_VERSION = '1.5.51';
+const PROBE_ID = 'probe_1_5_51';
 const FIXTURE_PATH = 'SD:/perform6-encryption-test/perform6-encrypted-probe.p6enc';
 const LAB_KEY_HEX = '4f8c2a7d90b1e3f6572849acdb0e1357';
 const LAB_IV_HEX = 'a1c3e5f7092b4d6f8193a5c7e9fb1d2f';

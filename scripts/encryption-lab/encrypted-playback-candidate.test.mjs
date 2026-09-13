@@ -15,7 +15,7 @@ function block(start, end) {
 }
 
 test('probe is version-, profile-, heartbeat-, and single-attempt-gated', () => {
-  assert.match(js, /CANDIDATE_VERSION = '1\.5\.46'/);
+  assert.match(js, /CANDIDATE_VERSION = '1\.5\.51'/);
   assert.match(js, /heartbeatConfirmed !== true/);
   assert.match(js, /hardwareProfile !== 'XT2145'/);
   assert.match(js, /runtimeVersion !== CANDIDATE_VERSION/);
@@ -48,13 +48,15 @@ test('bundled fixture decrypts to an MP4 with the exact AES-128-CTR lab material
 
 test('native probe validates reference and key before one encrypted PlayFile', () => {
   const native = block('Sub HandleP6EncryptedPlaybackProbe', 'End Sub');
-  assert.match(native, /requestId <> "probe_1_5_46"/);
+  assert.match(native, /requestId <> "probe_1_5_51"/);
   assert.match(native, /requestedPath <> expectedPath/);
   assert.match(native, /P6LabReadPlaybackKey\(assetId\)/);
   assert.match(native, /material\.Count\(\) <> 32/);
+  assert.match(native, /not IsPlayableNativeSrc\(st\.playingUrl\)/);
   assert.match(native, /params\.ProbeString = "mp4"/);
   assert.match(native, /params\.EncryptionAlgorithm = "AesCtr"/);
   assert.match(native, /params\.EncryptionKey = material/);
+  assert.doesNotMatch(native, /P6NativeMediaDecryptionSupport/);
   assert.match(native, /if st\.encryptedProbeAttempted = true then/);
   assert.ok(native.indexOf('st.encryptedProbeAttempted = true') < native.indexOf('P6LabReadPlaybackKey(assetId)'));
   assert.equal((native.match(/\.PlayFile\(/g) ?? []).length, 1);
