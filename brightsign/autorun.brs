@@ -3522,7 +3522,9 @@ End Function
 Function P6NativeMediaDecryptionSupport() as String
   di = CreateObject("roDeviceInfo")
   if type(di) <> "roDeviceInfo" then return "probe-unavailable"
-  if di.HasFeature("media_decryption") = true then return "supported"
+  ' BrightSign documents this feature token with a literal space. Unknown
+  ' tokens may return false, so do not normalize it to an underscore.
+  if di.HasFeature("media decryption") = true then return "supported"
   return "unsupported"
 End Function
 

@@ -67,7 +67,8 @@ test('production encrypted playback uses the documented minimal AES-CTR contract
 
 test('native media-decryption capability probe is read-only and reported over existing telemetry', () => {
   const probe = block('Function P6NativeMediaDecryptionSupport', 'End Function');
-  assert.match(probe, /HasFeature\("media_decryption"\)/);
+  assert.match(probe, /HasFeature\("media decryption"\)/);
+  assert.doesNotMatch(probe, /HasFeature\("media_decryption"\)/);
   assert.doesNotMatch(probe, /PlayFile|Write|Delete|Format|EncryptStorage|Reboot/i);
   const labProbe = block('Function P6LabProbeCryptoSupport', 'End Function');
   assert.match(labProbe, /probe\.mediaDecryption = P6NativeMediaDecryptionSupport\(\)/);

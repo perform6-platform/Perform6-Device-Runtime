@@ -5,7 +5,7 @@ encrypted `PlayFile` contract without changing the proven boot/control paths.
 
 ## Changes from 1.5.48
 
-- Reports `roDeviceInfo.HasFeature("media_decryption")` through the existing
+- Reports `roDeviceInfo.HasFeature("media decryption")` through the existing
   hello/SD telemetry. The probe is read-only.
 - Refuses encrypted playback before touching the active transport when native
   media decryption is unsupported.
@@ -16,7 +16,7 @@ encrypted `PlayFile` contract without changing the proven boot/control paths.
   neither needed nor present in BrightSign's encrypted-file example.
 - Keeps the SD file-size probe advisory because BrightSign can report false
   negatives on exFAT; native `PlayFile()` remains authoritative.
-- Requires native `media_decryption` support before the capability reports
+- Requires native `media decryption` support before the capability reports
   ready.
 - Reports one secret-free terminal reason: unsupported/probe-unavailable
   feature, key unavailable, native accepted, or `PlayFile` returned false,
