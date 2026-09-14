@@ -56,8 +56,7 @@ export function formatApiFailureMessage(status: number, path: string, body: stri
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const { token, deviceId, timeoutMs = 45_000, signal: outerSignal, ...init } = options;
   const headers = new Headers(init.headers);
-  // Let the browser add the multipart boundary for FormData uploads.
-  if (!(init.body instanceof FormData)) headers.set('Content-Type', 'application/json');
+  headers.set('Content-Type', 'application/json');
   if (token) headers.set('Authorization', `Bearer ${token}`);
   if (deviceId) headers.set('X-Device-Id', deviceId);
 

@@ -136,7 +136,6 @@ export default function Home() {
       mediaVersionId: idleMedia.mediaVersionId,
       title: idleMedia.title,
       fallbackSrc: simOnlyFallback(idleMedia.url),
-      sourceProfile: idleMedia.sourceProfile,
     });
   }, [
     playbackState.manifest,
@@ -165,7 +164,6 @@ export default function Home() {
       mediaVersionId: idleMedia.mediaVersionId,
       title: idleMedia.title,
       fallbackSrc: simOnlyFallback(idleMedia.url),
-      sourceProfile: idleMedia.sourceProfile,
     });
   }, [
     sessionOpen,
@@ -225,7 +223,6 @@ export default function Home() {
       mediaVersionId: media.mediaVersionId,
       title: media.title ?? SESSION_LABEL[source],
       fallbackSrc: simOnlyFallback(media.url),
-      sourceProfile: media.sourceProfile,
     });
     setActiveSession({
       source,

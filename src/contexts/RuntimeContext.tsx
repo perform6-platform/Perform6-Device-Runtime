@@ -24,8 +24,6 @@ import {
   clearCachedMediaVersionIds,
   applyOtaUpdate,
 } from '../services';
-import { startXtOutputCapture } from '../services/screenCapture';
-import { startFastRemoteCommandPoller } from '../services/remoteCommandPoller';
 import { clearAllSdCachedMarks } from '../services/sdCacheBridge';
 import { cancelMediaDownloads, isMediaDownloadInProgress, forceClearMediaDownloadLocks } from '../services/mediaDownloadGate';
 import { sendPlaybackTelemetry } from '../services/playbackTelemetryApi';
@@ -1088,16 +1086,6 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isDeviceReady()) return;
     startBridgeKeepalive();
-  }, [deviceInfo, hasCredentials]);
-
-  useEffect(() => {
-    if (!isDeviceReady()) return;
-    const stopCapture = startXtOutputCapture();
-    const stopCommandPoll = startFastRemoteCommandPoller();
-    return () => {
-      stopCapture();
-      stopCommandPoll();
-    };
   }, [deviceInfo, hasCredentials]);
 
   useEffect(() => {

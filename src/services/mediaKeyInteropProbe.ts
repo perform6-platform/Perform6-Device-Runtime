@@ -68,3 +68,4 @@ export function startMediaKeyInteropProbe(heartbeatConfirmed: boolean): void {
     }
   }, 2_000);
 }
+

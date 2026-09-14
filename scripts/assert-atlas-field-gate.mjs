@@ -19,12 +19,10 @@ const allowedRuntimeFiles = new Set([
   'src/components/status/OutputDiagnostics.tsx',
   'src/contexts/RuntimeContext.tsx',
   'src/hooks/useVideoPlaybackTelemetry.ts',
-  'src/hooks/useOfflineVideoSrc.ts',
   'src/layout/BluefinMasterFrame.tsx',
   'src/main.tsx',
   'src/pages/display/XC4055Display.tsx',
   'src/pages/display/XT2145Display.tsx',
-  'src/pages/Home.tsx',
   'src/platform/xcOutputBridge.ts',
   'src/platform/xtOutputBridge.ts',
   'src/platform/bsMessagePort.ts',
@@ -38,19 +36,13 @@ const allowedRuntimeFiles = new Set([
   'src/services/mediaEncryption.ts',
   'src/services/otaAssetPool.ts',
   'src/services/outputResolutionProbe.ts',
+  // Field-confirmed 1.5.55 encrypted-representation mapping repair. The
+  // strict OTA validator separately pins this file's exact reviewed hash.
   'src/services/sdCacheBridge.ts',
-  'src/services/manifest.ts',
-  'src/services/screenCapture.ts',
-  'src/services/remoteCommandPoller.ts',
-  'src/services/remoteCommandBridge.ts',
-  'src/services/deviceRemoteControl.ts',
-  'src/services/api.ts',
   'src/services/sync.ts',
   'src/services/syncEngine.ts',
-  'src/shared/bluefinViewport.ts',
   'src/shared/types/api.ts',
-  'src/shared/types/runtime.ts',
-  'src/stores/runtimeStore.ts',
+  'src/shared/bluefinViewport.ts',
 ]);
 
 // Retained only as evidence for the completed 1.5.44–1.5.46 lab probes.
@@ -174,8 +166,8 @@ const xtBridge = fs.readFileSync(
 for (const marker of [
   "const screenKey = 'SCREEN_2'",
   "source: 'NATIVE_HDMI'",
+  "output: 'HDMI-2 native (configured 3840x2160x60p)'",
   'reportNativeHdmiTelemetry(status)',
-  'MEDIA|SOURCE|',
 ]) {
   if (!xtBridge.includes(marker)) {
     fail(`XT native HDMI telemetry invariant missing: ${marker}`);
@@ -232,52 +224,6 @@ for (const marker of [
 ]) {
   if (!otaApply.includes(marker) && !otaPool.includes(marker)) {
     fail(`recoverable OTA invariant missing: ${marker}`);
-  }
-}
-
-const screenCapture = fs.readFileSync(
-  path.join(root, 'src/services/screenCapture.ts'),
-  'utf8',
-);
-for (const marker of [
-  "runtimeConfig.hardwareProfile !== 'XT2145'",
-  "type: 'p6-screen-capture'",
-  "'/devices/me/screen-capture'",
-  'CAPTURE_INTERVAL_MS = 60_000',
-]) {
-  if (!screenCapture.includes(marker)) {
-    fail(`XT output capture safety invariant missing: ${marker}`);
-  }
-}
-for (const forbidden of ['rebootViaBrightSignSystem', 'requestDeviceReboot', 'cancelOtaInstall', 'rmTreeSync']) {
-  if (screenCapture.includes(forbidden)) {
-    fail(`XT output capture must not touch reboot/OTA/storage lifecycle: ${forbidden}`);
-  }
-}
-
-const commandPoller = fs.readFileSync(
-  path.join(root, 'src/services/remoteCommandPoller.ts'),
-  'utf8',
-);
-for (const marker of [
-  'POLL_MS = 10_000',
-  "'/devices/me/remote-commands'",
-  'processRemoteCommands',
-]) {
-  if (!commandPoller.includes(marker)) {
-    fail(`fast command fallback invariant missing: ${marker}`);
-  }
-}
-
-const captureHandler = autorun.match(
-  /Sub HandleP6ScreenCapture\(payload as Object\)([\s\S]*?)End Sub/,
-)?.[1];
-if (!captureHandler || !captureHandler.includes('vm.Screenshot(params)')) {
-  fail('autorun native screenshot handler missing');
-}
-for (const forbidden of ['RebootDeviceAfterOta', 'ApplyNativePlayback', 'HandleLedOtaInstall']) {
-  if (captureHandler.includes(forbidden)) {
-    fail(`autorun screenshot handler crosses protected lifecycle: ${forbidden}`);
   }
 }
 

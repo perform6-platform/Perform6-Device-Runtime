@@ -208,6 +208,8 @@ Function TryCreateHtmlWidget(rect as Object, msgPort as Object, url as String) a
 
   cfg = CreateObject("roAssociativeArray")
   cfg.url = url
+  ' BrightSign roHtmlWidget contract: when initialization properties are used,
+  ' supply port here instead of calling SetPort() after construction.
   cfg.port = msgPort
   cfg.mouse_enabled = true
   cfg.brightsign_js_objects_enabled = true
@@ -380,6 +382,7 @@ Sub PostJsToWidget(html as Object, msg as Object)
   if type(html) <> "roHtmlWidget" then return
   if type(msg) <> "roAssociativeArray" then return
   accepted = html.PostJSMessage(msg)
+  ' Only hello replies: fixed status, never payloads or key material.
   if PayloadString(msg, "type") = "led-hello-ack" then
     if accepted = true then
       LedLog("BRIDGE|POST_JS|hello-ack|accepted=1|delivery=unconfirmed")
@@ -1022,6 +1025,9 @@ Sub HandleLedHello(payload as Object, states as Object)
   msg.AddReplace("protocolVersion", "2")
   msg.AddReplace("features", "ota-ping,ota-reboot,playback-ack,sd-led-bus")
   msg.AddReplace("autorunRelease", "1.5.8")
+  ' Read-only capability probe. It creates no key, reads/writes no entry, and
+  ' never invokes encrypted playback. Existing playback already proves the
+  ' active roVideoPlayer exists in this autorun environment.
   cryptoProbe = P6LabProbeCryptoSupport()
   msg.AddReplace("encryptedMediaState", "disabled")
   if cryptoProbe.ready = true then
@@ -1043,6 +1049,8 @@ Sub HandleLedHello(payload as Object, states as Object)
   ' Always log first ack + every 10th / version change so SD log proves JS→autorun.
   if helloCount = 1 or helloCount mod 10 = 0 or jsVersion <> lastJs then
     g.p6LastHelloJs = jsVersion
+    ' Independent SD-log evidence; contains no key material and does not
+    ' depend on the JS return channel. Constructor readiness is not playback.
     LedLog("MEDIA|PROBE|disabled|registry=" + cryptoProbe.registry + "|keyContainer=" + cryptoProbe.keyContainer + "|nativeDecryption=" + cryptoProbe.mediaDecryption)
     if Len(jsVersion) > 0 then
       LedLog("=== Perform6: led-hello-ack protocol=2 js=" + jsVersion + " ===")
@@ -1430,6 +1438,11 @@ Function PlayEncryptedNativeSrc(st as Object, src as String, assetId as String) 
   src = NormalizeLocalSrc(src)
   if IsNetworkSrc(src) or not IsPlayableNativeSrc(src) then return false
   nativeDecryption = P6NativeMediaDecryptionSupport()
+  ' HasFeature("media decryption") is advisory on this XT2145/BOS build: the
+  ' 1.5.51 field fixture produced Playing -> MediaEnded with the documented
+  ' AES-CTR PlayFile contract even though HasFeature returned false.
+  ' Stat/Exists may report a false negative for playable files on some exFAT
+  ' cards, so this is diagnostic-only. PlayFile remains authoritative.
   fileBytes = PartFileBytes(src)
   fileProbe = "miss"
   if fileBytes > 0 then fileProbe = "present"
@@ -1441,6 +1454,8 @@ Function PlayEncryptedNativeSrc(st as Object, src as String, assetId as String) 
   end if
   params = CreateObject("roAssociativeArray")
   params.Filename = src
+  ' Ciphertext hides the MP4 signature from the container probe. The XT2145
+  ' 1.5.51 field fixture proved this explicit hint reaches Playing/MediaEnded.
   params.ProbeString = "mp4"
   params.EncryptionAlgorithm = "AesCtr"
   params.EncryptionKey = material
@@ -1463,6 +1478,8 @@ Function PlayEncryptedNativeSrc(st as Object, src as String, assetId as String) 
   return accepted = true
 End Function
 
+' Candidate 1.5.52 is deliberately locked to the one server-side pilot. The
+' API independently locks delivery to UTF54M000145 and this media-version ID.
 Function P6ProductionPilotAssetAllowed(assetId as String) as Boolean
   return assetId = "92744b7c-237d-41eb-b7a3-02300e6368c3"
 End Function
@@ -1492,6 +1509,8 @@ Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, stat
   mediaId = PayloadString(payload, "mediaVersionId")
   encryptionAssetId = PayloadString(payload, "encryptionAssetId")
   TraceLog("PLAY|ApplyNative|src=" + src + "|fb=" + fallbackSrc + "|id=" + mediaId)
+  ' Fail before mutating transport state. A missing/mismatched key must leave
+  ' the currently playing plaintext asset and all control paths untouched.
   if Len(encryptionAssetId) > 0 then
     if encryptionAssetId <> mediaId then
       LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=rejected|reason=id-mismatch|secretLogged=0")
@@ -1536,6 +1555,8 @@ Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, stat
   restartNonce = PayloadInt(payload, "restartNonce", 0)
   forceRestart = restartNonce <> st.nonce
 
+  ' Encrypted swaps are transactional: do not change state or stop the proven
+  ' source until the documented native PlayFile call has accepted the asset.
   if Len(encryptionAssetId) > 0 then
     encryptedOk = PlayEncryptedNativeSrc(st, src, encryptionAssetId)
     if encryptedOk <> true then
@@ -1734,37 +1755,6 @@ Function AtomicWriteAsciiFile(path as String, content as String) as Boolean
   DeleteFile(tmp)
   return ok2 = true
 End Function
-
-' Native output capture is observational only: no player, widget, output-mode,
-' cache, OTA, or reboot state is changed. A result marker is written last so
-' the JS uploader never reads a partially written JPEG.
-Sub HandleP6ScreenCapture(payload as Object)
-  requestId = PayloadString(payload, "requestId")
-  if Len(requestId) = 0 then return
-  ok = false
-  vm = CreateObject("roVideoMode")
-  if type(vm) = "roVideoMode" then
-    DeleteFile("SD:/perform6-screen-capture.jpg")
-    params = CreateObject("roAssociativeArray")
-    params.filename = "SD:/perform6-screen-capture.jpg"
-    params.width = 1920
-    params.height = 720
-    params.quality = 70
-    params.filetype = "JPEG"
-    params.async = 0
-    ok = vm.Screenshot(params)
-  end if
-  result = CreateObject("roAssociativeArray")
-  result.requestId = requestId
-  result.ok = false
-  if ok = true then result.ok = true
-  AtomicWriteAsciiFile("SD:/perform6-screen-capture-result.json", FormatJson(result))
-  if ok = true then
-    TraceLog("CAPTURE|ready|" + requestId)
-  else
-    TraceLog("CAPTURE|failed|" + requestId)
-  end if
-End Sub
 
 ' In-memory roles map — authoritative merge for this autorun process (no disk RMW race).
 Function LedStatusRolesAA() as Object
@@ -2509,19 +2499,9 @@ Function DiagnosticModeIs60p(modeText as String, dimensions as String) as Boolea
 End Function
 
 ' Report configured multi-screen modes honestly. On XT, GetActiveMode/GetFPS
-' describe the combined canvas and are not per-output evidence. Verify each HDMI
-' from GetScreenModes and derive its refresh rate from the configured mode.
+' describe the primary/canvas state; HDMI-2 is verified from GetScreenModes.
 Sub LogActiveDisplayModes(vm as Object, profile as String)
   if type(vm) <> "roVideoMode" then return
-
-  bluefinModeText = ""
-  ledModeText = ""
-  ledBestText = ""
-  if profile = "XT2145" then
-    bluefinModeText = GetConfiguredScreenMode(vm, "HDMI-1")
-    ledModeText = GetConfiguredScreenMode(vm, "HDMI-2")
-    ledBestText = BestModeForConnector(vm, "HDMI-2")
-  end if
 
   modeText = ""
   colorText = ""
@@ -2533,8 +2513,15 @@ Sub LogActiveDisplayModes(vm as Object, profile as String)
     if type(active.colordepth) = "roString" then depthText = active.colordepth
     LedLog("=== Perform6: GetActiveMode " + modeText + " " + colorText + " " + depthText + " ===")
     if profile = "XT2145" then
-      LedLog("OUT|CANVAS|mode=" + modeText + "|depth=" + depthText + "|note=combined-multiscreen")
-    else if profile <> "XT2145" and ModeLooks4k60(modeText) then
+      ' Multi-screen active mode can describe the combined graphics canvas.
+      primaryScreenMode = GetConfiguredScreenMode(vm, "HDMI-1")
+      LedLog("OUT|CANVAS|mode=" + modeText + "|depth=" + depthText)
+      if DiagnosticModeIs60p(primaryScreenMode, "1920x1080") then
+        LedLog("OUT|PRIMARY|ok=1|configuredMode=" + primaryScreenMode)
+      else
+        LedLog("OUT|ISSUE|HDMI-1 configured mode unexpected or unavailable|mode=" + primaryScreenMode)
+      end if
+    else if profile <> "XT2145" and DiagnosticModeIs60p(modeText, "3840x2160") then
       LedLog("OUT|PRIMARY|ok=1|mode=" + modeText + "|depth=" + depthText)
     else
       LedLog("OUT|ISSUE|primary output mode unexpected|mode=" + modeText + "|depth=" + depthText)
@@ -2544,34 +2531,17 @@ Sub LogActiveDisplayModes(vm as Object, profile as String)
     LedLog("OUT|ISSUE|GetActiveMode unavailable")
   end if
 
+  fps = vm.GetFPS()
   fpsText = ""
-  if profile = "XT2145" then
-    fpsText = ModeRefreshText(ledModeText)
-    if ModeLooks60p(ledModeText) then
-      LedLog("OUT|FPS|HDMI-2|ok=1|fps=" + fpsText + "|source=screen-mode")
+  if type(fps) = "roInteger" or type(fps) = "Integer" then
+    fpsText = IntToStr(fps)
+    LedLog("=== Perform6: GetFPS " + fpsText + " ===")
+    if profile = "XT2145" then
+      LedLog("OUT|CANVAS|reportedFps=" + fpsText + "|notPerOutputPlaybackFps=1")
+    else if fps < 59 or fps > 60 then
+      LedLog("OUT|ISSUE|output fps is not 59.94/60|fps=" + fpsText)
     else
-      LedLog("OUT|ISSUE|HDMI-2 configured refresh is not 59.94/60|mode=" + ledModeText)
-    end if
-    if ModeLooks1080p60(bluefinModeText) then
-      LedLog("OUT|HDMI-1|ok=1|mode=" + bluefinModeText)
-    else
-      LedLog("OUT|ISSUE|HDMI-1 configured mode unexpected|mode=" + bluefinModeText)
-    end if
-    if ModeLooks4k60(ledBestText) and not ModeLooks4k60(ledModeText) then
-      LedLog("OUT|ISSUE|HDMI-2 mode does not match 4K60 EDID selection|best=" + ledBestText + "|mode=" + ledModeText)
-    else if not ModeLooks4k60(ledBestText) and not ModeLooks1080p60(ledModeText) then
-      LedLog("OUT|ISSUE|HDMI-2 mode does not match safe EDID fallback|best=" + ledBestText + "|mode=" + ledModeText)
-    end if
-  else
-    fps = vm.GetFPS()
-    if type(fps) = "roInteger" or type(fps) = "Integer" then
-      fpsText = IntToStr(fps)
-      LedLog("=== Perform6: GetFPS " + fpsText + " ===")
-      if fps < 59 or fps > 60 then
-        LedLog("OUT|ISSUE|output fps is not 59.94/60|fps=" + fpsText)
-      else
-        LedLog("OUT|FPS|ok=1|fps=" + fpsText)
-      end if
+      LedLog("OUT|FPS|ok=1|fps=" + fpsText)
     end if
   end if
 
@@ -2581,7 +2551,9 @@ Sub LogActiveDisplayModes(vm as Object, profile as String)
     LedLog("OUT|GRAPHICS|" + IntToStr(rx) + "x" + IntToStr(ry))
   end if
 
-  WriteOutputDiagFile(profile, modeText, bluefinModeText, ledModeText, ledBestText, colorText, depthText, fpsText)
+  ledModeText = ""
+  if profile = "XT2145" then ledModeText = GetConfiguredScreenMode(vm, "HDMI-2")
+  WriteOutputDiagFile(profile, modeText, ledModeText, colorText, depthText, fpsText)
 
   ' GetBestMode docs list "hdmi"/"vga"; multi-output also accepts HDMI-N names.
   connectors = CreateObject("roArray", 4, true)
@@ -2599,7 +2571,18 @@ Sub LogActiveDisplayModes(vm as Object, profile as String)
   i = 0
   while i < connectors.Count()
     name = connectors[i]
-    best = BestModeForConnector(vm, name)
+    best = vm.GetBestMode(name)
+    if type(best) <> "roString" and type(best) <> "String" then best = ""
+    if Len(best) = 0 and Left(UCase(name), 4) = "HDMI" then
+      ' Docs classic connector is "hdmi"; multi-output uses HDMI-N names.
+      fallback = vm.GetBestMode("hdmi")
+      if type(fallback) = "roString" or type(fallback) = "String" then
+        if Len(fallback) > 0 then
+          best = fallback
+          LedLog("=== Perform6: GetBestMode " + name + " blank — used hdmi=" + best + " ===")
+        end if
+      end if
+    end if
     if Len(best) = 0 then best = "(blank/no EDID)"
     LedLog("=== Perform6: GetBestMode " + name + "=" + best + " ===")
     if DiagnosticModeIs60p(best, "3840x2160") then
@@ -2607,22 +2590,12 @@ Sub LogActiveDisplayModes(vm as Object, profile as String)
     else if profile = "XT2145" and name = "HDMI-1" and Instr(1, LCase(best), "1920x1080") > 0 then
       LedLog("OUT|HDMI-1|best=1080p|" + best)
     else if Instr(1, best, "(blank") = 0 then
-      LedLog("OUT|" + name + "|best=" + best + "|note=1080p60-safe-fallback")
+      LedLog("OUT|ISSUE|" + name + " EDID best is not 4K60|" + best)
     end if
     LogDisplayIdentity(vm, name)
     i = i + 1
   end while
 End Sub
-
-Function BestModeForConnector(vm as Object, hdmiName as String) as String
-  best = vm.GetBestMode(hdmiName)
-  if type(best) <> "roString" and type(best) <> "String" then best = ""
-  if Len(best) = 0 and Left(UCase(hdmiName), 4) = "HDMI" then
-    fallback = vm.GetBestMode("hdmi")
-    if type(fallback) = "roString" or type(fallback) = "String" then best = fallback
-  end if
-  return best
-End Function
 
 Function GetConfiguredScreenMode(vm as Object, hdmiName as String) as String
   sm = vm.GetScreenModes()
@@ -2636,25 +2609,20 @@ Function GetConfiguredScreenMode(vm as Object, hdmiName as String) as String
   return modeText
 End Function
 
-Sub WriteOutputDiagFile(profile as String, primaryModeText as String, bluefinModeText as String, ledModeText as String, ledBestText as String, colorText as String, depthText as String, fpsText as String)
+Sub WriteOutputDiagFile(profile as String, primaryModeText as String, ledModeText as String, colorText as String, depthText as String, fpsText as String)
   q = Chr(34)
   ok = "0"
-  healthy = "0"
-  if ModeLooks4k60(ledModeText) then ok = "1"
-  if ModeLooks4k60(ledBestText) and ModeLooks4k60(ledModeText) then healthy = "1"
-  if not ModeLooks4k60(ledBestText) and ModeLooks1080p60(ledModeText) then healthy = "1"
+  ' This flag describes configured HDMI-2 mode, not canvas or decoded FPS.
+  if DiagnosticModeIs60p(ledModeText, "3840x2160") then ok = "1"
   json = "{"
   json = json + q + "type" + q + ":" + q + "output-diag" + q + ","
   json = json + q + "profile" + q + ":" + q + profile + q + ","
   json = json + q + "primaryMode" + q + ":" + q + primaryModeText + q + ","
-  json = json + q + "bluefinMode" + q + ":" + q + bluefinModeText + q + ","
   json = json + q + "ledMode" + q + ":" + q + ledModeText + q + ","
-  json = json + q + "ledEdidBest" + q + ":" + q + ledBestText + q + ","
   json = json + q + "colorspace" + q + ":" + q + colorText + q + ","
   json = json + q + "colordepth" + q + ":" + q + depthText + q + ","
   json = json + q + "fps" + q + ":" + q + fpsText + q + ","
-  json = json + q + "configured4k60" + q + ":" + q + ok + q + ","
-  json = json + q + "outputHealthy" + q + ":" + q + healthy + q
+  json = json + q + "configured4k60" + q + ":" + q + ok + q
   json = json + "}"
   WriteAsciiFile("SD:/perform6-output-diag.json", json)
   WriteAsciiFile("/storage/sd/perform6-output-diag.json", json)
@@ -2771,53 +2739,6 @@ Function ModeLooks1080p60(modeText as String) as Boolean
   if Instr(1, low, "1920x1080") = 0 then return false
   if Instr(1, low, "60") = 0 then return false
   return true
-End Function
-
-Function ModeLooks60p(modeText as String) as Boolean
-  low = LCase(modeText)
-  if Instr(1, low, "x59.94p") > 0 then return true
-  if Instr(1, low, "x60p") > 0 then return true
-  return false
-End Function
-
-Function ModeRefreshText(modeText as String) as String
-  low = LCase(modeText)
-  if Instr(1, low, "x59.94p") > 0 then return "59.94"
-  if Instr(1, low, "x60p") > 0 then return "60"
-  if Instr(1, low, "x50p") > 0 then return "50"
-  if Instr(1, low, "x30p") > 0 then return "30"
-  if Instr(1, low, "x29.97p") > 0 then return "29.97"
-  return "unknown"
-End Function
-
-Function OutputWidthForMode(modeText as String) as Integer
-  low = LCase(modeText)
-  if Instr(1, low, "3840x2160") > 0 then return 3840
-  if Instr(1, low, "1920x1080") > 0 then return 1920
-  return FleetOutputWidth()
-End Function
-
-Function OutputHeightForMode(modeText as String) as Integer
-  low = LCase(modeText)
-  if Instr(1, low, "3840x2160") > 0 then return 2160
-  if Instr(1, low, "1920x1080") > 0 then return 1080
-  return FleetOutputHeight()
-End Function
-
-' Deterministic XT policy: use 4K60 only when HDMI-2 EDID advertises it;
-' otherwise use the universally compatible 1080p60 fallback. Both outputs
-' remain at the same refresh rate as required by BrightSign multiscreen mode.
-Function SelectXtLedVideoMode(vm as Object, displayMode as String) as String
-  best = BestModeForConnector(vm, "HDMI-2")
-  if ModeLooks4k60(best) then
-    selected = FleetVideoMode(displayMode)
-    LedLog("OUT|EDID_SELECT|HDMI-2|best=" + best + "|selected=" + selected + "|fallback=0")
-    return selected
-  end if
-  selected = "1920x1080x60p:fullres"
-  if Len(best) = 0 then best = "unavailable"
-  LedLog("OUT|EDID_SELECT|HDMI-2|best=" + best + "|selected=" + selected + "|fallback=1")
-  return selected
 End Function
 
 Function AsIntCoord(value as Dynamic) as Integer
@@ -2939,10 +2860,9 @@ Function ApplyMultiScreenModes(vm as Object, profile as String, displayMode as S
     if idx2 < 0 then idx2 = 1
 
     modeBluefin = BluefinVideoMode()
-    modeLed = SelectXtLedVideoMode(vm, displayMode)
     bluefinW = BluefinOutputWidth()
     if not ScreenAlreadyMatches(sm[idx1], modeBluefin, 0, true) then needChange = true
-    if not ScreenAlreadyMatches(sm[idx2], modeLed, bluefinW, true) then needChange = true
+    if not ScreenAlreadyMatches(sm[idx2], mode4k, bluefinW, true) then needChange = true
 
     i = 0
     while i < sm.Count()
@@ -2955,12 +2875,12 @@ Function ApplyMultiScreenModes(vm as Object, profile as String, displayMode as S
     end while
 
     if needChange = false then
-      SafePrint("=== Perform6: XT2145 EDID-compatible HDMI modes already configured ===")
+      SafePrint("=== Perform6: XT2145 HDMI-1 1080p60 + HDMI-2 4K60 already configured ===")
       return false
     end if
 
     ConfigureOutput(sm[idx1], modeBluefin, 0, true)
-    ConfigureOutput(sm[idx2], modeLed, bluefinW, true)
+    ConfigureOutput(sm[idx2], mode4k, bluefinW, true)
     i = 0
     while i < sm.Count()
       if i <> idx1 and i <> idx2 then
@@ -2969,7 +2889,7 @@ Function ApplyMultiScreenModes(vm as Object, profile as String, displayMode as S
       i = i + 1
     end while
 
-    SafePrint("=== Perform6: SetScreenModes XT2145 HDMI-1=" + modeBluefin + " HDMI-2=" + modeLed + " (may reboot) ===")
+    SafePrint("=== Perform6: SetScreenModes XT2145 HDMI-1=" + modeBluefin + " HDMI-2=" + mode4k + " (may reboot) ===")
     vm.SetScreenModes(sm)
     return true
   end if
@@ -3074,11 +2994,6 @@ Sub Main()
 
   tileW = FleetOutputWidth()
   tileH = FleetOutputHeight()
-  if profile = "XT2145" and type(vm) = "roVideoMode" then
-    configuredLedMode = GetConfiguredScreenMode(vm, "HDMI-2")
-    tileW = OutputWidthForMode(configuredLedMode)
-    tileH = OutputHeightForMode(configuredLedMode)
-  end if
   width = tileW
   height = tileH
 
@@ -3539,8 +3454,6 @@ Sub Main()
               HandleLedOtaCancel(ledStates)
             else if msgType = "p6-media-key-store" then
               HandleP6MediaKeyStore(payload)
-            else if msgType = "p6-screen-capture" and profile = "XT2145" then
-              HandleP6ScreenCapture(payload)
             else if msgType = "led-ota-reboot" then
               RebootDeviceAfterOta()
             else if msgType = "led-ops-reload" then
@@ -3587,8 +3500,6 @@ Sub Main()
           end if
         else if msgType = "p6-media-key-store" then
           HandleP6MediaKeyStore(payload)
-        else if msgType = "p6-screen-capture" and profile = "XT2145" then
-          HandleP6ScreenCapture(payload)
         else if msgType = "led-ota-reboot" then
           RebootDeviceAfterOta()
         else if Len(msgType) > 0 then
