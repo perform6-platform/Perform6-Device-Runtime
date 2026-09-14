@@ -360,6 +360,11 @@ reviewedProbeHashesByVersion['1.5.57'] = {
   'src/services/remoteCommandPoller.ts': '52fe1274babe1777169aa9fe62e513b81aaf9c0a04c131a05b0643774c53f8fc',
   'src/services/screenCapture.ts': 'fd58710898779fd7e5ea9a044baa4a1881805970e49c80c66687816616d5059d',
 };
+reviewedProbeHashesByVersion['1.5.58'] = {
+  ...reviewedProbeHashesByVersion['1.5.57'],
+  'src/services/deviceRemoteControl.ts': '7b448f1c45ee3ef4a7b8d9082f60d6c3ee9e5dff846b5e40b06486935d210e56',
+  'src/services/remoteCommandBridge.ts': 'e5a86945fc134f88517b7d91267c14543460f0b0a9a9792eecba7460b86b1b0b',
+};
 const reviewedProbeHashes = reviewedProbeHashesByVersion[version];
 const dormantProbe = reviewedProbeHashes != null;
 const allowedRuntimeDelta = new Set(dormantProbe ? Object.keys(reviewedProbeHashes) : [
@@ -370,7 +375,7 @@ if (dormantProbe) {
   for (const [file, expected] of Object.entries(reviewedProbeHashes)) {
     if (sha256(fs.readFileSync(path.join(root, file))) !== expected) fail(`unreviewed dormant source: ${file}`);
   }
-  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.56' && version !== '1.5.57') {
+  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.56' && version !== '1.5.57' && version !== '1.5.58') {
     execFileSync(
       process.execPath,
       ['--test', 'scripts/encryption-lab/dormant-integration.test.mjs'],
@@ -410,7 +415,7 @@ if (dormantProbe) {
     'scripts/encryption-lab/encrypted-playback-candidate.test.mjs',
     'scripts/encryption-lab/ota-replacement.test.mjs',
   ], { cwd: root, stdio: 'inherit' });
-  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.56' || version === '1.5.57') execFileSync(process.execPath, ['--test',
+  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.56' || version === '1.5.57' || version === '1.5.58') execFileSync(process.execPath, ['--test',
     'scripts/encryption-lab/bridge-diagnostic.test.mjs',
     'scripts/encryption-lab/bridge-observability.test.mjs',
     'scripts/encryption-lab/widget-port-binding.test.mjs',
@@ -418,7 +423,8 @@ if (dormantProbe) {
     'scripts/encryption-lab/production-media-encryption.test.mjs',
     'scripts/encryption-lab/encrypted-representation-routing.test.mjs',
     'scripts/encryption-lab/ota-replacement.test.mjs',
-    ...(version === '1.5.57' ? ['scripts/encryption-lab/output-command-fix.test.mjs'] : []),
+    ...((version === '1.5.57' || version === '1.5.58') ? ['scripts/encryption-lab/output-command-fix.test.mjs'] : []),
+    ...(version === '1.5.58' ? ['scripts/encryption-lab/ota-command-dedupe.test.mjs'] : []),
   ], { cwd: root, stdio: 'inherit' });
   if (version === '1.5.47' || version === '1.5.48' || version === '1.5.49' || version === '1.5.50') execFileSync(
     process.execPath,

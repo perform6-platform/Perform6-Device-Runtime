@@ -40,6 +40,33 @@ export type RemoteCommandExecutor = (command: DeviceRemoteCommand) => void | Pro
 
 let executor: RemoteCommandExecutor | null = null;
 let deferredUiCommands: DeviceRemoteCommand[] = [];
+const handledCommandIds = new Set<string>();
+const handledCommandOrder: string[] = [];
+const MAX_HANDLED_COMMAND_IDS = 256;
+
+function claimRemoteCommand(command: DeviceRemoteCommand): boolean {
+  const id = command.id.trim();
+  if (!id) {
+    console.warn('[Perform6] Remote command ignored — missing command id', {
+      action: command.action,
+    });
+    return false;
+  }
+  if (handledCommandIds.has(id)) {
+    console.info('[Perform6] Duplicate remote command ignored', {
+      id,
+      action: command.action,
+    });
+    return false;
+  }
+  handledCommandIds.add(id);
+  handledCommandOrder.push(id);
+  while (handledCommandOrder.length > MAX_HANDLED_COMMAND_IDS) {
+    const expired = handledCommandOrder.shift();
+    if (expired) handledCommandIds.delete(expired);
+  }
+  return true;
+}
 
 async function executeUiCommands(commands: DeviceRemoteCommand[]): Promise<void> {
   const activeExecutor = executor;
@@ -74,6 +101,11 @@ export async function processRemoteCommands(commands: DeviceRemoteCommand[]): Pr
 
   const uiCommands: DeviceRemoteCommand[] = [];
   for (const command of commands) {
+    // Heartbeat and the 10-second channel drain the same API queue. The API
+    // intentionally retains one force-OTA delivery retry until staging starts,
+    // so claim the command id before any async work. A repeated delivery must
+    // never interrupt and restart the OTA that it originally launched.
+    if (!claimRemoteCommand(command)) continue;
     try {
       const handled = await executeSystemRemoteCommand(command);
       if (!handled) uiCommands.push(command);

@@ -167,7 +167,7 @@ export async function executeSystemRemoteCommand(
         if (forceOta) {
           clearOtaFailCooldown();
         }
-        void runSyncNowHook({
+        await runSyncNowHook({
           force: true,
           forceOta,
           skipOta: !forceOta || command.skipOta === true,

@@ -272,6 +272,28 @@ for (const marker of [
   }
 }
 
+const remoteCommandBridge = fs.readFileSync(
+  path.join(root, 'src/services/remoteCommandBridge.ts'),
+  'utf8',
+);
+for (const marker of [
+  'handledCommandIds',
+  'Duplicate remote command ignored',
+  'if (!claimRemoteCommand(command)) continue',
+]) {
+  if (!remoteCommandBridge.includes(marker)) {
+    fail(`remote-command deduplication invariant missing: ${marker}`);
+  }
+}
+
+const deviceRemoteControl = fs.readFileSync(
+  path.join(root, 'src/services/deviceRemoteControl.ts'),
+  'utf8',
+);
+if (!deviceRemoteControl.includes('await runSyncNowHook({')) {
+  fail('OTA command execution must remain awaited while the poller is locked');
+}
+
 const captureHandler = autorun.match(
   /Sub HandleP6ScreenCapture\(payload as Object\)([\s\S]*?)End Sub/,
 )?.[1];
