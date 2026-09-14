@@ -11,6 +11,7 @@ const runtime = fs.readFileSync('src/contexts/RuntimeContext.tsx', 'utf8');
 const homeHero = fs.readFileSync('src/components/home/HomeHeroVideo.tsx', 'utf8');
 const runtimeStore = fs.readFileSync('src/stores/runtimeStore.ts', 'utf8');
 const xtOutputBridge = fs.readFileSync('src/platform/xtOutputBridge.ts', 'utf8');
+const ledPlaybackFile = fs.readFileSync('src/platform/ledPlaybackFile.ts', 'utf8');
 
 function block(start, end) {
   const from = autorun.indexOf(start);
@@ -182,6 +183,10 @@ test('post-reload XT commands advance above the last native nonce', () => {
   assert.match(align, /accepted <= state\.displayRestartNonce/);
   assert.match(align, /ensureDisplayRestartNonceAtLeast\(accepted \+ 1\)/);
   assert.match(xtOutputBridge, /alignRestartNonceWithNativeStatus\(readXtPlaybackStatus\(\)\)/);
+  assert.match(
+    ledPlaybackFile,
+    /restartNonce:\s*status\.restartNonce\s*\?\?\s*status\.restartnonce/,
+  );
 });
 
 test('cache completion replay is scoped and encrypted-ready is edge-triggered', () => {

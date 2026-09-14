@@ -47,6 +47,9 @@ export interface LedPlaybackStatus {
   role?: string;
   wantUrl?: string;
   restartNonce?: string;
+  /** BrightScript's JSON writer lowercases associative-array keys. */
+  wanturl?: string;
+  restartnonce?: string;
   /** Per-role map written by autorun (in-memory merge + atomic sidecars). */
   roles?: Partial<Record<LedPlaybackTarget, LedPlaybackStatus>>;
 }
@@ -246,7 +249,12 @@ function readJsonFile(sdPath: string): Record<string, unknown> | null {
 
 function asStatus(raw: Record<string, unknown> | null): LedPlaybackStatus | null {
   if (!raw) return null;
-  return raw as LedPlaybackStatus;
+  const status = raw as LedPlaybackStatus;
+  return {
+    ...status,
+    wantUrl: status.wantUrl ?? status.wanturl,
+    restartNonce: status.restartNonce ?? status.restartnonce,
+  };
 }
 
 function statusRolePath(role: LedPlaybackTarget): string {
@@ -276,7 +284,10 @@ export function readLedPlaybackStatusForRole(
   const doc = readLedPlaybackStatus();
   const fromRoles = doc?.roles?.[role];
   if (fromRoles && typeof fromRoles === 'object') {
-    return { ...fromRoles, type: doc?.type ?? fromRoles.type, role };
+    const normalized = asStatus(fromRoles as unknown as Record<string, unknown>);
+    return normalized
+      ? { ...normalized, type: doc?.type ?? normalized.type, role }
+      : null;
   }
 
   if (doc?.role === role) return doc;
