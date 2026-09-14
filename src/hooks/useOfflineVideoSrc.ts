@@ -5,7 +5,6 @@ import {
   type TouchPlaybackSlot,
 } from '../services/playback';
 import type { PlaybackManifest } from '../shared/types';
-import type { MediaSourceProfile } from '../shared/types/api';
 import { resolveLocalPlaybackUrl } from '../services/media';
 import { resolvePlaybackSrc } from '../services/playbackSrc';
 import { subscribeSdCacheProgress } from '../services/sdCacheBridge';
@@ -76,18 +75,12 @@ export function useTouchVideos(manifest: PlaybackManifest | null | undefined) {
 export function getTouchSlotMedia(
   manifest: PlaybackManifest | null | undefined,
   slotId: TouchPlaybackSlot,
-): {
-  mediaVersionId: string | null;
-  title: string | null;
-  url: string | null;
-  sourceProfile: MediaSourceProfile | null;
-} {
+): { mediaVersionId: string | null; title: string | null; url: string | null } {
   const screen = manifest ? findTouchScreen(manifest, slotId) : undefined;
   const video = getCurrentVideo(screen);
   return {
     mediaVersionId: video?.id ?? null,
     title: video?.title ?? null,
     url: video?.url ?? null,
-    sourceProfile: video?.sourceProfile ?? null,
   };
 }

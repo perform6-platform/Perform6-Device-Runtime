@@ -19,12 +19,10 @@ const allowedRuntimeFiles = new Set([
   'src/components/status/OutputDiagnostics.tsx',
   'src/contexts/RuntimeContext.tsx',
   'src/hooks/useVideoPlaybackTelemetry.ts',
-  'src/hooks/useOfflineVideoSrc.ts',
   'src/layout/BluefinMasterFrame.tsx',
   'src/main.tsx',
   'src/pages/display/XC4055Display.tsx',
   'src/pages/display/XT2145Display.tsx',
-  'src/pages/Home.tsx',
   'src/platform/xcOutputBridge.ts',
   'src/platform/xtOutputBridge.ts',
   'src/platform/bsMessagePort.ts',
@@ -38,14 +36,13 @@ const allowedRuntimeFiles = new Set([
   'src/services/mediaEncryption.ts',
   'src/services/otaAssetPool.ts',
   'src/services/outputResolutionProbe.ts',
+  // Field-confirmed 1.5.55 encrypted-representation mapping repair. The
+  // strict OTA validator separately pins this file's exact reviewed hash.
   'src/services/sdCacheBridge.ts',
-  'src/services/manifest.ts',
   'src/services/sync.ts',
   'src/services/syncEngine.ts',
-  'src/shared/bluefinViewport.ts',
   'src/shared/types/api.ts',
-  'src/shared/types/runtime.ts',
-  'src/stores/runtimeStore.ts',
+  'src/shared/bluefinViewport.ts',
 ]);
 
 // Retained only as evidence for the completed 1.5.44–1.5.46 lab probes.
@@ -169,8 +166,8 @@ const xtBridge = fs.readFileSync(
 for (const marker of [
   "const screenKey = 'SCREEN_2'",
   "source: 'NATIVE_HDMI'",
+  "output: 'HDMI-2 native (configured 3840x2160x60p)'",
   'reportNativeHdmiTelemetry(status)',
-  'MEDIA|SOURCE|',
 ]) {
   if (!xtBridge.includes(marker)) {
     fail(`XT native HDMI telemetry invariant missing: ${marker}`);

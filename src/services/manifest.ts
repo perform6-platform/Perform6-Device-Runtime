@@ -79,7 +79,6 @@ function videoItemToMediaAsset(item: PlaybackVideoItem): MediaAsset {
     url,
     title: item.video ?? 'Video',
     durationSeconds: item.durationSeconds,
-    sourceProfile: item.sourceProfile ?? null,
     loop: !item.day,
   };
 }

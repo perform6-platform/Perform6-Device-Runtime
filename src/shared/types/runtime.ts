@@ -91,7 +91,6 @@ export interface MediaAsset {
   url: string;
   title: string;
   durationSeconds?: number;
-  sourceProfile?: import('./api').MediaSourceProfile | null;
   loop?: boolean;
 }
 

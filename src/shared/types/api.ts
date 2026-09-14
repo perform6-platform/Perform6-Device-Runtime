@@ -82,22 +82,11 @@ export interface SyncMediaItem {
   /** current first, then prefetch — set by server for download priority */
   weekRole?: 'current' | 'prefetch' | 'previous' | string;
   cached?: boolean;
-  sourceProfile?: MediaSourceProfile | null;
   encryption?: {
     algorithm: 'AesCtr';
     keyHex: string;
     ivHex: string;
   };
-}
-
-export interface MediaSourceProfile {
-  codec?: string | null;
-  resolution?: string | null;
-  frameRate?: number | null;
-  pixelFormat?: string | null;
-  fieldOrder?: string | null;
-  audioCodec?: string | null;
-  bitrateKbps?: number | null;
 }
 
 export interface PlaybackVideoItem {
@@ -109,7 +98,6 @@ export interface PlaybackVideoItem {
   thumbnail?: string;
   durationSeconds?: number;
   checksum?: string;
-  sourceProfile?: MediaSourceProfile | null;
 }
 
 export interface PlaybackSlotContent {
