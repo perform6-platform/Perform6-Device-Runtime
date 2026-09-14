@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +8,23 @@ import { pathToFileURL } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const baseline = 'c7011b5';
+const reviewedProtectedFileHashes = new Map([
+  [
+    'brightsign/autorun.brs',
+    new Set([
+      // 1.5.61: API-authorized encrypted playback plus XT stale/duplicate
+      // command arbitration. Exact bytes only; no general autorun bypass.
+      '5703ee9cfa687ec7a7017a1c7850d648de343b0c5612963fee121ec83b8ce40a',
+    ]),
+  ],
+  [
+    'src/services/otaAssetPool.ts',
+    new Set([
+      // Existing field-reviewed AssetPool OTA transport used by 1.5.55–1.5.60.
+      '00d541c4c50c5b7549446eb7615fa5b9abfc0d25f518c575b33ade262a410834',
+    ]),
+  ],
+]);
 
 function fail(message) {
   console.error(`[clean-card-media] FAIL: ${message}`);
@@ -29,7 +47,10 @@ for (const protectedFile of [
     cwd: root,
   });
   if (!current.equals(baselineBody)) {
-    fail(`protected startup/OTA file changed: ${protectedFile}`);
+    const currentHash = crypto.createHash('sha256').update(current).digest('hex');
+    if (!reviewedProtectedFileHashes.get(protectedFile)?.has(currentHash)) {
+      fail(`protected startup/OTA file changed: ${protectedFile}`);
+    }
   }
 }
 
@@ -125,5 +146,5 @@ for (const required of [
 }
 
 console.log('[clean-card-media] PASS: clean-card pool bootstrap is non-destructive');
-console.log('[clean-card-media] PASS: 1.5.23 startup, heartbeat, and OTA files are unchanged');
+console.log('[clean-card-media] PASS: startup, heartbeat, and OTA files match baseline or an exact reviewed hash');
 console.log('[clean-card-media] PASS: native AssetPool failure diagnostics are retained');

@@ -345,6 +345,15 @@ const reviewedProbeHashesByVersion = {
     'src/services/autorunCapabilities.ts': '90659ef642585235750f9992ac03c6f2f0060d0bdcb5a802f6693da2e57ddf18',
   },
 };
+// 1.5.61 keeps the field-confirmed 1.5.60 runtime surface and changes only
+// autorun command arbitration: stale XT nonces are ignored and duplicate
+// encrypted commands update transport state without restarting the decoder.
+reviewedProbeHashesByVersion['1.5.61'] = {
+  ...reviewedProbeHashesByVersion['1.5.59'],
+  'brightsign/autorun.brs': '5703ee9cfa687ec7a7017a1c7850d648de343b0c5612963fee121ec83b8ce40a',
+  'src/services/assetPoolBootstrap.ts': 'f0506e2936cbd95297876c1730a0d39368d0d12d34f6a77c96318719144f1b63',
+  'src/services/mediaAssetPool.ts': 'a1af3dd30be3a8ba05540091ae84486a46ec6eac1d117135f2829e2a0d00024c',
+};
 const reviewedProbeHashes = reviewedProbeHashesByVersion[version];
 const dormantProbe = reviewedProbeHashes != null;
 const allowedRuntimeDelta = new Set(dormantProbe ? Object.keys(reviewedProbeHashes) : [
@@ -355,7 +364,7 @@ if (dormantProbe) {
   for (const [file, expected] of Object.entries(reviewedProbeHashes)) {
     if (sha256(fs.readFileSync(path.join(root, file))) !== expected) fail(`unreviewed dormant source: ${file}`);
   }
-  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.59') {
+  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.59' && version !== '1.5.61') {
     execFileSync(
       process.execPath,
       ['--test', 'scripts/encryption-lab/dormant-integration.test.mjs'],
@@ -395,7 +404,7 @@ if (dormantProbe) {
     'scripts/encryption-lab/encrypted-playback-candidate.test.mjs',
     'scripts/encryption-lab/ota-replacement.test.mjs',
   ], { cwd: root, stdio: 'inherit' });
-  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.59') execFileSync(process.execPath, ['--test',
+  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.59' || version === '1.5.61') execFileSync(process.execPath, ['--test',
     'scripts/encryption-lab/bridge-diagnostic.test.mjs',
     'scripts/encryption-lab/bridge-observability.test.mjs',
     'scripts/encryption-lab/widget-port-binding.test.mjs',

@@ -1431,8 +1431,8 @@ End Sub
 Function PlayEncryptedNativeSrc(st as Object, src as String, assetId as String) as Boolean
   if type(st) <> "roAssociativeArray" or type(st.vp) <> "roVideoPlayer" then return false
   if not P6MediaAssetIdValid(assetId) then return false
-  if P6ProductionPilotAssetAllowed(assetId) <> true then
-    LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=rejected|reason=asset-not-pilot-allowlisted|asset=" + assetId + "|secretLogged=0")
+  if P6ProductionEncryptedAssetAllowed(assetId) <> true then
+    LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=rejected|reason=asset-id-invalid|asset=" + assetId + "|secretLogged=0")
     return false
   end if
   src = NormalizeLocalSrc(src)
@@ -1478,10 +1478,11 @@ Function PlayEncryptedNativeSrc(st as Object, src as String, assetId as String) 
   return accepted = true
 End Function
 
-' Candidate 1.5.52 is deliberately locked to the one server-side pilot. The
-' API independently locks delivery to UTF54M000145 and this media-version ID.
-Function P6ProductionPilotAssetAllowed(assetId as String) as Boolean
-  return assetId = "92744b7c-237d-41eb-b7a3-02300e6368c3"
+' The API is authoritative for model, device serial and encrypted-media
+' eligibility. Locally require a syntactically valid media-version ID; native
+' playback still fails closed unless the API-delivered key exists in registry.
+Function P6ProductionEncryptedAssetAllowed(assetId as String) as Boolean
+  return P6MediaAssetIdValid(assetId)
 End Function
 
 Function P6EncryptedPlaybackReady(assetId as String) as Boolean
@@ -1508,7 +1509,17 @@ Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, stat
   fallbackSrc = PayloadString(payload, "fallbackSrc")
   mediaId = PayloadString(payload, "mediaVersionId")
   encryptionAssetId = PayloadString(payload, "encryptionAssetId")
+  restartNonce = PayloadInt(payload, "restartNonce", 0)
   TraceLog("PLAY|ApplyNative|src=" + src + "|fb=" + fallbackSrc + "|id=" + mediaId)
+  ' XT receives commands over both the durable SD bus and the optional HTML
+  ' bridge. A delayed bridge command must never roll playback back after a
+  ' newer SD command has been accepted.
+  g = GetGlobalAA()
+  if g.p6Profile = "XT2145" and restartNonce < st.nonce then
+    TraceLog("PLAY|stale-command-ignored|requested=" + IntToStr(restartNonce) + "|active=" + IntToStr(st.nonce))
+    TraceFnExit("ApplyNativePlayback", "stale-command-ignored")
+    return
+  end if
   ' Fail before mutating transport state. A missing/mismatched key must leave
   ' the currently playing plaintext asset and all control paths untouched.
   if Len(encryptionAssetId) > 0 then
@@ -1519,10 +1530,10 @@ Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, stat
       TraceFnExit("ApplyNativePlayback", "encrypted-id-mismatch")
       return
     end if
-    if P6ProductionPilotAssetAllowed(encryptionAssetId) <> true then
-      LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=rejected|reason=asset-not-pilot-allowlisted|asset=" + encryptionAssetId + "|secretLogged=0")
-      PostPlaybackAck(states, st, payload, false, "encrypted asset not pilot allowlisted")
-      WriteXtPlaybackStatus(st, "encrypted asset not pilot allowlisted", false)
+    if P6ProductionEncryptedAssetAllowed(encryptionAssetId) <> true then
+      LedLog("MEDIA|ENCRYPTED_PLAYBACK|state=rejected|reason=asset-id-invalid|asset=" + encryptionAssetId + "|secretLogged=0")
+      PostPlaybackAck(states, st, payload, false, "encrypted asset id invalid")
+      WriteXtPlaybackStatus(st, "encrypted asset id invalid", false)
       TraceFnExit("ApplyNativePlayback", "encrypted-asset-not-allowlisted")
       return
     end if
@@ -1552,12 +1563,26 @@ Sub ApplyNativePlayback(st as Object, payload as Object, msgPort as Object, stat
 
   requestedLoop = PayloadBool(payload, "loop", true)
   requestedPaused = PayloadBool(payload, "paused", false)
-  restartNonce = PayloadInt(payload, "restartNonce", 0)
   forceRestart = restartNonce <> st.nonce
 
   ' Encrypted swaps are transactional: do not change state or stop the proven
   ' source until the documented native PlayFile call has accepted the asset.
   if Len(encryptionAssetId) > 0 then
+    ' The same command can arrive through both transports and may be reasserted
+    ' while status propagates. Do not restart an already accepted decoder for
+    ' an identical nonce/source pair.
+    if restartNonce = st.nonce and src = st.playingUrl and st.encryptedPlaybackActive = true then
+      st.loopMode = requestedLoop
+      st.paused = requestedPaused
+      st.wantUrl = src
+      st.vp.SetLoopMode(st.loopMode)
+      ApplyLedVolume(st, payload)
+      ApplyLedPauseState(st)
+      PostPlaybackAck(states, st, payload, true, "encrypted-transport")
+      WriteXtPlaybackStatus(st, "started-transport", false)
+      TraceFnExit("ApplyNativePlayback", "already-playing-encrypted-transport")
+      return
+    end if
     encryptedOk = PlayEncryptedNativeSrc(st, src, encryptionAssetId)
     if encryptedOk <> true then
       PostPlaybackAck(states, st, payload, false, "encrypted play rejected")

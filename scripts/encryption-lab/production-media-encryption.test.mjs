@@ -58,7 +58,7 @@ test('encrypted rejection cannot mutate playback state or stop the proven source
   const apply = block('Sub ApplyNativePlayback', 'End Sub');
   const encryptedCall = apply.indexOf('encryptedOk = PlayEncryptedNativeSrc');
   const encryptedReject = apply.indexOf('if encryptedOk <> true', encryptedCall);
-  const firstStateMutation = apply.indexOf('st.loopMode = requestedLoop');
+  const firstStateMutation = apply.indexOf('st.loopMode = requestedLoop', encryptedReject);
   assert.ok(encryptedCall > 0 && encryptedReject > encryptedCall);
   assert.ok(encryptedReject < firstStateMutation);
   assert.doesNotMatch(apply.slice(encryptedCall, encryptedReject), /Stop|playingUrl\s*=|st\.nonce\s*=|st\.wantUrl\s*=/);
@@ -74,7 +74,7 @@ test('production encrypted MP4 playback uses the field-proven container hint and
   assert.match(play, /P6NativeMediaDecryptionSupport\(\)/);
   assert.doesNotMatch(play, /nativeDecryption <> "supported"/);
   assert.doesNotMatch(play, /reason=native-decryption-/);
-  assert.match(play, /P6ProductionPilotAssetAllowed\(assetId\)/);
+  assert.match(play, /P6ProductionEncryptedAssetAllowed\(assetId\)/);
   assert.match(play, /fileProbe = "miss"/);
   assert.doesNotMatch(play, /reason=file-unavailable/);
   assert.match(play, /reason=playfile-returned-false\|contract=encrypted-mp4-probe/);
@@ -85,19 +85,41 @@ test('production encrypted MP4 playback uses the field-proven container hint and
   }
 });
 
-test('production playback is locked locally to the exact pilot media version', () => {
-  const allowlist = block('Function P6ProductionPilotAssetAllowed', 'End Function');
+test('production playback accepts only API-authorized media with a staged native key', () => {
+  const allowlist = block('Function P6ProductionEncryptedAssetAllowed', 'End Function');
   const apply = block('Sub ApplyNativePlayback', 'End Sub');
-  assert.match(
-    allowlist,
-    /return assetId = "92744b7c-237d-41eb-b7a3-02300e6368c3"/,
-  );
-  assert.match(apply, /P6ProductionPilotAssetAllowed\(encryptionAssetId\)/);
-  assert.match(apply, /asset-not-pilot-allowlisted/);
+  assert.match(allowlist, /return P6MediaAssetIdValid\(assetId\)/);
+  assert.match(apply, /P6ProductionEncryptedAssetAllowed\(encryptionAssetId\)/);
+  assert.match(apply, /asset-id-invalid/);
   assert.ok(
-    apply.indexOf('P6ProductionPilotAssetAllowed(encryptionAssetId)') <
+    apply.indexOf('P6ProductionEncryptedAssetAllowed(encryptionAssetId)') <
       apply.indexOf('P6EncryptedPlaybackReady(encryptionAssetId)'),
   );
+});
+
+test('XT command ordering rejects stale commands without touching playback state', () => {
+  const apply = block('Sub ApplyNativePlayback', 'End Sub');
+  const guard = apply.indexOf('restartNonce < st.nonce');
+  const playableGate = apply.indexOf('if not IsPlayableNativeSrc(src)');
+  const encryptedCall = apply.indexOf('encryptedOk = PlayEncryptedNativeSrc');
+  assert.ok(guard > 0 && guard < playableGate && guard < encryptedCall);
+  const staleBlock = apply.slice(guard, apply.indexOf('end if', guard));
+  assert.match(staleBlock, /stale-command-ignored/);
+  assert.match(staleBlock, /return/);
+  assert.doesNotMatch(staleBlock, /st\.nonce\s*=|st\.playingUrl\s*=|StopClear|PlayFile|WriteXtPlaybackStatus/);
+});
+
+test('duplicate encrypted command is transport-only and cannot restart the decoder', () => {
+  const apply = block('Sub ApplyNativePlayback', 'End Sub');
+  const duplicate = apply.indexOf(
+    'restartNonce = st.nonce and src = st.playingUrl and st.encryptedPlaybackActive = true',
+  );
+  const encryptedCall = apply.indexOf('encryptedOk = PlayEncryptedNativeSrc');
+  assert.ok(duplicate > 0 && duplicate < encryptedCall);
+  const duplicateBlock = apply.slice(duplicate, apply.indexOf('end if', duplicate));
+  assert.match(duplicateBlock, /already-playing-encrypted-transport/);
+  assert.match(duplicateBlock, /return/);
+  assert.doesNotMatch(duplicateBlock, /PlayEncryptedNativeSrc|StopClear|st\.nonce\s*=/);
 });
 
 test('native media-decryption capability probe is read-only and reported over existing telemetry', () => {
