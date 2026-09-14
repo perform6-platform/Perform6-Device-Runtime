@@ -104,6 +104,36 @@ try {
 // 1.5.23 implementation.
 // Version-specific reviewed dormant probe; never a blanket autorun exemption.
 const reviewedProbeHashesByVersion = {
+  '1.5.56': {
+    'brightsign/autorun.brs': '10a8b7b68bb90bedb60f23d6d9f1e5489750c6afd93cead82530330cbeccc6cd',
+    'brightsign/encryption-test/perform6-encrypted-probe.p6enc': '63ecf15060f348f9d6dc5ebf391b6cdcd0a672a2b4233acb2d43597e6ceba7c7',
+    'src/contexts/RuntimeContext.tsx': '0c80d73052e37f01c1260feb6418d094d69628db18c4153e028dfa35769413fd',
+    'src/hooks/useOfflineVideoSrc.ts': 'f0606ec14294a4d83d3f62a04f4b8a976c447f751180b8b200330f5af872943d',
+    'src/pages/Home.tsx': '90322eeac0446984e35a6abd74602fd5d44017f4e8020c273433a9947d8d6553',
+    'src/platform/bsMessagePort.ts': 'f89c56c0df586b86e4f13fd1f00a8d88fd5fc625fdb9ecc9985ec336e029d44b',
+    'src/platform/ledPlaybackFile.ts': '0b2c954d9ed398510b939da6c950d1db6b1a14483f0ca569d29a5db6f375824d',
+    'src/platform/xtOutputBridge.ts': '67102d48af7d0ae75dd7ee76a554fb552ddd17864c0039324e52ef03e2b072bd',
+    'src/services/api.ts': 'cf2c9e43fe127895bca05b1467bd1d892a51fa3d2c7925c1f7f636916af43a83',
+    'src/services/autorunCapabilities.ts': '1b02ab696b1b49a0f94f0b6e2d4b1b465a6b5fc3d2105fbc7dd7b0905d39e998',
+    'src/services/autorunDiag.ts': '54db79cc9f8c156a9042b1c0422f4024772f4319852a6b0f7cff89891d609a27',
+    'src/services/bridgeKeepalive.ts': '75425ab1433feb1b0f3d74a2b5596ba18bf5974347c4fe33fce87f7520a6616c',
+    'src/services/deviceRemoteControl.ts': 'e8465258fa384d44f249cd9470d3b7a68e7796e08d60dc3279e46ba76aea4c98',
+    'src/services/encryptedPlaybackInteropProbe.ts': '679ef0a620995a04d8f6496ee774978a7640eb2c6b970e31b89059d2283dc655',
+    'src/services/manifest.ts': '69d199c83a94b60a9fe2a3fa73bc165886ff92e36b14a6acb58de5c724bb80ab',
+    'src/services/mediaEncryption.ts': 'f592b880a89986d8344e322ed8a9475abdd4587aec1f6f24cf36cdf4eec8ac1c',
+    'src/services/mediaKeyInteropProbe.ts': '6e1c4f5d75efd6059ef79b44690bad5c7c16975d3d8266e09059733f762c2824',
+    'src/services/otaAssetPool.ts': '00d541c4c50c5b7549446eb7615fa5b9abfc0d25f518c575b33ade262a410834',
+    'src/services/outputResolutionProbe.ts': 'e9b0d6b7ac13aa394c8ebcfcc6e85afc06b2ffa40ca92a2fff4134a6c901e861',
+    'src/services/remoteCommandBridge.ts': '12d9303b47c9f42b5638ea052e87d1892a4385abda673393b75b7ca41a42a3c5',
+    'src/services/remoteCommandPoller.ts': '46d316041b449c8660374d92c4847f0dbcf5bcbcb33b05cdd9705f56fdcfe60a',
+    'src/services/screenCapture.ts': '95e3543ada510acdc5c8fe69529fad9a5ab8f83d7475b87fe96362190c992aab',
+    'src/services/sdCacheBridge.ts': 'c78bac1e12f9496db2c749da25d55bafc8d814e9c8d0d5c748c5aade2fc279be',
+    'src/services/sync.ts': '2f1e8208b81bbe48575a5747b83d6f162c0b7d9830c7006319c1752cfcfe38b8',
+    'src/services/syncEngine.ts': 'bf8fe806e7a86efa2f77c3cc9274944d3cd84979e624c81dacedd2e9e5d95b4d',
+    'src/shared/types/api.ts': '62f7ce166e3287114c662d84d98d6dc633b2a07b3b04c48b5f67eb14945f2c5f',
+    'src/shared/types/runtime.ts': '91be4cf9b478b550d35d5ca33643e1e89427cd6ae00b15cc8660ee3507c27ce9',
+    'src/stores/runtimeStore.ts': 'fe90ce252616fc206061d8bcf512a901d7cefe6919479d77d46998116d6189f7',
+  },
   '1.5.55': {
     'brightsign/autorun.brs': '22008bdb09a63f92716661786aa1585dca09a053dbc3a644f7346dabe75fd30c',
     'brightsign/encryption-test/perform6-encrypted-probe.p6enc': '63ecf15060f348f9d6dc5ebf391b6cdcd0a672a2b4233acb2d43597e6ceba7c7',
@@ -332,7 +362,7 @@ if (dormantProbe) {
   for (const [file, expected] of Object.entries(reviewedProbeHashes)) {
     if (sha256(fs.readFileSync(path.join(root, file))) !== expected) fail(`unreviewed dormant source: ${file}`);
   }
-  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55') {
+  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.56') {
     execFileSync(
       process.execPath,
       ['--test', 'scripts/encryption-lab/dormant-integration.test.mjs'],
@@ -372,7 +402,7 @@ if (dormantProbe) {
     'scripts/encryption-lab/encrypted-playback-candidate.test.mjs',
     'scripts/encryption-lab/ota-replacement.test.mjs',
   ], { cwd: root, stdio: 'inherit' });
-  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55') execFileSync(process.execPath, ['--test',
+  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.56') execFileSync(process.execPath, ['--test',
     'scripts/encryption-lab/bridge-diagnostic.test.mjs',
     'scripts/encryption-lab/bridge-observability.test.mjs',
     'scripts/encryption-lab/widget-port-binding.test.mjs',
