@@ -16,6 +16,9 @@ const allowedRuntimeFiles = new Set([
   'scripts/assert-led-playback.mjs',
   'scripts/build-profile-zip.mjs',
   'src/App.tsx',
+  // XT encrypted HDMI-1 default playback uses BrightSign's documented HTML
+  // AES-CTR attributes; exact invariants are asserted below.
+  'src/components/home/HomeHeroVideo.tsx',
   'src/components/status/OutputDiagnostics.tsx',
   'src/contexts/RuntimeContext.tsx',
   'src/hooks/useVideoPlaybackTelemetry.ts',
@@ -48,6 +51,9 @@ const allowedRuntimeFiles = new Set([
   'src/services/syncEngine.ts',
   'src/shared/types/api.ts',
   'src/shared/bluefinViewport.ts',
+  // Chromium reload recovery raises the JS command nonce above the native
+  // status floor without changing the autorun/OTA boot path.
+  'src/stores/runtimeStore.ts',
 ]);
 
 // Retained only as evidence for the completed 1.5.44–1.5.46 lab probes.
@@ -204,9 +210,53 @@ for (const marker of [
   'useVideoPlaybackTelemetry(',
   "screenKey: 'SCREEN_1'",
   'mediaVersionId',
+  "video.setAttribute('EncryptionAlgorithm', encryption.algorithm)",
+  "video.setAttribute('EncryptionKey', encryption.keyAndIvHex)",
+  "video.removeAttribute('EncryptionKey')",
 ]) {
   if (!homeHero.includes(marker)) {
     fail(`Bluefin HDMI-1 telemetry invariant missing: ${marker}`);
+  }
+}
+
+const encryption = fs.readFileSync(
+  path.join(root, 'src', 'services', 'mediaEncryption.ts'),
+  'utf8',
+);
+for (const marker of [
+  'const htmlPlaybackKeys = new Map',
+  'keyAndIvHex: encryption.keyHex + encryption.ivHex',
+  "encryption.keyHex = ''",
+  "encryption.ivHex = ''",
+  'htmlPlaybackKeys.delete(id)',
+  'if (alreadyMarked) return',
+]) {
+  if (!encryption.includes(marker)) {
+    fail(`XT encrypted HTML/key lifecycle invariant missing: ${marker}`);
+  }
+}
+
+const runtimeStore = fs.readFileSync(
+  path.join(root, 'src', 'stores', 'runtimeStore.ts'),
+  'utf8',
+);
+for (const marker of [
+  'ensureDisplayRestartNonceAtLeast',
+  'displayRestartNonce < safeMinimum',
+  'displayRestartNonce: safeMinimum',
+]) {
+  if (!runtimeStore.includes(marker)) {
+    fail(`XT command nonce recovery invariant missing: ${marker}`);
+  }
+}
+
+for (const marker of [
+  'alignRestartNonceWithNativeStatus(readXtPlaybackStatus())',
+  'accepted + 1',
+  'event.mediaVersionId === currentMediaVersionId',
+]) {
+  if (!xtBridge.includes(marker)) {
+    fail(`XT post-reload command/replay invariant missing: ${marker}`);
   }
 }
 

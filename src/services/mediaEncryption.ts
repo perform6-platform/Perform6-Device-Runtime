@@ -5,6 +5,17 @@ const META_KEY = 'perform6-encrypted-media-v1';
 
 type EncryptionMap = Record<string, { algorithm: 'AesCtr' }>;
 
+type HtmlPlaybackEncryption = {
+  algorithm: 'AesCtr';
+  /** BrightSign HTML video expects the 128-bit key followed by the 128-bit IV. */
+  keyAndIvHex: string;
+};
+
+// Intentionally process-memory only. BrightSign's HTML video element needs the
+// material while opening an encrypted file, but it must never enter Chromium
+// storage or logs.
+const htmlPlaybackKeys = new Map<string, HtmlPlaybackEncryption>();
+
 function validId(value: string): boolean {
   return /^[a-zA-Z0-9_-]{1,80}$/.test(value);
 }
@@ -42,13 +53,30 @@ export function stageEncryptedMediaKeys(items: SyncMediaItem[]): void {
       encryption.algorithm !== 'AesCtr' ||
       !validId(item.mediaVersionId) ||
       !validHex16(encryption.keyHex) ||
-      !validHex16(encryption.ivHex) ||
-      !port
+      !validHex16(encryption.ivHex)
     ) {
       console.warn('[Perform6] MEDIA|KEY_STAGE|state=rejected|secretLogged=0', {
         mediaVersionId: item.mediaVersionId,
         controlPort: Boolean(port),
       });
+      continue;
+    }
+    htmlPlaybackKeys.set(item.mediaVersionId, {
+      algorithm: 'AesCtr',
+      keyAndIvHex: encryption.keyHex + encryption.ivHex,
+    });
+    window.dispatchEvent(
+      new CustomEvent('perform6-encryption-key-staged', {
+        detail: { mediaVersionId: item.mediaVersionId },
+      }),
+    );
+    if (!port) {
+      console.warn('[Perform6] MEDIA|KEY_STAGE|state=rejected|secretLogged=0', {
+        mediaVersionId: item.mediaVersionId,
+        controlPort: false,
+      });
+      encryption.keyHex = '';
+      encryption.ivHex = '';
       continue;
     }
     try {
@@ -79,12 +107,23 @@ export function encryptionAssetId(mediaVersionId: string | null | undefined): st
   return readMap()[mediaVersionId]?.algorithm === 'AesCtr' ? mediaVersionId : '';
 }
 
+export function htmlPlaybackEncryption(
+  mediaVersionId: string | null | undefined,
+): HtmlPlaybackEncryption | null {
+  if (!mediaVersionId || readMap()[mediaVersionId]?.algorithm !== 'AesCtr') {
+    return null;
+  }
+  return htmlPlaybackKeys.get(mediaVersionId) ?? null;
+}
+
 /** Mark only after AssetPool download and realization have both succeeded. */
 export function markEncryptedMediaCached(mediaVersionId: string): void {
   if (!validId(mediaVersionId)) return;
   const map = readMap();
+  const alreadyMarked = map[mediaVersionId]?.algorithm === 'AesCtr';
   map[mediaVersionId] = { algorithm: 'AesCtr' };
   writeMap(map);
+  if (alreadyMarked) return;
   window.dispatchEvent(
     new CustomEvent('perform6-encrypted-media-ready', {
       detail: { mediaVersionId },
@@ -95,7 +134,10 @@ export function markEncryptedMediaCached(mediaVersionId: string): void {
 export function clearEncryptedMediaCached(mediaVersionIds: string[]): void {
   if (mediaVersionIds.length === 0) return;
   const map = readMap();
-  for (const id of mediaVersionIds) delete map[id];
+  for (const id of mediaVersionIds) {
+    delete map[id];
+    htmlPlaybackKeys.delete(id);
+  }
   writeMap(map);
 }
 

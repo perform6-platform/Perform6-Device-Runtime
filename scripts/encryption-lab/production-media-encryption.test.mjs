@@ -8,6 +8,9 @@ const sync = fs.readFileSync('src/services/sync.ts', 'utf8');
 const mediaEncryption = fs.readFileSync('src/services/mediaEncryption.ts', 'utf8');
 const sdCacheBridge = fs.readFileSync('src/services/sdCacheBridge.ts', 'utf8');
 const runtime = fs.readFileSync('src/contexts/RuntimeContext.tsx', 'utf8');
+const homeHero = fs.readFileSync('src/components/home/HomeHeroVideo.tsx', 'utf8');
+const runtimeStore = fs.readFileSync('src/stores/runtimeStore.ts', 'utf8');
+const xtOutputBridge = fs.readFileSync('src/platform/xtOutputBridge.ts', 'utf8');
 
 function block(start, end) {
   const from = autorun.indexOf(start);
@@ -152,4 +155,44 @@ test('key material is never logged or placed in browser storage', () => {
     assert.doesNotMatch(call[1], /keyHex|ivHex|encryption/);
   }
   assert.doesNotMatch(mediaEncryption, /localStorage\.setItem\([^,]+,\s*(?:encryption|item\.encryption)/);
+});
+
+test('Bluefin HDMI-1 configures documented AES-CTR HTML attributes before src', () => {
+  const algorithm = homeHero.indexOf(
+    "video.setAttribute('EncryptionAlgorithm', encryption.algorithm)",
+  );
+  const key = homeHero.indexOf(
+    "video.setAttribute('EncryptionKey', encryption.keyAndIvHex)",
+  );
+  const src = homeHero.indexOf('video.src = playSrc');
+  assert.ok(algorithm >= 0 && key > algorithm && src > key);
+  assert.match(homeHero, /video\.removeAttribute\('EncryptionKey'\)/);
+  assert.match(mediaEncryption, /const htmlPlaybackKeys = new Map/);
+  assert.match(mediaEncryption, /keyAndIvHex: encryption\.keyHex \+ encryption\.ivHex/);
+  assert.match(mediaEncryption, /htmlPlaybackKeys\.delete\(id\)/);
+});
+
+test('post-reload XT commands advance above the last native nonce', () => {
+  assert.match(runtimeStore, /ensureDisplayRestartNonceAtLeast/);
+  assert.match(runtimeStore, /displayRestartNonce < safeMinimum/);
+  const align = xtOutputBridge.slice(
+    xtOutputBridge.indexOf('function alignRestartNonceWithNativeStatus'),
+    xtOutputBridge.indexOf('\nfunction buildPayload'),
+  );
+  assert.match(align, /accepted <= state\.displayRestartNonce/);
+  assert.match(align, /ensureDisplayRestartNonceAtLeast\(accepted \+ 1\)/);
+  assert.match(xtOutputBridge, /alignRestartNonceWithNativeStatus\(readXtPlaybackStatus\(\)\)/);
+});
+
+test('cache completion replay is scoped and encrypted-ready is edge-triggered', () => {
+  assert.match(
+    xtOutputBridge,
+    /event\.mediaVersionId === currentMediaVersionId/,
+  );
+  assert.match(
+    xtOutputBridge,
+    /mediaVersionId === useRuntimeStore\.getState\(\)\.displayPlaybackMeta\?\.mediaVersionId/,
+  );
+  assert.match(mediaEncryption, /const alreadyMarked =/);
+  assert.match(mediaEncryption, /if \(alreadyMarked\) return/);
 });

@@ -76,6 +76,37 @@ function assertSourceGuards() {
   if (resetBody.includes('displayRestartNonce')) {
     fail('resetDisplayControls must not zero displayRestartNonce');
   }
+  if (
+    !store.includes('ensureDisplayRestartNonceAtLeast') ||
+    !store.includes('displayRestartNonce < safeMinimum')
+  ) {
+    fail('runtimeStore must recover its nonce above the native post-reload floor');
+  }
+
+  const xtBridge = fs.readFileSync(
+    path.join(root, 'src', 'platform', 'xtOutputBridge.ts'),
+    'utf8',
+  );
+  if (
+    !xtBridge.includes('alignRestartNonceWithNativeStatus') ||
+    !xtBridge.includes('accepted + 1')
+  ) {
+    fail('XT bridge must align JS commands above the native accepted nonce');
+  }
+
+  const homeHero = fs.readFileSync(
+    path.join(root, 'src', 'components', 'home', 'HomeHeroVideo.tsx'),
+    'utf8',
+  );
+  for (const marker of [
+    "video.setAttribute('EncryptionAlgorithm', encryption.algorithm)",
+    "video.setAttribute('EncryptionKey', encryption.keyAndIvHex)",
+    "video.removeAttribute('EncryptionKey')",
+  ]) {
+    if (!homeHero.includes(marker)) {
+      fail(`Bluefin encrypted default playback invariant missing: ${marker}`);
+    }
+  }
 
   const alias = fs.readFileSync(path.join(root, 'src', 'services', 'mp4AliasQueue.ts'), 'utf8');
   if (/\bcopyFileSync\b/.test(alias) || /\blinkSync\b/.test(alias)) {

@@ -77,6 +77,7 @@ interface RuntimeStoreState {
   setDisplayPaused: (paused: boolean) => void;
   setDisplayVideoEndedHandler: (handler: (() => void) | null) => void;
   restartDisplayVideo: () => void;
+  ensureDisplayRestartNonceAtLeast: (minimum: number) => void;
   setPlaybackPlaying: (isPlaying: boolean) => void;
   setHeartbeat: (payload: { at: string; ok: boolean }) => void;
   pushDebugLog: (entry: Omit<DebugLogEntry, 'id' | 'timestamp'>) => void;
@@ -210,6 +211,12 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
   setDisplayVideoEndedHandler: (displayVideoEndedHandler) => set({ displayVideoEndedHandler }),
   restartDisplayVideo: () =>
     set({ displayRestartNonce: get().displayRestartNonce + 1, displayPaused: false }),
+  ensureDisplayRestartNonceAtLeast: (minimum) => {
+    const safeMinimum = Number.isFinite(minimum) ? Math.max(0, Math.floor(minimum)) : 0;
+    if (get().displayRestartNonce < safeMinimum) {
+      set({ displayRestartNonce: safeMinimum });
+    }
+  },
   setPlaybackPlaying: (isPlaying) =>
     set({ playbackState: { ...get().playbackState, isPlaying } }),
   setHeartbeat: ({ at, ok }) => set({ lastHeartbeatAt: at, heartbeatOk: ok }),

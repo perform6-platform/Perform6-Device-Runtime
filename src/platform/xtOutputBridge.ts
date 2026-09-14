@@ -60,6 +60,21 @@ function clearAckTimer(): void {
   }
 }
 
+function alignRestartNonceWithNativeStatus(
+  status: ReturnType<typeof readXtPlaybackStatus>,
+): boolean {
+  const accepted = Number.parseInt(asString(status?.restartNonce), 10);
+  if (!Number.isFinite(accepted)) return false;
+  const state = useRuntimeStore.getState();
+  if (accepted <= state.displayRestartNonce) return false;
+  state.ensureDisplayRestartNonceAtLeast(accepted + 1);
+  console.info('[Perform6] XT command nonce aligned with native status', {
+    accepted,
+    next: accepted + 1,
+  });
+  return true;
+}
+
 function buildPayload(): {
   type: string;
   role: string;
@@ -222,6 +237,7 @@ function postTouchPlayback(port: BrightSignMessagePort | null, force = false): v
 function pollPlaybackStatus(port: BrightSignMessagePort | null): void {
   const status = readXtPlaybackStatus();
   const bus = readXtBusHeartbeat();
+  if (alignRestartNonceWithNativeStatus(status)) return;
   reportNativeHdmiTelemetry(status);
 
   if (status?.ended === '1') {
@@ -272,6 +288,11 @@ export function initXtOutputBridge(): void {
     return;
   }
 
+  // Chromium can reload independently of autorun. Continue above the last
+  // native nonce so valid post-reload commands cannot be mistaken for delayed
+  // commands from the prior JS session.
+  alignRestartNonceWithNativeStatus(readXtPlaybackStatus());
+
   const port = getSharedMessagePort();
   if (!port) {
     console.warn(
@@ -309,16 +330,28 @@ export function initXtOutputBridge(): void {
   }
 
   subscribeSdCacheProgress((event) => {
-    if (event.status === 'done' || event.status === 'skip') {
+    const currentMediaVersionId = useRuntimeStore.getState().displayPlaybackMeta?.mediaVersionId;
+    if (
+      (event.status === 'done' || event.status === 'skip') &&
+      Boolean(event.mediaVersionId) &&
+      event.mediaVersionId === currentMediaVersionId
+    ) {
       postTouchPlayback(port);
     }
   });
 
-  window.addEventListener('perform6-encrypted-media-ready', () => {
+  window.addEventListener('perform6-encrypted-media-ready', (event) => {
     // Re-emit the current command only after the encrypted derivative is
     // durably downloaded and realized. The native preflight preserves the
     // prior source if registry readback is unavailable.
-    postTouchPlayback(port, true);
+    const mediaVersionId = (event as CustomEvent<{ mediaVersionId?: string }>).detail
+      ?.mediaVersionId;
+    if (
+      mediaVersionId &&
+      mediaVersionId === useRuntimeStore.getState().displayPlaybackMeta?.mediaVersionId
+    ) {
+      postTouchPlayback(port, true);
+    }
   });
 
   useRuntimeStore.subscribe((state, previous) => {

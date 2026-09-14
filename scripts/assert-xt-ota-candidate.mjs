@@ -354,6 +354,16 @@ reviewedProbeHashesByVersion['1.5.61'] = {
   'src/services/assetPoolBootstrap.ts': 'f0506e2936cbd95297876c1730a0d39368d0d12d34f6a77c96318719144f1b63',
   'src/services/mediaAssetPool.ts': 'a1af3dd30be3a8ba05540091ae84486a46ec6eac1d117135f2829e2a0d00024c',
 };
+// 1.5.62 retains the exact 1.5.61 autorun/startup/OTA surface. Its reviewed
+// JS-only delta restores commands after a Chromium reload, coalesces readiness
+// replays, and supplies BrightSign's documented AES-CTR attributes to HDMI-1.
+reviewedProbeHashesByVersion['1.5.62'] = {
+  ...reviewedProbeHashesByVersion['1.5.61'],
+  'src/components/home/HomeHeroVideo.tsx': 'ba8d828bd1d559ae7fadceee4fede2689aade99bb8251723b5dd7b6a02e3ce9d',
+  'src/platform/xtOutputBridge.ts': 'a39c77d8848febdd33da2e6457af21c5a8fb711eb806f299123a19498eacff5b',
+  'src/services/mediaEncryption.ts': '9b26a7a25a555c7edbb2b880d814da33a70a1e8feb49ce9b00b51fb6fa75d913',
+  'src/stores/runtimeStore.ts': '860528e4a8bb4d297046a5f2f4f346f8c1dad4afca269dfba1b4f236ef40ebcb',
+};
 const reviewedProbeHashes = reviewedProbeHashesByVersion[version];
 const dormantProbe = reviewedProbeHashes != null;
 const allowedRuntimeDelta = new Set(dormantProbe ? Object.keys(reviewedProbeHashes) : [
@@ -364,7 +374,7 @@ if (dormantProbe) {
   for (const [file, expected] of Object.entries(reviewedProbeHashes)) {
     if (sha256(fs.readFileSync(path.join(root, file))) !== expected) fail(`unreviewed dormant source: ${file}`);
   }
-  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.59' && version !== '1.5.61') {
+  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.59' && version !== '1.5.61' && version !== '1.5.62') {
     execFileSync(
       process.execPath,
       ['--test', 'scripts/encryption-lab/dormant-integration.test.mjs'],
@@ -404,7 +414,7 @@ if (dormantProbe) {
     'scripts/encryption-lab/encrypted-playback-candidate.test.mjs',
     'scripts/encryption-lab/ota-replacement.test.mjs',
   ], { cwd: root, stdio: 'inherit' });
-  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.59' || version === '1.5.61') execFileSync(process.execPath, ['--test',
+  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.59' || version === '1.5.61' || version === '1.5.62') execFileSync(process.execPath, ['--test',
     'scripts/encryption-lab/bridge-diagnostic.test.mjs',
     'scripts/encryption-lab/bridge-observability.test.mjs',
     'scripts/encryption-lab/widget-port-binding.test.mjs',
