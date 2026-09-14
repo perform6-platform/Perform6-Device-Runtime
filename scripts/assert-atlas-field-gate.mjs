@@ -30,12 +30,17 @@ const allowedRuntimeFiles = new Set([
   'src/services/autorunCapabilities.ts',
   'src/services/autorunDiag.ts',
   'src/services/bridgeKeepalive.ts',
+  // 1.5.59 field repair: claim repeated API command ids before async work,
+  // coalesce media-only syncs, and retain the XT2145/BOS 9.1 realizer contract.
+  'src/services/deviceRemoteControl.ts',
   'src/services/deviceLogsApi.ts',
   'src/services/assetPoolBootstrap.ts',
   'src/services/mediaAssetPool.ts',
   'src/services/mediaEncryption.ts',
+  'src/services/mediaRealize.ts',
   'src/services/otaAssetPool.ts',
   'src/services/outputResolutionProbe.ts',
+  'src/services/remoteCommandBridge.ts',
   // Field-confirmed 1.5.55 encrypted-representation mapping repair. The
   // strict OTA validator separately pins this file's exact reviewed hash.
   'src/services/sdCacheBridge.ts',

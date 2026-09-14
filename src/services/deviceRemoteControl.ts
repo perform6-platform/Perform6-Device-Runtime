@@ -166,13 +166,16 @@ export async function executeSystemRemoteCommand(
         if (forceOta) {
           clearOtaFailCooldown();
         }
-        void runSyncNowHook({
+        await runSyncNowHook({
           force: true,
           forceOta,
           skipOta: !forceOta || command.skipOta === true,
-          interrupt: true,
+          // A repeated media-only command must coalesce with an active fetch,
+          // never cancel and restart it. OTA recovery retains the explicit
+          // interrupt semantics used by Admin Install.
+          interrupt: forceOta,
           cancelOta: forceOta,
-          cancelMedia: true,
+          cancelMedia: forceOta,
         });
       } else {
         console.warn('[Perform6] SYNC_NOW ignored — sync hook not registered');

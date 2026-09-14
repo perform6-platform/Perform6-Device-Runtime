@@ -115,10 +115,13 @@ const reviewedProbeHashesByVersion = {
     'src/services/autorunCapabilities.ts': '1b02ab696b1b49a0f94f0b6e2d4b1b465a6b5fc3d2105fbc7dd7b0905d39e998',
     'src/services/autorunDiag.ts': '54db79cc9f8c156a9042b1c0422f4024772f4319852a6b0f7cff89891d609a27',
     'src/services/bridgeKeepalive.ts': '75425ab1433feb1b0f3d74a2b5596ba18bf5974347c4fe33fce87f7520a6616c',
+    'src/services/deviceRemoteControl.ts': '3e1e28e52ae24ef41ea941dca7ba51eea34d70e856502ad14036d93621989d76',
     'src/services/encryptedPlaybackInteropProbe.ts': '679ef0a620995a04d8f6496ee774978a7640eb2c6b970e31b89059d2283dc655',
     'src/services/mediaEncryption.ts': 'f592b880a89986d8344e322ed8a9475abdd4587aec1f6f24cf36cdf4eec8ac1c',
+    'src/services/mediaRealize.ts': '0e6afe6c6be84e500e29ce9ef60145eb341d50419fc9a7c4347084ed93fd2dc2',
     'src/services/mediaKeyInteropProbe.ts': '197263f9db72f163798efd358df3969096861f6553416eabbf4cd94944fc86e5',
     'src/services/otaAssetPool.ts': '00d541c4c50c5b7549446eb7615fa5b9abfc0d25f518c575b33ade262a410834',
+    'src/services/remoteCommandBridge.ts': 'c774f1915d59842ae56fce9d7401899954548ad4126457b452f4c0017234e0c5',
     'src/services/sdCacheBridge.ts': 'c78bac1e12f9496db2c749da25d55bafc8d814e9c8d0d5c748c5aade2fc279be',
     'src/services/sync.ts': '2f1e8208b81bbe48575a5747b83d6f162c0b7d9830c7006319c1752cfcfe38b8',
     'src/services/syncEngine.ts': 'bf8fe806e7a86efa2f77c3cc9274944d3cd84979e624c81dacedd2e9e5d95b4d',
@@ -399,6 +402,7 @@ if (dormantProbe) {
     'scripts/encryption-lab/rohtml-contract-audit.test.mjs',
     'scripts/encryption-lab/production-media-encryption.test.mjs',
     'scripts/encryption-lab/encrypted-representation-routing.test.mjs',
+    'scripts/encryption-lab/media-sync-command-dedupe.test.mjs',
     'scripts/encryption-lab/ota-replacement.test.mjs',
   ], { cwd: root, stdio: 'inherit' });
   if (version === '1.5.47' || version === '1.5.48' || version === '1.5.49' || version === '1.5.50') execFileSync(

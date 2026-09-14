@@ -30,8 +30,7 @@ type AssetRealizerInstance = {
 };
 
 type AssetPoolCtor = new (path: string) => AssetPoolInstance;
-type AssetRealizerCtorA = new (pool: AssetPoolInstance) => AssetRealizerInstance;
-type AssetRealizerCtorB = new (
+type AssetRealizerCtor = new (
   pool: AssetPoolInstance,
   destPath: string,
 ) => AssetRealizerInstance;
@@ -78,17 +77,15 @@ function mediaFileExists(fileName: string): boolean {
 
 async function getPoolAndRealizer(): Promise<{
   pool: AssetPoolInstance;
-  RealizerClass: AssetRealizerCtorA | AssetRealizerCtorB;
+  RealizerClass: AssetRealizerCtor;
 } | null> {
   const req = getRequire();
   if (!req) return null;
   let PoolClass: AssetPoolCtor;
-  let RealizerClass: AssetRealizerCtorA | AssetRealizerCtorB;
+  let RealizerClass: AssetRealizerCtor;
   try {
     PoolClass = req('@brightsign/assetpool') as AssetPoolCtor;
-    RealizerClass = req('@brightsign/assetrealizer') as
-      | AssetRealizerCtorA
-      | AssetRealizerCtorB;
+    RealizerClass = req('@brightsign/assetrealizer') as AssetRealizerCtor;
   } catch (e) {
     console.warn(
       '[Perform6] AssetRealizer module unavailable',
@@ -109,31 +106,15 @@ async function getPoolAndRealizer(): Promise<{
 }
 
 async function callRealize(
-  RealizerClass: AssetRealizerCtorA | AssetRealizerCtorB,
+  RealizerClass: AssetRealizerCtor,
   pool: AssetPoolInstance,
   assets: MediaAsset[],
 ): Promise<void> {
-  // Docs variant A: new AssetRealizer(pool, dest); realize(collection)
-  try {
-    const realizer = new (RealizerClass as AssetRealizerCtorB)(
-      pool,
-      MEDIA_STORE_NODE,
-    );
-    await Promise.resolve(realizer.realize(assets));
-    return;
-  } catch (e1) {
-    console.warn(
-      '[Perform6] AssetRealizer(pool, dest) failed — trying realize(dest, list)',
-      e1 instanceof Error ? e1.message : e1,
-    );
-  }
-  // Docs variant B: new AssetRealizer(pool); realize(dest, collection)
-  const realizer = new (RealizerClass as AssetRealizerCtorA)(pool);
-  try {
-    await Promise.resolve(realizer.realize(MEDIA_STORE_NODE, assets));
-  } catch {
-    await Promise.resolve(realizer.realize(assets, MEDIA_STORE_NODE));
-  }
+  // XT2145 / BrightSignOS 9.1 field contract: destination belongs in the
+  // constructor and realize receives the asset collection. A one-argument
+  // constructor is rejected by this OS and used to obscure the real pool error.
+  const realizer = new RealizerClass(pool, MEDIA_STORE_NODE);
+  await Promise.resolve(realizer.realize(assets));
 }
 
 /**
