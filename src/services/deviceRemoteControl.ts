@@ -1,6 +1,7 @@
 import { getSharedMessagePort } from '../platform/bsMessagePort';
 import { rebootViaBrightSignSystem } from '../platform/brightSignNode';
 import { getCredentials } from './credentialStore';
+import { captureAndUploadXtOutput } from './screenCapture';
 import {
   clearAllSdCachedMarks,
   clearSdMediaCacheViaNode,
@@ -224,6 +225,9 @@ export async function executeSystemRemoteCommand(
       requestDeviceReboot();
       return true;
     }
+    case 'CAPTURE_SCREENSHOT':
+      void captureAndUploadXtOutput('remote-command');
+      return true;
     default:
       return false;
   }

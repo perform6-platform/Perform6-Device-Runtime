@@ -16,7 +16,8 @@ export type RemoteCommandAction =
   | 'SD_DELETE'
   | 'UPLOAD_LOGS'
   | 'BRIDGE_RECYCLE'
-  | 'FORCE_BRIDGE_HEAL';
+  | 'FORCE_BRIDGE_HEAL'
+  | 'CAPTURE_SCREENSHOT';
 
 export interface DeviceRemoteCommand {
   id: string;

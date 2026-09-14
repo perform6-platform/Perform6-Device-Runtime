@@ -57,7 +57,10 @@ function assertAutorun() {
   const isBounded151Probe =
     text.includes('requestId <> "probe_1_5_51"') &&
     text.includes('P6RestoreEncryptedPlaybackProbe(st, "timeout")');
-  const maxLines = isBounded151Probe ? 3900 : 3700;
+  const hasObservationalCapture =
+    text.includes('Sub HandleP6ScreenCapture(payload as Object)') &&
+    text.includes('vm.Screenshot(params)');
+  const maxLines = isBounded151Probe ? 3900 : hasObservationalCapture ? 3750 : 3700;
   if (lines > maxLines) fail(`autorun still too thick (${lines} lines) — expected <${maxLines}`);
   for (const needle of [
     'BA-style zones',

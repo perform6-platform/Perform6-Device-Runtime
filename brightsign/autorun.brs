@@ -1735,6 +1735,37 @@ Function AtomicWriteAsciiFile(path as String, content as String) as Boolean
   return ok2 = true
 End Function
 
+' Native output capture is observational only: no player, widget, output-mode,
+' cache, OTA, or reboot state is changed. A result marker is written last so
+' the JS uploader never reads a partially written JPEG.
+Sub HandleP6ScreenCapture(payload as Object)
+  requestId = PayloadString(payload, "requestId")
+  if Len(requestId) = 0 then return
+  ok = false
+  vm = CreateObject("roVideoMode")
+  if type(vm) = "roVideoMode" then
+    DeleteFile("SD:/perform6-screen-capture.jpg")
+    params = CreateObject("roAssociativeArray")
+    params.filename = "SD:/perform6-screen-capture.jpg"
+    params.width = 1920
+    params.height = 720
+    params.quality = 70
+    params.filetype = "JPEG"
+    params.async = 0
+    ok = vm.Screenshot(params)
+  end if
+  result = CreateObject("roAssociativeArray")
+  result.requestId = requestId
+  result.ok = false
+  if ok = true then result.ok = true
+  AtomicWriteAsciiFile("SD:/perform6-screen-capture-result.json", FormatJson(result))
+  if ok = true then
+    TraceLog("CAPTURE|ready|" + requestId)
+  else
+    TraceLog("CAPTURE|failed|" + requestId)
+  end if
+End Sub
+
 ' In-memory roles map — authoritative merge for this autorun process (no disk RMW race).
 Function LedStatusRolesAA() as Object
   g = GetGlobalAA()
@@ -3508,6 +3539,8 @@ Sub Main()
               HandleLedOtaCancel(ledStates)
             else if msgType = "p6-media-key-store" then
               HandleP6MediaKeyStore(payload)
+            else if msgType = "p6-screen-capture" and profile = "XT2145" then
+              HandleP6ScreenCapture(payload)
             else if msgType = "led-ota-reboot" then
               RebootDeviceAfterOta()
             else if msgType = "led-ops-reload" then
@@ -3554,6 +3587,8 @@ Sub Main()
           end if
         else if msgType = "p6-media-key-store" then
           HandleP6MediaKeyStore(payload)
+        else if msgType = "p6-screen-capture" and profile = "XT2145" then
+          HandleP6ScreenCapture(payload)
         else if msgType = "led-ota-reboot" then
           RebootDeviceAfterOta()
         else if Len(msgType) > 0 then
