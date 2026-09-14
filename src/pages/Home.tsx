@@ -240,6 +240,26 @@ export default function Home() {
   beginSessionRef.current = beginSession;
   const touchVideosRef = useRef(touchVideos);
   touchVideosRef.current = touchVideos;
+  const pendingRemoteSlotRef = useRef<ActiveSession['source'] | null>(null);
+
+  // A remote slot command may arrive just before a newly assigned rotation is
+  // present in the local manifest. Preserve that one-shot command and apply it
+  // when the normal sync updates the corresponding cached URL.
+  useEffect(() => {
+    const slot = pendingRemoteSlotRef.current;
+    if (!slot) return;
+    const videoBySlot: Record<ActiveSession['source'], string | null> = {
+      'start-here': touchVideos.startHere,
+      phase1: touchVideos.phase1,
+      phase2: touchVideos.phase2,
+      'full-program': touchVideos.fullProgram,
+    };
+    const videoSrc = videoBySlot[slot];
+    if (!videoSrc) return;
+    pendingRemoteSlotRef.current = null;
+    console.info('[Perform6] Deferred remote slot now ready', { slot });
+    beginSessionRef.current(slot, videoSrc);
+  }, [touchVideos.fullProgram, touchVideos.phase1, touchVideos.phase2, touchVideos.startHere]);
 
   useEffect(() => {
     if (activeSession) {
@@ -313,6 +333,7 @@ export default function Home() {
           useRuntimeStore.getState().toggleDisplayPaused();
           break;
         case 'RETURN_TO_MENU':
+          pendingRemoteSlotRef.current = null;
           returnToMainMenuRef.current();
           closeOverview();
           break;
@@ -321,6 +342,7 @@ export default function Home() {
           if (!slot) break;
           const videos = touchVideosRef.current;
           if (slot === 'touch-default') {
+            pendingRemoteSlotRef.current = null;
             returnToMainMenuRef.current();
             closeOverview();
             break;
@@ -332,7 +354,14 @@ export default function Home() {
             'full-program': videos.fullProgram,
           };
           const videoSrc = videoBySlot[slot];
-          if (!videoSrc) break;
+          if (!videoSrc) {
+            if (runtimeConfig.hardwareProfile === 'XT2145') {
+              pendingRemoteSlotRef.current = slot as ActiveSession['source'];
+              console.info('[Perform6] Remote slot deferred until manifest is ready', { slot });
+            }
+            break;
+          }
+          pendingRemoteSlotRef.current = null;
           beginSessionRef.current(slot as ActiveSession['source'], videoSrc);
           break;
         }

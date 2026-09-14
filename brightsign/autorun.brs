@@ -1742,6 +1742,8 @@ Sub HandleP6ScreenCapture(payload as Object)
   requestId = PayloadString(payload, "requestId")
   if Len(requestId) = 0 then return
   ok = false
+  nativeReturnType = "unavailable"
+  captureBytes = 0.0
   vm = CreateObject("roVideoMode")
   if type(vm) = "roVideoMode" then
     DeleteFile("SD:/perform6-screen-capture.jpg")
@@ -1752,17 +1754,24 @@ Sub HandleP6ScreenCapture(payload as Object)
     params.quality = 70
     params.filetype = "JPEG"
     params.async = 0
-    ok = vm.Screenshot(params)
+    nativeReturn = vm.Screenshot(params)
+    nativeReturnType = type(nativeReturn)
+    ' XT2145/BrightSignOS can return a non-Boolean value even though the
+    ' synchronous Screenshot call has written the JPEG. The newly-created
+    ' file is authoritative; JS validates its JPEG signature before upload.
+    captureBytes = PartFileBytes("SD:/perform6-screen-capture.jpg")
+    if captureBytes >= 4.0 then ok = true
   end if
   result = CreateObject("roAssociativeArray")
   result.requestId = requestId
-  result.ok = false
-  if ok = true then result.ok = true
+  result.ok = ok
+  result.fileBytes = captureBytes
+  result.nativeReturnType = nativeReturnType
   AtomicWriteAsciiFile("SD:/perform6-screen-capture-result.json", FormatJson(result))
   if ok = true then
-    TraceLog("CAPTURE|ready|" + requestId)
+    TraceLog("CAPTURE|ready|" + requestId + "|bytes=" + Str(captureBytes) + "|nativeReturnType=" + nativeReturnType)
   else
-    TraceLog("CAPTURE|failed|" + requestId)
+    TraceLog("CAPTURE|failed|" + requestId + "|bytes=" + Str(captureBytes) + "|nativeReturnType=" + nativeReturnType)
   end if
 End Sub
 

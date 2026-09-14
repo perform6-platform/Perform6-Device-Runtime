@@ -244,6 +244,7 @@ for (const marker of [
   "type: 'p6-screen-capture'",
   "'/devices/me/screen-capture'",
   'CAPTURE_INTERVAL_MS = 60_000',
+  'fileBytes >= 4',
 ]) {
   if (!screenCapture.includes(marker)) {
     fail(`XT output capture safety invariant missing: ${marker}`);
@@ -261,8 +262,10 @@ const commandPoller = fs.readFileSync(
 );
 for (const marker of [
   'POLL_MS = 10_000',
+  'FIRST_POLL_DELAY_MS = 500',
   "'/devices/me/remote-commands'",
   'processRemoteCommands',
+  'heartbeat fallback remains active',
 ]) {
   if (!commandPoller.includes(marker)) {
     fail(`fast command fallback invariant missing: ${marker}`);
@@ -274,6 +277,14 @@ const captureHandler = autorun.match(
 )?.[1];
 if (!captureHandler || !captureHandler.includes('vm.Screenshot(params)')) {
   fail('autorun native screenshot handler missing');
+}
+for (const marker of [
+  'captureBytes = PartFileBytes("SD:/perform6-screen-capture.jpg")',
+  'if captureBytes >= 4.0 then ok = true',
+]) {
+  if (!captureHandler.includes(marker)) {
+    fail(`autorun screenshot file-verification invariant missing: ${marker}`);
+  }
 }
 for (const forbidden of ['RebootDeviceAfterOta', 'ApplyNativePlayback', 'HandleLedOtaInstall']) {
   if (captureHandler.includes(forbidden)) {

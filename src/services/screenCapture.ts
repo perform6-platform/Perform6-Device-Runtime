@@ -33,8 +33,12 @@ async function waitForResult(id: string): Promise<boolean> {
         const result = JSON.parse(typeof raw === 'string' ? raw : String(raw)) as {
           requestId?: string;
           ok?: boolean;
+          fileBytes?: number | string;
         };
-        if (result.requestId === id) return result.ok === true;
+        if (result.requestId === id) {
+          const fileBytes = Number(result.fileBytes ?? 0);
+          return result.ok === true && Number.isFinite(fileBytes) && fileBytes >= 4;
+        }
       }
     } catch {
       // Atomic marker may not have arrived yet.

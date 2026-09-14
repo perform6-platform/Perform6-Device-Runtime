@@ -1,5 +1,6 @@
 import { getCredentials } from './credentialStore';
 import { executeSystemRemoteCommand } from './deviceRemoteControl';
+import { runtimeConfig } from '../config/runtime';
 
 export type RemoteCommandAction =
   | 'PAUSE'
@@ -38,9 +39,31 @@ export interface DeviceRemoteCommand {
 export type RemoteCommandExecutor = (command: DeviceRemoteCommand) => void | Promise<void>;
 
 let executor: RemoteCommandExecutor | null = null;
+let deferredUiCommands: DeviceRemoteCommand[] = [];
+
+async function executeUiCommands(commands: DeviceRemoteCommand[]): Promise<void> {
+  const activeExecutor = executor;
+  if (!activeExecutor || commands.length === 0) return;
+  for (const command of commands) {
+    try {
+      await activeExecutor(command);
+    } catch (error) {
+      console.error('[Perform6] Remote command failed', command.action, error);
+    }
+  }
+}
 
 export function registerRemoteCommandExecutor(fn: RemoteCommandExecutor): () => void {
   executor = fn;
+  if (deferredUiCommands.length > 0) {
+    const queued = deferredUiCommands;
+    deferredUiCommands = [];
+    console.info('[Perform6] Fast remote commands released to UI', {
+      count: queued.length,
+      actions: queued.map((command) => command.action),
+    });
+    void executeUiCommands(queued);
+  }
   return () => {
     if (executor === fn) executor = null;
   };
@@ -77,12 +100,19 @@ export async function processRemoteCommands(commands: DeviceRemoteCommand[]): Pr
     }
   }
 
-  if (!executor || uiCommands.length === 0) return;
-  for (const command of uiCommands) {
-    try {
-      await executor(command);
-    } catch (error) {
-      console.error('[Perform6] Remote command failed', command.action, error);
-    }
+  if (uiCommands.length === 0) return;
+  if (!executor) {
+    // The fast-command experiment and its pre-mount retention are XT-only.
+    // Preserve the established HD226/XC4055 heartbeat behaviour byte-for-byte
+    // at the decision boundary until those profiles receive their own tests.
+    if (runtimeConfig.hardwareProfile !== 'XT2145') return;
+    const knownIds = new Set(deferredUiCommands.map((command) => command.id));
+    deferredUiCommands.push(...uiCommands.filter((command) => !knownIds.has(command.id)));
+    console.info('[Perform6] Fast remote commands deferred until UI ready', {
+      count: uiCommands.length,
+      actions: uiCommands.map((command) => command.action),
+    });
+    return;
   }
+  await executeUiCommands(uiCommands);
 }
