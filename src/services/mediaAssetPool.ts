@@ -34,6 +34,8 @@ import { ensureAssetPoolDirectory } from './assetPoolBootstrap';
 
 /** AssetPool constructor path (/storage/sd/perform6-media-pool on OS 9.1). */
 export const MEDIA_POOL_PATH = MEDIA_ASSET_POOL_DIR;
+/** BrightSign protectAssets name for media (never use perform6-ota). */
+export const MEDIA_POOL_PROTECT_NAME = 'perform6-media';
 
 /** ProtectAssets should be a short metadata operation, not a media transfer. */
 const POOL_PROTECT_MS = 60_000;
@@ -404,6 +406,44 @@ async function resolvePoolPath(
   }
 }
 
+/**
+ * BrightSign-safe media pool retain protection.
+ * Replaces the `perform6-media` protection set — assets not in the list become
+ * unprotected and reclaimable. Never touches `perform6-ota`.
+ * Skips when a media fetch is active or retain list is empty (empty would wipe protection).
+ */
+export async function protectMediaPoolRetain(
+  assets: MediaAsset[],
+): Promise<boolean> {
+  if (!isMediaAssetPoolAvailable() || !pool) return false;
+  if (isMediaAssetPoolDownloadInProgress()) {
+    console.info(
+      '[Perform6] Media pool protectAssets skipped — download in progress',
+    );
+    return false;
+  }
+  if (assets.length === 0) {
+    console.warn(
+      '[Perform6] Media pool protectAssets skipped — empty retain list',
+    );
+    return false;
+  }
+  try {
+    await Promise.resolve(pool.protectAssets(MEDIA_POOL_PROTECT_NAME, assets));
+    console.info('[Perform6] Media pool protectAssets (retain)', {
+      count: assets.length,
+      pool: MEDIA_POOL_PATH,
+    });
+    return true;
+  } catch (e) {
+    console.warn(
+      '[Perform6] Media pool protectAssets (retain) failed',
+      e instanceof Error ? e.message : e,
+    );
+    return false;
+  }
+}
+
 export async function cancelMediaAssetPoolFetch(): Promise<void> {
   const target = activeFetch ?? fetcher;
   if (!target) return;
@@ -537,13 +577,22 @@ export async function downloadMediaItemsViaAssetPool(
   };
 
   const firstNeed = byName.get(needFetch[0]?.name ?? '') ?? null;
-  // Local UI only — do NOT report 0-byte progress to Admin (false DOWNLOADING).
+  // Local UI + Admin start signal (0 bytes). Stall watchdogs unchanged.
   updateUi(
     firstNeed,
     0,
     firstNeed?.fileSize != null ? Number(firstNeed.fileSize) : null,
     MEDIA_POOL_PATH,
   );
+  if (firstNeed) {
+    void onProgress?.({
+      mediaVersionId: firstNeed.mediaVersionId,
+      bytesDownloaded: 0,
+      totalBytes:
+        firstNeed.fileSize != null ? Number(firstNeed.fileSize) : null,
+      status: 'start',
+    });
+  }
 
   // Start watchdog (45s, no events) then stall watchdog (5m quiet mid-download).
   let stallTimer: number | undefined;
@@ -553,6 +602,9 @@ export async function downloadMediaItemsViaAssetPool(
   let sawPoolActivity = false;
   let collectionFailureCode: number | null = null;
   let collectionFailureText: string | null = null;
+  const startedReportIds = new Set<string>(
+    firstNeed ? [firstNeed.mediaVersionId] : [],
+  );
 
   const clearStallTimer = () => {
     if (stallTimer != null) {
@@ -608,7 +660,9 @@ export async function downloadMediaItemsViaAssetPool(
     });
     try {
       await Promise.race([
-        Promise.resolve(pool.protectAssets('perform6-media', assetList)),
+        Promise.resolve(
+          pool.protectAssets(MEDIA_POOL_PROTECT_NAME, assetList),
+        ),
         new Promise<never>((_, reject) => {
           window.setTimeout(() => {
             reject(
@@ -688,7 +742,16 @@ export async function downloadMediaItemsViaAssetPool(
             : null;
       bumpStallOnBytes(name, transferred);
       updateUi(item, transferred, total, `${MEDIA_POOL_PATH}/${name}`);
-      // Only report real movement (or first tick with transferred >= 0 after activity).
+      // Per-file Admin start (reporting only — does not affect stall timers).
+      if (!startedReportIds.has(item.mediaVersionId)) {
+        startedReportIds.add(item.mediaVersionId);
+        void onProgress?.({
+          mediaVersionId: item.mediaVersionId,
+          bytesDownloaded: 0,
+          totalBytes: total,
+          status: 'start',
+        });
+      }
       if (transferred > 0) {
         void onProgress?.({
           mediaVersionId: item.mediaVersionId,

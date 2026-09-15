@@ -9,6 +9,7 @@ import {
   downloadMediaItemsViaAssetPool,
   isMediaAssetPoolAvailable,
 } from './mediaAssetPool';
+import { physicallyEvictMedia } from './mediaEvict';
 import { realizeMediaAssetsViaRealizer } from './mediaRealize';
 import { resolveMediaFileUrl } from './manifest';
 import { offlineCacheService } from './offlineCache';
@@ -225,9 +226,35 @@ export async function downloadMediaBatchToSd(
   return result;
 }
 
-export async function evictCachedMedia(mediaVersionIds: string[]): Promise<void> {
+export async function evictCachedMedia(
+  mediaVersionIds: string[],
+  options?: {
+    retainItems?: SyncMediaItem[];
+    retainIds?: string[];
+    /** When true, only clear marks (no disk/pool). Default false. */
+    marksOnly?: boolean;
+  },
+): Promise<void> {
   if (mediaVersionIds.length === 0) return;
-  clearSdCached(mediaVersionIds);
+
+  if (!options?.marksOnly) {
+    try {
+      await physicallyEvictMedia({
+        evictIds: mediaVersionIds,
+        retainItems: options?.retainItems ?? [],
+        retainIds: options?.retainIds,
+      });
+    } catch (e) {
+      console.warn(
+        '[Perform6] Physical evict failed — falling back to marks clear',
+        e instanceof Error ? e.message : e,
+      );
+      clearSdCached(mediaVersionIds);
+    }
+  } else {
+    clearSdCached(mediaVersionIds);
+  }
+
   await offlineCacheService.removeMany(mediaVersionIds);
 }
 

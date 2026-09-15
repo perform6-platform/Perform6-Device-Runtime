@@ -156,7 +156,13 @@ export async function runSyncEngine(
 
     if (syncData.evictMediaVersionIds?.length) {
       clearEncryptedMediaCached(syncData.evictMediaVersionIds);
-      await evictCachedMedia(syncData.evictMediaVersionIds);
+      await evictCachedMedia(syncData.evictMediaVersionIds, {
+        retainItems: [
+          ...(syncData.media ?? []),
+          ...(syncData.requiredMedia ?? []),
+        ],
+        retainIds: syncData.retainMediaVersionIds,
+      });
       removeCachedMediaVersionIds(syncData.evictMediaVersionIds);
     }
 
@@ -273,17 +279,17 @@ export async function runSyncEngine(
     let failed: string[] = [];
 
     const progressLastSentMs = new Map<string, number>();
-    const PROGRESS_REPORT_INTERVAL_MS = 3000;
+    const PROGRESS_REPORT_INTERVAL_MS = 1000;
 
     if (mediaItems.length > 0) {
       // AssetPoolFetcher → AssetRealizer → extension-bearing local playback file.
-      // Do NOT mark DOWNLOADING at 0 bytes before transfer — Admin showed false
-      // "Downloading — / 26 MB" for 16+ minutes while AssetPool hung.
+      // Report start (0 bytes) so Admin shows DOWNLOADING/QUEUED; byte progress
+      // still drives the bar. Does not change AssetPool / realize / OTA behavior.
       const batch = await downloadMediaBatchToSd(
         mediaItems,
         async (progress) => {
           const bytes = progress.bytesDownloaded;
-          // Honest status: start (autorun ack), real byte progress, or terminal states.
+          // Skip empty progress ticks; allow start/done/skip/failed always.
           if (progress.status === 'progress' && !(bytes > 0)) return;
           if (progress.status === 'progress') {
             const lastMs = progressLastSentMs.get(progress.mediaVersionId) ?? 0;
@@ -308,10 +314,11 @@ export async function runSyncEngine(
                 progress.totalBytes != null
                   ? String(progress.totalBytes)
                   : undefined,
-              phase: 'DOWNLOADING',
+              phase:
+                progress.status === 'start' ? 'START' : 'DOWNLOADING',
             });
           } catch {
-            /* best-effort */
+            /* best-effort — never block pool download */
           }
         },
         { manifest },

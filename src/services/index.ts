@@ -31,6 +31,7 @@ export * from './downloadProgress';
 export * from './touchProgramGate';
 export * from './assetPoolProbe';
 export * from './mediaAssetPool';
+export * from './mediaEvict';
 export * from './mediaDownloadGate';
 export * from './ledLogBridge';
 export * from './deviceRemoteControl';
