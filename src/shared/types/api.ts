@@ -40,6 +40,8 @@ export interface SyncCheckResponseData {
   media?: SyncMediaItem[];
   requiredMedia?: SyncMediaItem[];
   evictMediaVersionIds?: string[];
+  /** Keep on SD — Default/Start Here + current download window (+ held previous). */
+  retainMediaVersionIds?: string[];
   cacheWindow?: {
     days: number;
     startsAt?: string;
@@ -180,7 +182,7 @@ export interface SyncDownloadProgressRequest {
   mediaVersionId: string;
   bytesDownloaded?: string;
   totalBytes?: string;
-  phase?: 'DOWNLOADING' | 'VERIFYING';
+  phase?: 'DOWNLOADING' | 'VERIFYING' | 'START';
 }
 
 export interface SyncStatusRequest {

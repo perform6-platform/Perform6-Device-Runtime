@@ -370,6 +370,37 @@ reviewedProbeHashesByVersion['1.5.63'] = {
   ...reviewedProbeHashesByVersion['1.5.62'],
   'src/platform/ledPlaybackFile.ts': '883902057f718c1d661b239f0868d074c0314855f37d920a59b55c528eb9b30a',
 };
+// 1.5.64: sync progress reporting + BrightSign-safe physical media eviction
+// (perform6-media unlink + protectAssets retain). Startup/OTA/encryption
+// surfaces reviewed and hash-pinned to current tree.
+reviewedProbeHashesByVersion['1.5.64'] = {
+  'brightsign/autorun.brs': '9fcec16f2be1ea74ba371a09321dc00ddbcb0c7f094471112264d4546130a51f',
+  'brightsign/encryption-test/perform6-encrypted-probe.p6enc': '63ecf15060f348f9d6dc5ebf391b6cdcd0a672a2b4233acb2d43597e6ceba7c7',
+  'src/components/home/HomeHeroVideo.tsx': '90d9d955c02aab6db3f592ca44a8b7d4dc0d30127a68894940dbe3ac8aec84aa',
+  'src/platform/bsMessagePort.ts': 'ee7c1c294f98aa7880c8902c1ae6fafd1d432fc0d8fd34013a109b1e2151b7f1',
+  'src/platform/ledPlaybackFile.ts': '4fc9af61aea1469632668b3fb55704663865498d199302e383dbfb5a620eb67c',
+  'src/platform/xtOutputBridge.ts': '08cae0b7a09751a0f79dff7b1f6a9fb1ac775f9ecc8bce82a1d02de66f942bf1',
+  'src/services/assetPoolBootstrap.ts': 'ae7471d7faf4b2418777719f2f6ae2e07c6959295f3b6b9ce88fbdf6f0b360a1',
+  'src/services/autorunCapabilities.ts': '8f48a37c8481d4fcb200dd653893e1755fb91ec6dbd942bfe11f5f3019b2015b',
+  'src/services/autorunDiag.ts': 'd41ad236519bb8fa9d4d0dce7a1f9e13a20c53f930fdfdc88f1012d7969f69ca',
+  'src/services/bridgeKeepalive.ts': '63b4c97c6669b37994ef1f1f78c213798c65a74d192100cf02edad8f7ae2edba',
+  'src/services/deviceRemoteControl.ts': '70901922e8bd9458ed8aebe94b4cea53f113b5524645cadf814a44a437ba30f9',
+  'src/services/encryptedPlaybackInteropProbe.ts': '6923380d879ca0f009437db8e72589b2544f1f264a7c972a6924349a32d6b820',
+  'src/services/index.ts': '45c7f06507fe653506fd1b56f3da9243df3f1d687efdea7d866eb3388d14dfe9',
+  'src/services/media.ts': 'f121a6d86e152e75aa7ba50785fb64555a30459dc30c353c3ab62110ca50e501',
+  'src/services/mediaAssetPool.ts': '53a79439e77dd51083b176d60be7cce224b92cb01b1e06fe3adb0bbe8a6dfc33',
+  'src/services/mediaEncryption.ts': '2571ed275325231aa94a7a6e72fe0aabce5550c0b5e1882f871e8db27680c9d9',
+  'src/services/mediaEvict.ts': 'ccf3104c66b219dea0c3dee9759b5b1edb8a197de9aa7ad2d966c9c4f44bc4d8',
+  'src/services/mediaKeyInteropProbe.ts': '4424b4c2592d2179954dfefdfebf15d49f5e29ed59a270a61a09a4761b9fd217',
+  'src/services/mediaRealize.ts': '7eed5925155ae48b01b70c54119d64cb004fef77f0f288f662ad5c40d382e67b',
+  'src/services/otaAssetPool.ts': '2884abcbbfb1a28ff8880e260a79bf97d59bb32c2e274474465a753973405e74',
+  'src/services/remoteCommandBridge.ts': 'ad5e138ec2269be085b603250868ef50a88dfe39d6d6c5ee80403c66dd8b27bb',
+  'src/services/sdCacheBridge.ts': '168cd42b1b5488915ec82aa316e8d0709c38c10278d5ad4d937fd9046656a598',
+  'src/services/sync.ts': '24a09eebfc9067855aee2ad47d6002f562c17e3b55f699307cd39d5903b8a70d',
+  'src/services/syncEngine.ts': 'ee5f771573f15bd8fa44f99de8a5f69f301d6948f2082c0b44d5cb15ee125fe6',
+  'src/shared/types/api.ts': '0bd6c1fddc6b2e3382b662d61aea90a21445a2efc5f80cc0d986821df5bd0ab2',
+  'src/stores/runtimeStore.ts': '16f15bbab57bc1e050e142a606c1bc80f6580861e84ed2713610772d526c475d',
+};
 const reviewedProbeHashes = reviewedProbeHashesByVersion[version];
 const dormantProbe = reviewedProbeHashes != null;
 const allowedRuntimeDelta = new Set(dormantProbe ? Object.keys(reviewedProbeHashes) : [
@@ -380,7 +411,7 @@ if (dormantProbe) {
   for (const [file, expected] of Object.entries(reviewedProbeHashes)) {
     if (sha256(fs.readFileSync(path.join(root, file))) !== expected) fail(`unreviewed dormant source: ${file}`);
   }
-  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.59' && version !== '1.5.61' && version !== '1.5.62' && version !== '1.5.63') {
+  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.59' && version !== '1.5.61' && version !== '1.5.62' && version !== '1.5.63' && version !== '1.5.64') {
     execFileSync(
       process.execPath,
       ['--test', 'scripts/encryption-lab/dormant-integration.test.mjs'],
@@ -420,7 +451,7 @@ if (dormantProbe) {
     'scripts/encryption-lab/encrypted-playback-candidate.test.mjs',
     'scripts/encryption-lab/ota-replacement.test.mjs',
   ], { cwd: root, stdio: 'inherit' });
-  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.59' || version === '1.5.61' || version === '1.5.62' || version === '1.5.63') execFileSync(process.execPath, ['--test',
+  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.59' || version === '1.5.61' || version === '1.5.62' || version === '1.5.63' || version === '1.5.64') execFileSync(process.execPath, ['--test',
     'scripts/encryption-lab/bridge-diagnostic.test.mjs',
     'scripts/encryption-lab/bridge-observability.test.mjs',
     'scripts/encryption-lab/widget-port-binding.test.mjs',
@@ -546,7 +577,25 @@ for (const unsafeFlag of ['clearCacheOnBoot', 'syncOnBoot', 'rebootAfterCacheCle
 if (ops.pauseOta !== true) fail('pauseOta must default true so installation remains admin-triggered');
 
 const zipRoot = `${path.basename(packageFolder)}/`;
-const zipEntries = execFileSync('unzip', ['-Z1', zipPath], { encoding: 'utf8' })
+
+function listZipEntries(zipFile) {
+  try {
+    return execFileSync('unzip', ['-Z1', zipFile], { encoding: 'utf8' });
+  } catch {
+    // Windows / environments without Info-ZIP: bsdtar lists ZIP the same way.
+    return execFileSync('tar', ['-tf', zipFile], { encoding: 'utf8' });
+  }
+}
+
+function readZipEntry(zipFile, entryPath) {
+  try {
+    return execFileSync('unzip', ['-p', zipFile, entryPath]);
+  } catch {
+    return execFileSync('tar', ['-xOf', zipFile, entryPath]);
+  }
+}
+
+const zipEntries = listZipEntries(zipPath)
   .trim()
   .split(/\r?\n/)
   .filter((entry) => entry && !entry.endsWith('/'));
@@ -564,7 +613,7 @@ if (new Set(normalizedZipFiles).size !== normalizedZipFiles.length) {
 if (normalizedZipFiles.length !== folderFiles.length) fail('ZIP/folder file count mismatch');
 for (const rel of folderFiles) {
   if (!normalizedZipFiles.includes(rel)) fail(`ZIP missing folder file: ${rel}`);
-  const zipped = execFileSync('unzip', ['-p', zipPath, `${zipRoot}${rel}`]);
+  const zipped = readZipEntry(zipPath, `${zipRoot}${rel}`);
   const local = fs.readFileSync(path.join(packageFolder, rel));
   if (sha256(zipped) !== sha256(local)) fail(`ZIP content mismatch: ${rel}`);
 }
