@@ -58,9 +58,9 @@
   --font-p6-display: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --text-p6-hero: 2.75rem;
   --text-p6-title: 1.75rem;
-  --text-p6-heading: 1.4375rem;
+  --text-p6-heading: 40px;
   --text-p6-body: 1.0625rem;
-  --text-p6-small: 0.9375rem;
+  --text-p6-small: 24px;
   --text-p6-caption: 0.75rem;
   --text-p6-label: 0.6875rem;
   --radius-p6-card: 20px;
@@ -192,7 +192,7 @@ body::-webkit-scrollbar,
 
 .p6-small {
   font-size: var(--text-p6-small);
-  font-weight: 500;
+  font-weight: 700;
   letter-spacing: 0.03em;
   line-height: 1.4;
 }
@@ -227,8 +227,8 @@ body::-webkit-scrollbar,
   position: relative;
   display: flex;
   border-radius: var(--radius-p6-card);
-  border: 2px solid var(--color-p6-border-phase);
-  background: #0b182c;
+  border: 3px solid var(--color-p6-border-phase);
+  background: rgba(11, 24, 44, 0.67);
   overflow: hidden;
   cursor: pointer;
   transition: transform 0.15s ease;
@@ -251,11 +251,11 @@ body::-webkit-scrollbar,
 .p6-glow-card--start-here,
 .p6-glow-card--phase,
 .p6-glow-card--full-program {
-  background: #0b182c;
+  background: rgba(11, 24, 44, 0.67);
 }
 
 .p6-glow-card--start-here {
-  border-color: #5b8fd9;
+  border: 3px solid #5b8fd9;
   box-shadow: none;
 }
 
@@ -265,8 +265,8 @@ body::-webkit-scrollbar,
 }
 
 .p6-glow-card--full-program {
-  border-width: 2px;
-  border-color: #1155cc;
+  border-width: 3px;
+  border-color: #3478C8;
   box-shadow: 0 0 16px rgba(17, 85, 204, 0.22);
 }
 
@@ -276,20 +276,21 @@ body::-webkit-scrollbar,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.22em;
-  height: 1.22em;
+  width: 47.36px;
+  height: 47.36px;
   border-radius: 50%;
-  border: 2px solid #1155cc;
+  border: 4px solid #1155cc;
   flex-shrink: 0;
   background: transparent;
   color: #ffffff;
   opacity: 1;
   box-shadow: none;
+  margin-right: 40px;
 }
 
 .p6-circle-btn svg {
-  width: 0.36em;
-  height: 0.6em;
+  width: 16.33px;
+  height: 26.12px;
   display: block;
 }
 
@@ -343,8 +344,8 @@ body::-webkit-scrollbar,
 .p6-phase-card__keywords,
 .p6-phase-card__steps,
 .p6-full-program-content__subtitle {
-  font-size: 18px;
-  font-weight: 500;
+  font-size: 24px;
+  font-weight: 700;
   letter-spacing: 0.02em;
   line-height: 1.35;
 }
@@ -352,8 +353,8 @@ body::-webkit-scrollbar,
 .p6-start-here-card__description,
 .p6-phase-card__description,
 .p6-full-program-content__description {
-  font-size: 18px;
-  font-weight: 400;
+  font-size: 24px;
+  font-weight: bold;
   letter-spacing: 0.02em;
   line-height: 1.4;
 }
@@ -382,16 +383,16 @@ body::-webkit-scrollbar,
   gap: 0.4rem;
   color: #1155cc;
   opacity: 1;
-  font-size: 18px;
-  font-weight: 500;
+  font-size: 24px;
+  font-weight: 700;
   letter-spacing: 0.02em;
   line-height: 1.4;
   pointer-events: none;
 }
 
 .p6-duration svg {
-  width: 1.2em;
-  height: 1.2em;
+  width: 40.95px;
+  height: 34.74px;
   flex-shrink: 0;
 }
 
@@ -409,18 +410,18 @@ body::-webkit-scrollbar,
 .p6-section-divider__line {
   flex: 1 1 0;
   min-width: 0;
-  height: 2px;
+  height: 5px;
   font-size: 0;
   line-height: 0;
   overflow: hidden;
-  background: rgba(52, 120, 200, 0.55);
+  background:#3478C8;
 }
 
 .p6-section-divider__label {
   flex-shrink: 0;
   color: #ffffff;
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 32px;
+  font-weight: 700;
   letter-spacing: 0.18em;
   line-height: 1.3;
   text-transform: uppercase;
@@ -436,11 +437,15 @@ body::-webkit-scrollbar,
   width: 100%;
   height: 100%;
   overflow: hidden;
-  /* Content-sized cards; tall screens must not stretch rows with 1fr. */
-  --p6-phase-card-height: 11.5rem;
-  --p6-card-pad-x: 1.75rem;
-  --p6-card-pad-right: 1.75rem;
+  /* Bluefin 1920×1080 / Figma Touchscreen frame */
+  --p6-phase-card-height: 232px;
+  --p6-start-here-height: 175.29px;
+  --p6-card-pad-x: 28px;
+  --p6-card-pad-right: 28px;
   --p6-home-max-width: 1920px;
+  --p6-home-pad-x: 97.125px;
+  --p6-home-pad-top: 32px;
+  --p6-home-col-gap: 28.14px;
 }
 
 .p6-home__hero {
@@ -529,37 +534,48 @@ body::-webkit-scrollbar,
   position: relative;
   z-index: 1;
   display: grid;
+  box-sizing: border-box;
   width: 100%;
   max-width: var(--p6-home-max-width);
   min-height: 100%;
   height: 100%;
   margin-inline: auto;
-  padding: 1.5rem 5.5rem 2rem;
-  grid-template-columns: 1fr 1fr;
-  /* Logo top; equal 1fr spacers center the card block in leftover height. */
+  /* 1920 = 97.125 + 1725.75 + 97.125; columns 851.4 + 28.14 + 846.21 */
+  padding: var(--p6-home-pad-top) var(--p6-home-pad-x) 0;
+  grid-template-columns: 851.4px 846.21px;
+  column-gap: var(--p6-home-col-gap);
+  row-gap: 0;
+  align-content: start;
+  justify-content: start;
+  /* Figma Touchscreen 1920×1080 — fixed rows, no 1fr centering. */
   grid-template-rows:
-    auto
-    1fr
-    auto
-    auto
-    auto
-    minmax(var(--p6-phase-card-height), auto)
-    minmax(var(--p6-phase-card-height), auto)
-    1fr;
-  gap: 1.25rem;
-  align-content: stretch;
-  --p6-phase-card-height: 11.5rem;
-  --p6-card-pad-x: 1.75rem;
-  --p6-card-pad-right: 1.75rem;
+    48px
+    56px
+    var(--p6-start-here-height)
+    32px
+    24px
+    12px
+    52px
+    60px
+    var(--p6-phase-card-height)
+    24px
+    var(--p6-phase-card-height);
+  --p6-phase-card-height: 232px;
+  --p6-start-here-height: 175.29px;
+  --p6-card-pad-x: 28px;
+  --p6-card-pad-right: 28px;
   grid-template-areas:
     'logo    logo'
     '.       .'
     'start   start'
+    '.       .'
     'divider divider'
+    '.       .'
     'col-l   col-r'
+    '.       .'
     'phase1  full'
-    'phase2  full'
-    '.       .';
+    '.       full'
+    'phase2  full';
 }
 
 .p6-logo {
@@ -575,14 +591,13 @@ body::-webkit-scrollbar,
   grid-area: logo;
   position: relative;
   top: 0;
-  /* Sits at the screen edge instead of the card gutter, without shifting the grid. */
-  left: calc(1.25rem - 5.5rem);
+  left: -53px;
   z-index: 2;
   justify-self: start;
-  align-self: start;
-  width: 16rem;
+  align-self: center;
+  width: 256px;
   height: auto;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0;
 }
 
 .p6-home__start-here {
@@ -590,11 +605,12 @@ body::-webkit-scrollbar,
   grid-column: 1 / -1;
   justify-self: stretch;
   align-self: stretch;
-  width: 100%;
-  min-height: 10.25rem;
-  height: auto;
-  opacity: 0.9;
-  margin-top: 12px;
+  width: 1725.75px;
+  max-width: 1725.75px;
+  height: 175.29px;
+  min-height: 175.29px;
+  opacity: 67%;
+  margin-top: 0;
 }
 
 .p6-start-here-card {
@@ -636,6 +652,8 @@ body::-webkit-scrollbar,
   color: #1155cc;
   opacity: 1;
   justify-content: flex-start;
+  font-size: 24px;
+  font-weight: 700 !important;
 }
 
 .p6-start-here-card__description {
@@ -644,6 +662,8 @@ body::-webkit-scrollbar,
   justify-self: start;
   align-self: center;
   color: rgba(255, 255, 255, 0.92);
+  font-size: 24px;
+  font-weight: 700;
 }
 
 .p6-start-here-card > .p6-duration {
@@ -652,6 +672,8 @@ body::-webkit-scrollbar,
   justify-self: end;
   align-self: center;
   white-space: nowrap;
+  font-size: 24px;
+  font-weight: 700;
 }
 
 .p6-keyword-row {
@@ -669,8 +691,8 @@ body::-webkit-scrollbar,
 
 .p6-keyword-row__sep {
   display: inline-block;
-  width: 4px;
-  height: 4px;
+  width: 7px;
+  height: 7px;
   margin: 0 0.55rem;
   overflow: hidden;
   border-radius: 50%;
@@ -685,32 +707,29 @@ body::-webkit-scrollbar,
 .p6-home__divider {
   grid-area: divider;
   position: relative;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  column-gap: 1.25rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
   align-self: center;
   justify-self: stretch;
   width: 100%;
-  align-items: center;
-  margin-top: 32px;
+  margin-top: 15px;
+  height: 42px;
 }
 
 .p6-home__divider-track {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
   align-items: center;
-  min-width: 0;
+  justify-content: center;
+  flex: 0 0 420px;
+  width: 356px;
+  min-width: 356px;
+  height: 5px;
 }
 
 .p6-home__divider-ghost {
-  visibility: hidden;
-  pointer-events: none;
-  white-space: nowrap;
-  overflow: hidden;
-  height: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
+  display: none;
 }
 
 .p6-home__divider-track--left .p6-home__divider-ghost {
@@ -718,11 +737,16 @@ body::-webkit-scrollbar,
   grid-row: 1;
 }
 
-.p6-home__divider-track--left .p6-section-divider__line {
-  grid-column: 2 / -1;
-  grid-row: 1;
-  /* Stop before CHOOSE YOUR EXPERIENCE with the same gap as the right side. */
-  margin-right: calc(10rem + 2rem - 0.625rem);
+.p6-home__divider-track--left .p6-section-divider__line,
+.p6-home__divider-track--right .p6-section-divider__line {
+  display: block;
+  width: 356px;
+  min-width: 356px;
+  height: 5px;
+  margin: 0;
+  padding: 0;
+  line-height: 0;
+  flex: none;
 }
 
 .p6-home__divider-track--right .p6-home__divider-ghost {
@@ -730,38 +754,42 @@ body::-webkit-scrollbar,
   grid-row: 1;
 }
 
-.p6-home__divider-track--right .p6-section-divider__line {
-  grid-column: 1 / 3;
-  grid-row: 1;
-  margin-left: calc(10rem + 2rem - 0.625rem);
-}
 
 .p6-home__divider .p6-section-divider__label {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  position: static;
+  left: auto;
+  top: auto;
+  transform: none;
   z-index: 1;
   padding: 0;
+  margin: 0;
   background: transparent;
+  line-height: 1;
+  display: flex;
+  align-items: center;
 }
 
 .p6-home__col-header {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: flex-start;
   gap: 0.2rem;
-  align-self: end;
-  padding: 0 0 0.2rem;
+  align-self: start;
+  padding: 0;
   text-align: center;
 }
 
 .p6-home__col-left {
   grid-area: col-l;
+  margin-left: 0;
+  margin-top: 14px;
 }
 
 .p6-home__col-right {
   grid-area: col-r;
+  margin-right: 0;
+  margin-top: 14px;
 }
 
 .p6-home__phase-arrow {
@@ -771,16 +799,26 @@ body::-webkit-scrollbar,
 .p6-home__phase1,
 .p6-home__phase2 {
   grid-area: phase1;
-  height: auto;
+  width: 828px;
+  height: var(--p6-phase-card-height);
   min-height: var(--p6-phase-card-height);
   align-self: stretch;
-  opacity: 0.9;
+  opacity: 67%;
   position: relative;
-  top: -1.15rem;
+  top: 0;
 }
 
 .p6-home__phase2 {
   grid-area: phase2;
+  width: 851.35px;
+  height: 237.95px;
+  min-height: 237.95px;
+}
+
+.p6-home__phase1 {
+  width: 851.4px;
+  height: 236.95px;
+  min-height: 236.95px;
 }
 
 .p6-phase-card {
@@ -848,12 +886,13 @@ body::-webkit-scrollbar,
 
 .p6-home__full-program {
   grid-area: full;
-  align-self: stretch;
-  height: auto;
-  min-height: 0;
-  opacity: 0.9;
+  align-self: start;
+  width: 846.21px;
+  height: 494.85px;
+  min-height: 494.85px;
+  opacity: 67%;
   position: relative;
-  top: -1.15rem;
+  top: 0;
 }
 
 .p6-full-program-content {
@@ -1064,11 +1103,8 @@ body::-webkit-scrollbar,
   min-height: auto;
   padding: 2.85rem 2.5rem 1.85rem;
   border-radius: 18px;
-  border: 2px solid var(--p6-experience-border, var(--color-p6-border-phase));
-  background: #0b182c;
-  box-shadow:
-    0 28px 56px rgba(0, 0, 0, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  border: 3px solid var(--p6-experience-border);
+  background: rgba(11, 24, 44,1);
 }
 
 .p6-session-modal--confirm.p6-session-modal--full-program {
@@ -1171,7 +1207,7 @@ body::-webkit-scrollbar,
 .p6-session-modal--confirm .p6-session-modal__title {
   margin: 0 0 0.75rem;
   font-size: 3.75rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.04em;
   line-height: 1.1;
 }
@@ -1193,7 +1229,7 @@ body::-webkit-scrollbar,
   justify-content: center;
   gap: 0.4rem;
   margin: 0 0 10px;
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 500;
   letter-spacing: 0.01em;
   line-height: 1.2;
@@ -1218,7 +1254,7 @@ body::-webkit-scrollbar,
 
 .p6-session-modal__section-line {
   flex: 1;
-  height: 1px;
+  height: 2px;
   border-radius: 1px;
   background: linear-gradient(
     90deg,
@@ -1340,7 +1376,7 @@ body::-webkit-scrollbar,
 }
 
 .p6-session-modal--confirm .p6-session-modal__item-text {
-  font-size: 1.125rem;
+  font-size: 20px;
   font-weight: 700;
   letter-spacing: 0;
   line-height: 1.3;
@@ -1348,11 +1384,11 @@ body::-webkit-scrollbar,
 }
 
 .p6-session-modal__item-desc {
-  font-size: 1.0625rem;
+  font-size: 16px;
   font-weight: 400;
   letter-spacing: 0;
   line-height: 1.4;
-  color: rgba(255, 255, 255, 0.88);
+  color: #FFFFFF;
 }
 
 .p6-session-modal__duration {
@@ -1440,7 +1476,7 @@ body::-webkit-scrollbar,
   padding: 1.05rem 1rem;
   border-radius: 8px;
   border: none;
-  font-size: 23px;
+  font-size: 24px;
   font-weight: 500;
   letter-spacing: 0.1em;
   color: #ffffff;
