@@ -1,0 +1,47 @@
+{
+  "profile": "XT2145",
+  "version": "1.5.67",
+  "clusterMember": null,
+  "builtAt": "2026-09-16T18:19:06.686Z",
+  "displayMode": "MULTI",
+  "storageEncryption": {
+    "enabled": false,
+    "note": "Full-card encryption is disabled so startup and OTA remain readable. Exact allow-listed media assets may use native AES-CTR playback."
+  },
+  "mediaCache": {
+    "path": "SD:/perform6-media",
+    "naming": "stable .mp4 names realized from AssetPool objects",
+    "usedBy": [
+      "native roVideoPlayer LEDs via PlayFile",
+      "JS led-playback SD bus"
+    ],
+    "backingPath": "SD:/perform6-media-pool (sha256 objects; not the native playback target)"
+  },
+  "displayModeFile": "perform6-display.txt",
+  "displayModeOptions": [
+    "MULTI",
+    "MULTI_NOFULLRES"
+  ],
+  "multiHdmi": {
+    "outputs": 2,
+    "canvas": "HDMI-1 HtmlWidget + HDMI-2 native roVideoPlayer",
+    "outputMap": "HDMI-1 1920x1080 x=0; HDMI-2 3840x2160 x=1920",
+    "mode": "HDMI-1 1920x1080x60p:fullres; HDMI-2 3840x2160x60p:fullres",
+    "ledPlayback": "PlayFile of AssetRealizer .mp4 under SD:/perform6-media; command via perform6-led-playback.json",
+    "ledIdleClip": "led-idle.png (packaged) or led-idle.mp4 override",
+    "audioRoute": "HDMI-1 touch silent; native video audio to HDMI-2",
+    "ledLog": "SD:/perform6-led.log"
+  },
+  "files": [
+    "autorun.brs",
+    "index.html",
+    "assets/",
+    "perform6-profile.txt",
+    "perform6-display.txt",
+    "perform6-ops.json",
+    "perform6-ops.emergency.json",
+    "led-idle.png",
+    "README-SD.txt"
+  ],
+  "entryScript": "assets/app.js"
+}

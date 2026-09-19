@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Perform6</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #000000;
+        color: #ffffff;
+        font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+      }
+      /* Outside #root so React mount does not wipe this shell. */
+      #boot-status {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        text-align: center;
+        padding: 32px;
+        z-index: 2147483647;
+        background: #000000;
+      }
+      #boot-status[hidden],
+      #boot-status.p6-boot-hidden {
+        display: none !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+      }
+      #boot-status .brand-logo {
+        width: min(28rem, 72vw);
+        height: auto;
+        object-fit: contain;
+      }
+      #boot-status .brand {
+        font-size: 18px;
+        letter-spacing: 0.28em;
+        text-transform: uppercase;
+        color: #00e5ff;
+        font-weight: 700;
+      }
+      #boot-status .msg {
+        font-size: 32px;
+        font-weight: 700;
+        color: #ffffff;
+      }
+      #boot-status .hint {
+        font-size: 16px;
+        color: rgba(255, 255, 255, 0.7);
+        max-width: 32rem;
+        line-height: 1.45;
+      }
+      #root {
+        height: 100%;
+      }
+    </style>
+    
+    <link rel="stylesheet" href="./assets/style.css?p6v=1.5.67">
+  </head>
+  <body>
+    <div id="boot-status" role="status" aria-live="polite">
+      <img class="brand-logo" src="./images/perform6-logo.png" alt="Perform6" />
+      <div class="msg" id="boot-msg">Loading app...</div>
+      <div class="hint" id="boot-hint">Please wait while the player starts.</div>
+    </div>
+    <div id="root"></div>
+    <script>
+      (function () {
+        function fail(title, detail) {
+          var shell = document.getElementById('boot-status');
+          var msg = document.getElementById('boot-msg');
+          var hint = document.getElementById('boot-hint');
+          if (shell) shell.hidden = false;
+          if (msg) msg.textContent = title;
+          if (hint) hint.textContent = detail;
+        }
+
+        window.__perform6ShowBootError = fail;
+
+        window.__perform6ScriptFailed = function () {
+          fail(
+            'Could not load assets/app.js',
+            'Missing or nested assets folder. Copy assets/ next to index.html on the SD root, then reboot.'
+          );
+        };
+
+        window.__perform6MountFailed = function (detail) {
+          fail(
+            'App failed to start',
+            detail || 'React could not mount. Check serial logs and SD package layout.'
+          );
+        };
+
+        window.__perform6AppMounted = false;
+
+        window.setTimeout(function () {
+          if (window.__perform6AppMounted) return;
+          if (!document.getElementById('boot-status')) return;
+          fail(
+            'App did not start',
+            'SD card root must contain: autorun.brs, index.html, and assets/app.js (same folder level). Extract the zip, open the folder, copy those items to the card root - not inside another folder.'
+          );
+        }, 20000);
+      })();
+    </script>
+  <script defer src="./assets/app.js?p6v=1.5.67" onerror="window.__perform6ScriptFailed&&window.__perform6ScriptFailed()"></script>
+  </body>
+</html>

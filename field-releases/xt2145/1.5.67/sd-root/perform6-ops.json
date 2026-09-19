@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "pauseMediaSync": false,
+  "pauseOta": true,
+  "clearCacheOnBoot": false,
+  "rebootAfterCacheClear": false,
+  "syncOnBoot": false,
+  "traceAutorun": false,
+  "_comment": "traceAutorun=true for verbose FN enter/exit. Critical MAIN/PLAY/break always log. Media wipe is deferred (non-blocking)."
+}
