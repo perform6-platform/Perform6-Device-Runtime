@@ -14,13 +14,18 @@ import {
   readLedPlaybackStatusForRole,
   writeLedPlaybackFile,
   isLedStatusStarted,
+  clearLedPlaybackCommandFiles,
   type LedPlaybackCommand,
   type LedPlaybackTarget,
 } from './ledPlaybackFile';
 import { findScreenForTarget, getCurrentVideo } from '../services/playback';
 import { toLedPlayableSrc } from '../services/playbackSrc';
 import { BridgeMsg } from '../services/bridgeProtocol';
-import { resolveSdPlaybackUrl, subscribeSdCacheProgress } from '../services/sdCacheBridge';
+import {
+  hasSdCachedMedia,
+  resolveSdPlaybackUrl,
+  subscribeSdCacheProgress,
+} from '../services/sdCacheBridge';
 import type { DisplayTarget } from '../shared/types';
 import { useRuntimeStore } from '../stores/runtimeStore';
 import { reportScreenPlayback, clearScreenPlayback } from '../services/playbackTelemetry';
@@ -99,7 +104,12 @@ function publishSecondaryScreens(
   const led3 = buildCommand('led3', 'SCREEN_3');
   if (led2) cmds.push(led2);
   if (led3) cmds.push(led3);
-  if (cmds.length === 0) return;
+  if (cmds.length === 0) {
+    // No local media (e.g. after Clear SD Cache) — drop durable commands so
+    // autorun cannot keep PlayFile-ing deleted paths.
+    clearLedPlaybackCommandFiles();
+    return;
+  }
   if (sequence !== publishSequence && !force) return;
 
   pendingSdFallback = false;
@@ -279,7 +289,16 @@ export function initXcOutputBridge(): void {
   }
 
   subscribeSdCacheProgress((event) => {
+    if (event.status === 'cleared') {
+      clearLedPlaybackCommandFiles();
+      lastReassertAt = 0;
+      pendingSdFallback = false;
+      clearAckTimer();
+      console.info('[Perform6] XC bridge frozen after SD cache clear');
+      return;
+    }
     if (event.status === 'done' || event.status === 'skip') {
+      if (event.mediaVersionId && !hasSdCachedMedia(event.mediaVersionId)) return;
       publishSecondaryScreens(port);
     }
   });

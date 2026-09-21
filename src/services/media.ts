@@ -9,7 +9,7 @@ import {
   downloadMediaItemsViaAssetPool,
   isMediaAssetPoolAvailable,
 } from './mediaAssetPool';
-import { physicallyEvictMedia } from './mediaEvict';
+import { physicallyEvictMedia, loadPendingMediaEvictIds } from './mediaEvict';
 import { realizeMediaAssetsViaRealizer } from './mediaRealize';
 import { resolveMediaFileUrl } from './manifest';
 import { offlineCacheService } from './offlineCache';
@@ -239,22 +239,30 @@ export async function evictCachedMedia(
 
   if (!options?.marksOnly) {
     try {
-      await physicallyEvictMedia({
+      const result = await physicallyEvictMedia({
         evictIds: mediaVersionIds,
         retainItems: options?.retainItems ?? [],
         retainIds: options?.retainIds,
       });
+      // Only drop offline-cache meta for IDs that actually left disk.
+      // Pending failures remain for the next sync retry.
+      const pending = new Set(loadPendingMediaEvictIds());
+      const removed = mediaVersionIds.filter((id) => !pending.has(id));
+      if (removed.length > 0) {
+        await offlineCacheService.removeMany(removed);
+      }
+      console.info('[Perform6] Evict cached media finished', result);
+      return;
     } catch (e) {
       console.warn(
-        '[Perform6] Physical evict failed — falling back to marks clear',
+        '[Perform6] Physical evict failed — leaving marks for retry (no silent wipe)',
         e instanceof Error ? e.message : e,
       );
-      clearSdCached(mediaVersionIds);
+      return;
     }
-  } else {
-    clearSdCached(mediaVersionIds);
   }
 
+  clearSdCached(mediaVersionIds);
   await offlineCacheService.removeMany(mediaVersionIds);
 }
 

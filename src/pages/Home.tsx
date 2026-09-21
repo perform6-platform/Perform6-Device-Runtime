@@ -129,6 +129,12 @@ export default function Home() {
     setActiveSession(null);
     resetDisplayControls();
     const idleMedia = getTouchSlotMedia(playbackState.manifest, 'touch-default');
+    // After Clear SD Cache (or while refill runs) there is no local .mp4 —
+    // do not push a stale/missing path into the LED bridge.
+    if (!touchVideos.idle) {
+      setDisplayVideoSrc(null);
+      return;
+    }
     setDisplayVideoLoop(true);
     setDisplayPaused(false);
     setDisplayVideoSrc(touchVideos.idle, {
@@ -156,6 +162,10 @@ export default function Home() {
   // Golf-Default stuck command while Start Here was selected.
   useEffect(() => {
     if (sessionOpen || overviewOpen) return;
+    if (!touchVideos.idle) {
+      setDisplayVideoSrc(null);
+      return;
+    }
     const idleMedia = getTouchSlotMedia(playbackState.manifest, 'touch-default');
     setDisplayVideoLoop(true);
     setDisplayPaused(false);

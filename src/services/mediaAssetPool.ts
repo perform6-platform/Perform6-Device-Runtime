@@ -29,7 +29,7 @@ import {
 } from './downloadProgress';
 import { labelForMediaVersionId } from './touchProgramGate';
 import { probeBrightSignAssetPool } from './assetPoolProbe';
-import { getNodeFs } from '../platform/brightSignNode';
+import { getNodeFs, toNodeSdPath } from '../platform/brightSignNode';
 import { ensureAssetPoolDirectory } from './assetPoolBootstrap';
 
 /** AssetPool constructor path (/storage/sd/perform6-media-pool on OS 9.1). */
@@ -154,6 +154,50 @@ function detachFetcherListeners(target: AssetPoolFetcherInstance | null): void {
 /** BrightSign JavaScript events expose their payload under `detail`. */
 function eventDetail<T extends object>(event: T & { detail?: T }): T {
   return event.detail && typeof event.detail === 'object' ? event.detail : event;
+}
+
+/**
+ * Map AssetPool file/progress events onto a SyncMediaItem.
+ * BrightSign often omits usable filenames on collection ticks — fall back to
+ * `index` into the active needFetch list (0- or 1-based). Reporting only.
+ */
+function resolvePoolEventItem(
+  detail: { filename?: string; index?: number },
+  byName: Map<string, SyncMediaItem>,
+  needFetch: MediaAsset[],
+): SyncMediaItem | null {
+  const rawName = String(detail.filename ?? '').trim();
+  if (rawName) {
+    const direct = byName.get(rawName);
+    if (direct) return direct;
+    const base = rawName.split(/[/\\]/).pop() ?? rawName;
+    if (base) {
+      const byBase = byName.get(base);
+      if (byBase) return byBase;
+    }
+    for (const [name, item] of byName) {
+      if (
+        rawName === name ||
+        rawName.endsWith(`/${name}`) ||
+        rawName.endsWith(`\\${name}`) ||
+        (base.length > 0 && (name === base || name.endsWith(base)))
+      ) {
+        return item;
+      }
+    }
+  }
+
+  if (detail.index == null) return null;
+  const idx = Number(detail.index);
+  if (!Number.isFinite(idx)) return null;
+  for (const candidate of [idx, idx - 1]) {
+    if (candidate < 0 || candidate >= needFetch.length) continue;
+    const asset = needFetch[candidate];
+    if (!asset) continue;
+    const item = byName.get(asset.name);
+    if (item) return item;
+  }
+  return null;
 }
 
 /** Fresh fetcher per download when removeEventListener is missing (OS EventEmitter leak). */
@@ -444,6 +488,118 @@ export async function protectMediaPoolRetain(
   }
 }
 
+function isUnderMediaPoolPath(nodePath: string): boolean {
+  const normalized = nodePath.replace(/\\/g, '/').toLowerCase();
+  return (
+    normalized.includes('/perform6-media-pool/') ||
+    normalized.endsWith('/perform6-media-pool') ||
+    normalized.includes('/sd:/perform6-media-pool/') ||
+    normalized.includes('sd:/perform6-media-pool/')
+  );
+}
+
+function isUnderOtaPoolPath(nodePath: string): boolean {
+  const normalized = nodePath.replace(/\\/g, '/').toLowerCase();
+  return normalized.includes('perform6-ota-pool');
+}
+
+/**
+ * Resolve the on-disk AssetPool object path for one media asset (hash blob).
+ * Returns a Node/BrightSign path string, or null.
+ */
+export async function resolveMediaPoolAssetPath(
+  asset: MediaAsset,
+): Promise<string | null> {
+  if (!isMediaAssetPoolAvailable() || !pool || !AssetPoolFilesClass) return null;
+  try {
+    return await resolvePoolPath([asset], asset.name);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * After protectAssets(retain) has unprotected an evicted asset, delete its
+ * pool hash object so SD space is freed immediately. Never touches OTA pool,
+ * never runs during an active media fetch, never deletes outside media-pool.
+ */
+export async function deleteUnprotectedMediaPoolAsset(
+  asset: MediaAsset,
+  hintPath?: string | null,
+): Promise<{ ok: boolean; path: string | null; reason?: string }> {
+  if (isMediaAssetPoolDownloadInProgress()) {
+    return { ok: false, path: null, reason: 'download-in-progress' };
+  }
+  const fs = getNodeFs();
+  if (!fs) return { ok: false, path: null, reason: 'fs-unavailable' };
+
+  let rawPath = hintPath?.trim() || null;
+  if (!rawPath) {
+    rawPath = await resolveMediaPoolAssetPath(asset);
+  }
+  if (!rawPath) return { ok: false, path: null, reason: 'pool-path-missing' };
+
+  const result = await deleteUnprotectedMediaPoolPath(rawPath);
+  if (result.ok) {
+    console.info('[Perform6] Media pool hash deleted', {
+      name: asset.name,
+      path: result.path,
+      detail: result.reason ?? 'deleted',
+    });
+  } else {
+    console.warn('[Perform6] Media pool hash delete failed', {
+      name: asset.name,
+      path: result.path,
+      reason: result.reason,
+    });
+  }
+  return result;
+}
+
+/**
+ * Delete a known media-pool hash object by path. Refuses OTA pool, dirs,
+ * and anything outside perform6-media-pool. Safe during non-fetch windows.
+ */
+export async function deleteUnprotectedMediaPoolPath(
+  rawPath: string,
+): Promise<{ ok: boolean; path: string | null; reason?: string }> {
+  if (isMediaAssetPoolDownloadInProgress()) {
+    return { ok: false, path: null, reason: 'download-in-progress' };
+  }
+  const fs = getNodeFs();
+  if (!fs) return { ok: false, path: null, reason: 'fs-unavailable' };
+  if (!rawPath?.trim()) {
+    return { ok: false, path: null, reason: 'pool-path-missing' };
+  }
+
+  const nodePath = toNodeSdPath(
+    rawPath.startsWith('file://')
+      ? rawPath.replace(/^file:\/\/\//i, '').replace(/^file:\/\//i, '')
+      : rawPath,
+  );
+  if (isUnderOtaPoolPath(nodePath)) {
+    return { ok: false, path: nodePath, reason: 'refused-ota-pool' };
+  }
+  if (!isUnderMediaPoolPath(nodePath)) {
+    return { ok: false, path: nodePath, reason: 'path-outside-media-pool' };
+  }
+
+  try {
+    if (!fs.existsSync(nodePath)) {
+      return { ok: true, path: nodePath, reason: 'already-absent' };
+    }
+    const st = fs.statSync(nodePath);
+    if (st.isDirectory()) {
+      return { ok: false, path: nodePath, reason: 'refused-directory' };
+    }
+    fs.unlinkSync(nodePath);
+    return { ok: true, path: nodePath };
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    return { ok: false, path: nodePath, reason };
+  }
+}
+
 export async function cancelMediaAssetPoolFetch(): Promise<void> {
   const target = activeFetch ?? fetcher;
   if (!target) return;
@@ -591,6 +747,8 @@ export async function downloadMediaItemsViaAssetPool(
       totalBytes:
         firstNeed.fileSize != null ? Number(firstNeed.fileSize) : null,
       status: 'start',
+      doneCount: completedFiles,
+      totalCount: items.length,
     });
   }
 
@@ -682,9 +840,7 @@ export async function downloadMediaItemsViaAssetPool(
     const onFile = (event: FileEvent) => {
       const detail = eventDetail(event);
       const name = String(detail.filename ?? '');
-      lastProgressFile = name;
-      lastProgressBytes = -1;
-      const item = byName.get(name);
+      const item = resolvePoolEventItem(detail, byName, needFetch);
       if (!item) {
         const collectionCode = detail.responseCode;
         const collectionOk =
@@ -696,11 +852,15 @@ export async function downloadMediaItemsViaAssetPool(
         }
         console.info('[Perform6] Media asset pool collection event', {
           type: detail.type ?? event.type ?? null,
+          filename: name || null,
+          index: detail.index ?? null,
           responseCode: detail.responseCode ?? null,
           error: detail.error ?? detail.failureReason ?? null,
         });
         return;
       }
+      lastProgressFile = item.fileUrl ? cacheNameFor(resolveMediaFileUrl(item.fileUrl)) : name;
+      lastProgressBytes = -1;
       notePoolActivity();
       const code = detail.responseCode;
       const ok = code === 200 || code === 226 || code === 0;
@@ -715,7 +875,27 @@ export async function downloadMediaItemsViaAssetPool(
             item.fileSize != null ? Number(item.fileSize) : 0,
           totalBytes: item.fileSize != null ? Number(item.fileSize) : null,
           status: 'done',
+          doneCount: completedFiles,
+          totalCount: items.length,
         });
+        // Tip Admin onto the next queued file (START @ 0 bytes) without fake %.
+        const nextNeedIdx = completedFiles - already.length;
+        if (nextNeedIdx >= 0 && nextNeedIdx < needFetch.length) {
+          const nextAsset = needFetch[nextNeedIdx];
+          const nextItem = nextAsset ? byName.get(nextAsset.name) : null;
+          if (nextItem && !startedReportIds.has(nextItem.mediaVersionId)) {
+            startedReportIds.add(nextItem.mediaVersionId);
+            void onProgress?.({
+              mediaVersionId: nextItem.mediaVersionId,
+              bytesDownloaded: 0,
+              totalBytes:
+                nextItem.fileSize != null ? Number(nextItem.fileSize) : null,
+              status: 'start',
+              doneCount: completedFiles,
+              totalCount: items.length,
+            });
+          }
+        }
       } else {
         failureReasons[item.mediaVersionId] =
           detail.error || `Asset fetch failed (code ${String(code ?? '?')})`;
@@ -724,15 +904,19 @@ export async function downloadMediaItemsViaAssetPool(
           bytesDownloaded: 0,
           totalBytes: item.fileSize != null ? Number(item.fileSize) : null,
           status: 'failed',
+          doneCount: completedFiles,
+          totalCount: items.length,
         });
       }
     };
 
     const onProgressEvent = (event: ProgressEvent) => {
       const detail = eventDetail(event);
-      const name = String(detail.filename ?? '');
-      const item = byName.get(name);
+      const item = resolvePoolEventItem(detail, byName, needFetch);
       if (!item) return;
+      const name =
+        String(detail.filename ?? '').trim() ||
+        cacheNameFor(resolveMediaFileUrl(item.fileUrl));
       const transferred = Number(detail.currentFileTransferred ?? 0);
       const total =
         detail.currentFileTotal != null
@@ -750,6 +934,8 @@ export async function downloadMediaItemsViaAssetPool(
           bytesDownloaded: 0,
           totalBytes: total,
           status: 'start',
+          doneCount: completedFiles,
+          totalCount: items.length,
         });
       }
       if (transferred > 0) {
@@ -758,6 +944,8 @@ export async function downloadMediaItemsViaAssetPool(
           bytesDownloaded: transferred,
           totalBytes: total,
           status: 'progress',
+          doneCount: completedFiles,
+          totalCount: items.length,
         });
       }
     };

@@ -33,6 +33,10 @@ export function useOfflineVideoSrc(
     resolve();
 
     const unsubscribe = subscribeSdCacheProgress((event) => {
+      if (event.status === 'cleared') {
+        setLocalSrc(null);
+        return;
+      }
       if (event.mediaVersionId !== mediaVersionId) return;
       if (event.status === 'done' || event.status === 'skip') {
         resolve();
