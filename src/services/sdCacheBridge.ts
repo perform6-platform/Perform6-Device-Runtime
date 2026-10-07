@@ -82,7 +82,15 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-export type SdCacheProgressStatus = 'start' | 'progress' | 'done' | 'failed' | 'skip' | 'complete';
+export type SdCacheProgressStatus =
+  | 'start'
+  | 'progress'
+  | 'done'
+  | 'failed'
+  | 'skip'
+  | 'complete'
+  /** Full media wipe (Clear SD Cache) — invalidate local playback srcs. */
+  | 'cleared';
 
 export interface SdCacheProgressEvent {
   type: typeof PROGRESS_TYPE;
@@ -134,6 +142,15 @@ export function emitSdCacheProgress(event: Omit<SdCacheProgressEvent, 'type'> & 
     ...event,
     type: PROGRESS_TYPE,
     status: event.status,
+  });
+}
+
+/** Notify UI/bridges that all media marks + files were wiped (Clear SD Cache). */
+export function emitSdCacheCleared(): void {
+  emitSdCacheProgress({
+    status: 'cleared',
+    mediaVersionId: '',
+    error: 'sd-cache-cleared',
   });
 }
 
@@ -681,6 +698,9 @@ export interface SdDownloadProgress {
   totalBytes: number | null;
   mediaVersionId: string;
   status: SdCacheProgressStatus;
+  /** Optional batch counters for Admin (reporting only). */
+  doneCount?: number;
+  totalCount?: number;
 }
 
 function findPendingItem(

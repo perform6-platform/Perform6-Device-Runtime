@@ -117,6 +117,39 @@ function writeAtomic(sdPath: string, body: string): boolean {
   }
 }
 
+function unlinkSdBestEffort(sdPath: string): boolean {
+  const fs = getNodeFs();
+  if (!fs) return false;
+  try {
+    const path = toNodeSdPath(sdPath);
+    if (!fs.existsSync(path)) return true;
+    fs.unlinkSync(path);
+    return true;
+  } catch (error) {
+    console.warn('[Perform6] LED playback file unlink failed', sdPath, error);
+    return false;
+  }
+}
+
+/**
+ * Remove durable LED play commands so autorun cannot re-PlayFile deleted media
+ * after Clear SD Cache. Does not touch OTA or media pools.
+ */
+export function clearLedPlaybackCommandFiles(): void {
+  if (flushTimer != null) {
+    window.clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  pendingFile = null;
+  lastSig = '';
+  const okLed = unlinkSdBestEffort(LED_FILE_SD);
+  const okXt = unlinkSdBestEffort(XT_FILE_SD);
+  console.info('[Perform6] LED playback command files cleared', {
+    led: okLed,
+    xt: okXt,
+  });
+}
+
 function writeFileSync(file: LedPlaybackFile): boolean {
   const body = JSON.stringify(file);
   const ledOk = writeAtomic(LED_FILE_SD, body);

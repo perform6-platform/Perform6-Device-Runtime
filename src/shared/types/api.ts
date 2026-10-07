@@ -183,6 +183,9 @@ export interface SyncDownloadProgressRequest {
   bytesDownloaded?: string;
   totalBytes?: string;
   phase?: 'DOWNLOADING' | 'VERIFYING' | 'START';
+  /** Optional AssetPool batch counters (Admin HUD). */
+  doneCount?: number;
+  totalCount?: number;
 }
 
 export interface SyncStatusRequest {

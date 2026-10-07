@@ -7,6 +7,11 @@ import {
   removeCachedMediaVersionIds,
 } from './manifest';
 import { downloadMediaBatchToSd, evictCachedMedia } from './media';
+import {
+  clearPendingMediaEvictIds,
+  loadPendingMediaEvictIds,
+  sweepOrphanRealizedMedia,
+} from './mediaEvict';
 import { checkOtaUpdate } from './ota';
 import { applyOtaUpdate } from './otaApply';
 import { flushDeviceLogs } from './deviceLogsApi';
@@ -154,16 +159,68 @@ export async function runSyncEngine(
     }
     for (const id of repairedEncryptedIds) markEncryptedMediaCached(id);
 
-    if (syncData.evictMediaVersionIds?.length) {
-      clearEncryptedMediaCached(syncData.evictMediaVersionIds);
-      await evictCachedMedia(syncData.evictMediaVersionIds, {
-        retainItems: [
-          ...(syncData.media ?? []),
-          ...(syncData.requiredMedia ?? []),
-        ],
-        retainIds: syncData.retainMediaVersionIds,
-      });
-      removeCachedMediaVersionIds(syncData.evictMediaVersionIds);
+    if (syncData.evictMediaVersionIds?.length || loadPendingMediaEvictIds().length) {
+      const retainIdSet = new Set<string>(
+        [
+          ...(syncData.retainMediaVersionIds ?? []),
+          ...(syncData.media ?? []).map((m) => m.mediaVersionId),
+          ...(syncData.requiredMedia ?? []).map((m) => m.mediaVersionId),
+        ].filter(Boolean),
+      );
+      // Drop pending IDs that the server now retains (no re-delete).
+      const pendingDrop = loadPendingMediaEvictIds().filter((id) =>
+        retainIdSet.has(id),
+      );
+      if (pendingDrop.length > 0) {
+        clearPendingMediaEvictIds(pendingDrop);
+      }
+      const evictIds = [
+        ...new Set([
+          ...(syncData.evictMediaVersionIds ?? []),
+          ...loadPendingMediaEvictIds(),
+        ]),
+      ].filter((id) => !retainIdSet.has(id));
+      if (evictIds.length > 0) {
+        clearEncryptedMediaCached(evictIds);
+        await evictCachedMedia(evictIds, {
+          retainItems: [
+            ...(syncData.media ?? []),
+            ...(syncData.requiredMedia ?? []),
+          ],
+          retainIds: syncData.retainMediaVersionIds,
+        });
+        removeCachedMediaVersionIds(
+          evictIds.filter((id) => !loadPendingMediaEvictIds().includes(id)),
+        );
+      }
+      // Keep store aligned with retain set even if server omitted some orphans.
+      try {
+        await sweepOrphanRealizedMedia({
+          retainItems: [
+            ...(syncData.media ?? []),
+            ...(syncData.requiredMedia ?? []),
+          ],
+          retainIds: syncData.retainMediaVersionIds,
+        });
+      } catch (error) {
+        console.warn(
+          '[Perform6] Orphan media sweep after evict failed safely',
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    } else if (syncData.retainMediaVersionIds?.length) {
+      // Lead-window catch-up: retain known but no new evict IDs — still sweep orphans.
+      try {
+        await sweepOrphanRealizedMedia({
+          retainItems: [
+            ...(syncData.media ?? []),
+            ...(syncData.requiredMedia ?? []),
+          ],
+          retainIds: syncData.retainMediaVersionIds,
+        });
+      } catch {
+        /* best-effort */
+      }
     }
 
     const manifest = buildRuntimeManifest(syncData, profile);
@@ -316,6 +373,8 @@ export async function runSyncEngine(
                   : undefined,
               phase:
                 progress.status === 'start' ? 'START' : 'DOWNLOADING',
+              doneCount: progress.doneCount,
+              totalCount: progress.totalCount,
             });
           } catch {
             /* best-effort — never block pool download */

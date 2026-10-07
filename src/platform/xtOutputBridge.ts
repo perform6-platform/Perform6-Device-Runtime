@@ -14,10 +14,11 @@ import {
   readXtPlaybackStatus,
   writeXtPlaybackFile,
   isLedStatusStarted,
+  clearLedPlaybackCommandFiles,
 } from './ledPlaybackFile';
 import { toLedPlayableSrc } from '../services/playbackSrc';
 import { BridgeMsg } from '../services/bridgeProtocol';
-import { subscribeSdCacheProgress } from '../services/sdCacheBridge';
+import { subscribeSdCacheProgress, hasSdCachedMedia } from '../services/sdCacheBridge';
 import {
   clearScreenPlayback,
   reportScreenPlayback,
@@ -193,6 +194,14 @@ function postTouchPlayback(port: BrightSignMessagePort | null, force = false): v
   const payload = buildPayload();
   if (!payload.src) return;
 
+  // Never drive LED with a mediaVersionId that is not on SD (Clear Cache / refill gap).
+  if (payload.mediaVersionId && !hasSdCachedMedia(payload.mediaVersionId)) {
+    console.info('[Perform6] XT playback skipped — media not on SD yet', {
+      mediaVersionId: payload.mediaVersionId,
+    });
+    return;
+  }
+
   pendingSdFallback = false;
   clearAckTimer();
 
@@ -255,6 +264,11 @@ function pollPlaybackStatus(port: BrightSignMessagePort | null): void {
   }
 
   const state = useRuntimeStore.getState();
+  const mediaVersionId = state.displayPlaybackMeta?.mediaVersionId;
+  if (mediaVersionId && !hasSdCachedMedia(mediaVersionId)) {
+    // Media wiped / not refilled — do not hammer PlayFile on missing .mp4.
+    return;
+  }
   const want = nativePlayableSrc(
     state.displayVideoSrc,
     state.displayPlaybackMeta?.fallbackSrc,
@@ -330,11 +344,21 @@ export function initXtOutputBridge(): void {
   }
 
   subscribeSdCacheProgress((event) => {
+    if (event.status === 'cleared') {
+      clearLedPlaybackCommandFiles();
+      lastReassertAt = 0;
+      lastBridgeAckNonce = '';
+      pendingSdFallback = false;
+      clearAckTimer();
+      console.info('[Perform6] XT bridge frozen after SD cache clear');
+      return;
+    }
     const currentMediaVersionId = useRuntimeStore.getState().displayPlaybackMeta?.mediaVersionId;
     if (
       (event.status === 'done' || event.status === 'skip') &&
       Boolean(event.mediaVersionId) &&
-      event.mediaVersionId === currentMediaVersionId
+      event.mediaVersionId === currentMediaVersionId &&
+      hasSdCachedMedia(event.mediaVersionId!)
     ) {
       postTouchPlayback(port);
     }

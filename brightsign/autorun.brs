@@ -957,13 +957,23 @@ End Sub
 
 
 Sub EnsureLedIdleForStates(states as Object)
+  ' Force-stop active PlayFile and show idle splash. Used on Clear SD Cache so
+  ' autorun does not keep retrying deleted perform6-media/*.mp4 paths.
   if type(states) <> "roArray" then return
   for each st in states
     if type(st) = "roAssociativeArray" then
       if type(st.vp) = "roVideoPlayer" then
-        if st.idleShown <> true and Len(st.playingUrl) = 0 then
-          PlayIdleClip(st)
-        end if
+        st.ignoreEnded = true
+        st.ignoreEndedSpan = CreateObject("roTimespan")
+        if type(st.ignoreEndedSpan) = "roTimespan" then st.ignoreEndedSpan.Mark()
+        st.wantUrl = ""
+        st.playingUrl = ""
+        st.encryptedPlaybackActive = false
+        st.encryptedPlaybackSawPlaying = false
+        st.encryptedFallbackSrc = ""
+        st.encryptedPlaybackSpan = invalid
+        st.vp.StopClear()
+        PlayIdleClip(st)
       end if
     end if
   end for
@@ -1299,10 +1309,14 @@ Sub HandleLedCacheClearAll(states as Object)
   ' Do NOT sync DeleteTree here (multi-GB blocks Main). JS Node wipe is primary;
   ' autorun schedules budgeted deferred wipe + idle.
   EnsureLedIdleForStates(states)
+  DeleteFile("SD:/perform6-led-playback.json")
+  DeleteFile("/storage/sd/perform6-led-playback.json")
+  DeleteFile("SD:/perform6-xt-playback.json")
+  DeleteFile("/storage/sd/perform6-xt-playback.json")
   DeleteFile("SD:/perform6-mp4-alias-queue.json")
   DeleteFile("/storage/sd/perform6-mp4-alias-queue.json")
   ScheduleDeferredMediaWipe()
-  LedLog("=== Perform6: media clear requested (deferred wipe; OTA untouched) ===")
+  LedLog("=== Perform6: media clear requested (deferred wipe; OTA untouched; playback frozen) ===")
   FlushLedLog()
 End Sub
 

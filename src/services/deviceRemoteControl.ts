@@ -1,9 +1,12 @@
 import { getSharedMessagePort } from '../platform/bsMessagePort';
 import { rebootViaBrightSignSystem } from '../platform/brightSignNode';
+import { clearLedPlaybackCommandFiles } from '../platform/ledPlaybackFile';
+import { useRuntimeStore } from '../stores/runtimeStore';
 import { getCredentials } from './credentialStore';
 import {
   clearAllSdCachedMarks,
   clearSdMediaCacheViaNode,
+  emitSdCacheCleared,
   listSdCachedMediaVersionIds,
   requestSdCacheClearAll,
 } from './sdCacheBridge';
@@ -85,15 +88,25 @@ export async function clearSdCacheRemotely(): Promise<void> {
   // Media only — do not cancel OTA (separate path).
   const mediaVersionIds = listSdCachedMediaVersionIds();
   cancelMediaDownloads();
+
+  // Freeze playback BEFORE wipe so bridges stop reasserting deleted .mp4 paths.
+  const store = useRuntimeStore.getState();
+  store.setDisplayVideoSrc(null);
+  store.setDisplayVideoEndedHandler(null);
+  store.resetDisplayControls();
+  clearLedPlaybackCommandFiles();
+
   // Node wipe first; autorun also wipes media/pool on led-cache-clear-all.
   const nodeCleared = clearSdMediaCacheViaNode();
   requestSdCacheClearAll();
   clearAllSdCachedMarks();
   clearCachedMediaVersionIds();
   clearPlaybackManifestCache();
+  emitSdCacheCleared();
   console.info('[Perform6] Remote SD media cache clear requested', {
     trackedFiles: mediaVersionIds.length,
     nodeCleared,
+    playbackFrozen: true,
   });
 }
 

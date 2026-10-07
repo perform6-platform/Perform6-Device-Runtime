@@ -31,7 +31,12 @@ export function useTouchProgramGate(
   useEffect(() => {
     const bump = () => setTick((n) => n + 1);
     return subscribeSdCacheProgress((event) => {
-      if (event.status === 'done' || event.status === 'skip' || event.status === 'failed') {
+      if (
+        event.status === 'done' ||
+        event.status === 'skip' ||
+        event.status === 'failed' ||
+        event.status === 'cleared'
+      ) {
         bump();
       }
     });

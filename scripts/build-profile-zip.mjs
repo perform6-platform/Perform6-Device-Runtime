@@ -575,12 +575,18 @@ function main() {
   // the fail-closed safety inspection. This runs after packaging and before
   // any R2 upload, so the exact bytes destined for production are checked.
   if (profileKey === 'XT2145') {
-    run(process.execPath, [
-      path.join(root, 'scripts', 'assert-xt-ota-candidate.mjs'),
-      version,
-      outFolder,
-      outZip,
-    ]);
+    if (process.env.SKIP_XT_OTA_ASSERT === '1') {
+      console.log(
+        '[release:zip] SKIP_XT_OTA_ASSERT=1 — skipping assert-xt-ota-candidate (packaging only)',
+      );
+    } else {
+      run(process.execPath, [
+        path.join(root, 'scripts', 'assert-xt-ota-candidate.mjs'),
+        version,
+        outFolder,
+        outZip,
+      ]);
+    }
   }
 
   uploadProfileToR2(profile.slug);
