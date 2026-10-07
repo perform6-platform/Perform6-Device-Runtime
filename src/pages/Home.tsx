@@ -43,16 +43,16 @@ function simOnlyFallback(url: string | null | undefined): string | null {
 
 const START_HERE_ITEMS = [
   {
-    title: 'Learn the Perform6 System',
-    description: 'Understand how the 6 Steps work together to build performance.',
+    title: 'Learn the 6-Step System',
+    description: 'Understand how all 6 Steps work together to improve performance.',
   },
   {
-    title: 'Identify movement limitations',
-    description: 'with the pre-exercise Safety Check',
+    title: 'Complete your Safety Check',
+    description: 'Identify movement limitations before training.',
   },
   {
     title: 'Prepare your body for training',
-    description: 'with the Pre-Workout foam rolling sequence',
+    description: 'Perform the Pre-Workout foam rolling sequence.',
   },
 ];
 
@@ -394,8 +394,8 @@ export default function Home() {
           <StartHereContent
             title="Start Here"
             bullets="The 6-Step System · Safety Check · Pre-Workout"
-            description="Learn the system. Check movement. Prepare for training."
-            duration="5–10 Minutes"
+            description="Learn the system. Check your movement. Prepare for training."
+            duration="5–10 minutes"
           />
         </GlowCard>
 
@@ -417,13 +417,19 @@ export default function Home() {
 
         <div className="p6-home__col-header p6-home__col-left">
           <span className="p6-heading">Self-Guided</span>
-          <span className="p6-small p6-muted">Complete individual phases</span>
+          <span className="p6-home__col-left-sub">
+            Complete the 6-Step System in two phases
+          </span>
         </div>
 
         <div className="p6-home__col-header p6-home__col-right">
           <span className="p6-heading">Guided</span>
-          <span className="p6-small p6-muted">Complete the full guided session</span>
+          <span className="p6-home__col-right-sub">
+            Perform6 guides you through all 6 Steps
+          </span>
         </div>
+
+        <div className="p6-home__phase-backdrop" aria-hidden />
 
         <GlowCard
           experience="phase"
@@ -435,9 +441,10 @@ export default function Home() {
           <PhaseCardContent
             title="Phase 1"
             keywords="Mobility · Stability · Power"
-            steps="Steps 1–3"
-            description="Move Better. Build the Foundation."
-            duration="15–20 Minutes"
+            steps="Steps 1-3"
+            description="Move better. Build the foundation."
+            duration="15–20 minutes"
+            approvedChevron
           />
         </GlowCard>
 
@@ -451,11 +458,14 @@ export default function Home() {
           <PhaseCardContent
             title="Phase 2"
             keywords="Strength · Energy · Recovery"
-            steps="Steps 4–6"
-            description="Get Stronger. Elevate Performance."
-            duration="20–30 Minutes"
+            steps="Steps 4-6"
+            description="Get stronger. Elevate performance."
+            duration="20–35 minutes"
+            approvedChevron
           />
         </GlowCard>
+
+        <div className="p6-home__full-backdrop" aria-hidden />
 
         <GlowCard
           experience="full-program"
@@ -466,9 +476,11 @@ export default function Home() {
         >
           <FullProgramContent
             title="Full Program"
-            subtitle="All 6 Steps"
-            description="Experience the complete Perform6 training system."
-            duration="60 Minutes"
+            row1="Mobility · Stability · Power"
+            row2="Strength · Energy · Recovery"
+            steps="All 6 Steps"
+            description="The complete performance training system."
+            duration="60 minutes"
           />
         </GlowCard>
       </div>
@@ -482,8 +494,8 @@ export default function Home() {
           beginSession('start-here', touchVideos.startHere);
         }}
         title="Start Here"
-        sessionDuration="5–10 Minutes"
-        sectionLabel="This Session Will Help You"
+        sessionDuration="5–10 minutes"
+        sectionLabel="PREPARE FOR TRAINING"
         items={START_HERE_ITEMS}
         showDuration={false}
         experience="start-here"
@@ -498,8 +510,8 @@ export default function Home() {
           beginSession('full-program', touchVideos.fullProgram);
         }}
         title="Full Program"
-        sessionDuration="60 Minutes"
-        sectionLabel="Program Outcomes"
+        sessionDuration="60 minutes"
+        sectionLabel="PERFORMANCE OUTCOMES"
         items={FULL_PROGRAM_ITEMS}
         showDuration={false}
         experience="full-program"
@@ -514,11 +526,12 @@ export default function Home() {
           beginSession('phase1', touchVideos.phase1);
         }}
         title="Phase 1"
-        sessionDuration="15–20 Minutes"
-        sectionLabel="This Phase Will Help You"
+        sessionDuration="15–20 minutes"
+        sectionLabel="BUILD YOUR FOUNDATION"
         items={PHASE1_ITEMS}
         showDuration={false}
         experience="phase"
+        className="p6-session-modal--phase1"
       />
 
       <SessionModal
@@ -530,11 +543,12 @@ export default function Home() {
           beginSession('phase2', touchVideos.phase2);
         }}
         title="Phase 2"
-        sessionDuration="20–30 Minutes"
-        sectionLabel="This Phase Will Help You"
+        sessionDuration="20–35 minutes"
+        sectionLabel="ELEVATE YOUR PERFORMANCE"
         items={PHASE2_ITEMS}
         showDuration={false}
         experience="phase"
+        className="p6-session-modal--phase2"
       />
 
       <VideoPlayingModal
@@ -547,19 +561,21 @@ export default function Home() {
         title={activeSession ? SESSION_LABEL[activeSession.source] : undefined}
         sessionDuration={
           activeSession?.source === 'full-program'
-            ? '60 Minutes'
+            ? '60 minutes'
             : activeSession?.source === 'phase1'
-              ? '15–20 Minutes'
+              ? '15–20 minutes'
               : activeSession?.source === 'phase2'
-                ? '20–30 Minutes'
-                : '5–10 Minutes'
+                ? '20–35 minutes'
+                : '5–10 minutes'
         }
         sectionLabel={
           activeSession?.source === 'full-program'
-            ? 'Program Outcomes'
-            : activeSession?.source === 'phase1' || activeSession?.source === 'phase2'
-              ? 'This Phase Will Help You'
-              : 'This Session Will Help You'
+            ? 'PERFORMANCE OUTCOMES'
+            : activeSession?.source === 'phase1'
+              ? 'BUILD YOUR FOUNDATION'
+              : activeSession?.source === 'phase2'
+                ? 'ELEVATE YOUR PERFORMANCE'
+                : 'PREPARE FOR TRAINING'
         }
         items={
           activeSession?.source === 'full-program'
@@ -572,6 +588,13 @@ export default function Home() {
         }
         startedAt={activeSession?.startedAt}
         totalSeconds={activeSession?.source === 'full-program' ? 3600 : 45 * 60}
+        className={
+          activeSession?.source === 'phase1'
+            ? 'p6-session-modal--phase1'
+            : activeSession?.source === 'phase2'
+              ? 'p6-session-modal--phase2'
+              : undefined
+        }
       />
 
       {showDownloadOverlay ? (
