@@ -470,6 +470,43 @@ reviewedProbeHashesByVersion['1.5.70'] = {
   'src/shared/types/api.ts': '0cf8df405bc4123d994a0eee56b15d401255e997f77eadff7e59dd7a4bd7a437',
   'src/stores/runtimeStore.ts': '16f15bbab57bc1e050e142a606c1bc80f6580861e84ed2713610772d526c475d',
 };
+// 1.5.71: packaging bump of 1.5.70 with pulled Device UI styling only
+// (index.css, Home.tsx, SessionModal.tsx). OTA / encrypt / AssetPool / evict
+// bytes match 1.5.70 exactly.
+reviewedProbeHashesByVersion['1.5.71'] = {
+  'brightsign/autorun.brs': 'fecb1da8bfd73b88959f96dec1f78ab50822afde89b9ba1e0a43a75cceb76abf',
+  'brightsign/encryption-test/perform6-encrypted-probe.p6enc': '63ecf15060f348f9d6dc5ebf391b6cdcd0a672a2b4233acb2d43597e6ceba7c7',
+  'src/components/home/HomeHeroVideo.tsx': '90d9d955c02aab6db3f592ca44a8b7d4dc0d30127a68894940dbe3ac8aec84aa',
+  'src/components/ui/SessionModal.tsx': 'e3055eaba78caf91ac44dc53d0791d032cfd6a3b0715f2ff4aef837d08b0a17b',
+  'src/hooks/useOfflineVideoSrc.ts': '8223f784bbe92e89325cfd6ab8825e3c8cf14f2afa5a94f2644ba3fe74d0a37f',
+  'src/hooks/useTouchProgramGate.ts': '9e79cd1f54338aadb43e9d4a0e8625be35c6cc93a5e68ffe2127c91d1e9d59fd',
+  'src/index.css': '73df6ea525f423d6ebf25418a341324a3fff9e97ae6e186cbb703fc8f6e77616',
+  'src/pages/Home.tsx': '386b83c9b79b8002f4d62b07d3c5a17dffd21beec15acb8b74df6c3000cbe4a9',
+  'src/platform/bsMessagePort.ts': 'ee7c1c294f98aa7880c8902c1ae6fafd1d432fc0d8fd34013a109b1e2151b7f1',
+  'src/platform/ledPlaybackFile.ts': 'cadcec20160c5a14f854500e8e8135aa4ff49b9963fd7369048fbc80e49a47fd',
+  'src/platform/xcOutputBridge.ts': '2a5f8b63bbeff5f491680302446292b73b8b15ad6fb38ec7c20b90b52e8cff05',
+  'src/platform/xtOutputBridge.ts': '55c8d312d1ae90087f5bfd5cc9cd529075a4311f17ff78405f7148be813f5ade',
+  'src/services/assetPoolBootstrap.ts': 'ae7471d7faf4b2418777719f2f6ae2e07c6959295f3b6b9ce88fbdf6f0b360a1',
+  'src/services/autorunCapabilities.ts': '8f48a37c8481d4fcb200dd653893e1755fb91ec6dbd942bfe11f5f3019b2015b',
+  'src/services/autorunDiag.ts': 'd41ad236519bb8fa9d4d0dce7a1f9e13a20c53f930fdfdc88f1012d7969f69ca',
+  'src/services/bridgeKeepalive.ts': '63b4c97c6669b37994ef1f1f78c213798c65a74d192100cf02edad8f7ae2edba',
+  'src/services/deviceRemoteControl.ts': '1928edf745dce1b15d33386d48a0ecb1259e4e29572aeb8ab2afb5d835994438',
+  'src/services/encryptedPlaybackInteropProbe.ts': '6923380d879ca0f009437db8e72589b2544f1f264a7c972a6924349a32d6b820',
+  'src/services/index.ts': '45c7f06507fe653506fd1b56f3da9243df3f1d687efdea7d866eb3388d14dfe9',
+  'src/services/media.ts': '2507089bc0f2737ecc8a51cb3b3f06644e7a36287c3ba8e2c2f553a29cf09ee5',
+  'src/services/mediaAssetPool.ts': '0a3098ac001058fdf64642cd3d91640fc189bdb75cc2b808ea5b82a5f427d2ca',
+  'src/services/mediaEncryption.ts': '2571ed275325231aa94a7a6e72fe0aabce5550c0b5e1882f871e8db27680c9d9',
+  'src/services/mediaEvict.ts': '977f282b22b5338571cafebaf2340036794560533a333ad60b8c80b1690921ab',
+  'src/services/mediaKeyInteropProbe.ts': '4424b4c2592d2179954dfefdfebf15d49f5e29ed59a270a61a09a4761b9fd217',
+  'src/services/mediaRealize.ts': '7eed5925155ae48b01b70c54119d64cb004fef77f0f288f662ad5c40d382e67b',
+  'src/services/otaAssetPool.ts': '2884abcbbfb1a28ff8880e260a79bf97d59bb32c2e274474465a753973405e74',
+  'src/services/remoteCommandBridge.ts': 'ad5e138ec2269be085b603250868ef50a88dfe39d6d6c5ee80403c66dd8b27bb',
+  'src/services/sdCacheBridge.ts': '8e56b49e04e1c99995619301cf7d6e8b3e07e263cd78bf1047e1d35e991cb1e2',
+  'src/services/sync.ts': '24a09eebfc9067855aee2ad47d6002f562c17e3b55f699307cd39d5903b8a70d',
+  'src/services/syncEngine.ts': 'd903037247d1d9f0e5e07d0b397696afc3be42072213308b0b02680fb1c31069',
+  'src/shared/types/api.ts': '0cf8df405bc4123d994a0eee56b15d401255e997f77eadff7e59dd7a4bd7a437',
+  'src/stores/runtimeStore.ts': '16f15bbab57bc1e050e142a606c1bc80f6580861e84ed2713610772d526c475d',
+};
 const reviewedProbeHashes = reviewedProbeHashesByVersion[version];
 const dormantProbe = reviewedProbeHashes != null;
 const allowedRuntimeDelta = new Set(dormantProbe ? Object.keys(reviewedProbeHashes) : [
@@ -480,7 +517,7 @@ if (dormantProbe) {
   for (const [file, expected] of Object.entries(reviewedProbeHashes)) {
     if (sha256(fs.readFileSync(path.join(root, file))) !== expected) fail(`unreviewed dormant source: ${file}`);
   }
-  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.59' && version !== '1.5.61' && version !== '1.5.62' && version !== '1.5.63' && version !== '1.5.64' && version !== '1.5.68' && version !== '1.5.70') {
+  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.59' && version !== '1.5.61' && version !== '1.5.62' && version !== '1.5.63' && version !== '1.5.64' && version !== '1.5.68' && version !== '1.5.70' && version !== '1.5.71') {
     execFileSync(
       process.execPath,
       ['--test', 'scripts/encryption-lab/dormant-integration.test.mjs'],
@@ -520,7 +557,7 @@ if (dormantProbe) {
     'scripts/encryption-lab/encrypted-playback-candidate.test.mjs',
     'scripts/encryption-lab/ota-replacement.test.mjs',
   ], { cwd: root, stdio: 'inherit' });
-  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.59' || version === '1.5.61' || version === '1.5.62' || version === '1.5.63' || version === '1.5.64' || version === '1.5.68' || version === '1.5.70') execFileSync(process.execPath, ['--test',
+  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.59' || version === '1.5.61' || version === '1.5.62' || version === '1.5.63' || version === '1.5.64' || version === '1.5.68' || version === '1.5.70' || version === '1.5.71') execFileSync(process.execPath, ['--test',
     'scripts/encryption-lab/bridge-diagnostic.test.mjs',
     'scripts/encryption-lab/bridge-observability.test.mjs',
     'scripts/encryption-lab/widget-port-binding.test.mjs',
