@@ -372,11 +372,11 @@ export default function Home() {
   };
 
   const home = (
-    <main className={`p6-home relative h-full w-full overflow-hidden${overviewOpen || sessionOpen ? ' p6-home--dimmed' : ''}`}>
+    <main className="p6-home relative h-full w-full overflow-hidden">
       <HomeHeroVideo
         src={touchVideos.idle}
         paused={sessionOpen}
-        overlay={overviewOpen || sessionOpen ? 'overview' : 'home'}
+        overlay="home"
         mediaVersionId={idleTelemetryMedia.mediaVersionId}
         mediaTitle={idleTelemetryMedia.title ?? 'Main menu'}
       />

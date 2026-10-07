@@ -609,7 +609,7 @@ body::-webkit-scrollbar,
   z-index: 2;
   justify-self: start;
   align-self: center;
-  width: 256px;
+  width: 340px;
   height: auto;
   margin-bottom: 0;
 }
