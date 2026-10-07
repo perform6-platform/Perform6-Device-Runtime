@@ -1,73 +1,38 @@
 import { Fragment, type ReactNode } from 'react';
 import { cn } from '../../lib/cn';
 import { CircleArrowButton } from './CircleArrowButton';
+import approvedChevron from '../../assets/Perform6-approved-chevron.png';
+import approvedClock from '../../assets/Perform6-approved-clock.png';
 
 function ClockIcon() {
   return (
-    <svg viewBox="0 0 16 16" fill="none" aria-hidden>
-      <circle cx="8" cy="8" r="6.25" stroke="currentColor" strokeWidth="1.4" />
-      <path
-        d="M8 4.75V8l2.25 1.5"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+    <img src={approvedClock} alt="" aria-hidden draggable={false} />
   );
 }
 
-/** Approved chevron SVG — layout via className (Start Here / Phase 1). */
+/** Client-supplied Figma asset — layout via className (Home cards). */
 function ApprovedChevronIcon({ className }: { className: string }) {
   return (
-    <svg
+    <img
       className={className}
-      width={70}
-      height={70}
-      viewBox="0 0 70 70"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
+      src={approvedChevron}
+      alt=""
       aria-hidden
-    >
-      <circle cx="35" cy="35" r="31" stroke="#1155CC" strokeWidth="6" />
-      <path
-        d="M30 22L43 35L30 48"
-        stroke="#FFFFFF"
-        strokeWidth="5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+      draggable={false}
+    />
   );
 }
 
-/** Approved clock SVG — layout via className (Start Here / Phase 1). */
+/** Client-supplied Figma asset — layout via className (Home cards). */
 function ApprovedClockIcon({ className }: { className: string }) {
   return (
-    <svg
+    <img
       className={className}
-      width={38}
-      height={38}
-      viewBox="0 0 38 38"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
+      src={approvedClock}
+      alt=""
       aria-hidden
-    >
-      <circle
-        cx="19"
-        cy="19"
-        r="14.25"
-        stroke="#1155CC"
-        strokeWidth="2.5"
-      />
-      <path
-        d="M19 10V19L26 24.5"
-        stroke="#1155CC"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+      draggable={false}
+    />
   );
 }
 
@@ -116,7 +81,7 @@ function KeywordRow({
         <Fragment key={`${part}-${index}`}>
           {index > 0 && (
             <span className="p6-keyword-row__sep" aria-hidden>
-              ·
+              •
             </span>
           )}
           <span className="p6-keyword-row__item">{part}</span>

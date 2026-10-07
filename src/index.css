@@ -5,6 +5,14 @@
 @font-face {
   font-family: 'Inter';
   font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('./assets/fonts/Inter-Light.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
   font-weight: 400;
   font-display: swap;
   src: url('./assets/fonts/Inter-Regular.woff2') format('woff2');
@@ -404,7 +412,8 @@ body::-webkit-scrollbar,
   pointer-events: none;
 }
 
-.p6-duration svg {
+.p6-duration svg,
+.p6-duration img {
   width: 40.95px;
   height: 34.74px;
   flex-shrink: 0;
@@ -604,13 +613,13 @@ body::-webkit-scrollbar,
 .p6-home__logo {
   grid-area: logo;
   position: relative;
-  top: 0;
-  left: -53px;
+  top: 15px;
+  left: -54.125px;
   z-index: 2;
   justify-self: start;
-  align-self: center;
+  align-self: start;
   width: 340px;
-  height: auto;
+  height: 59.554px;
   margin-bottom: 0;
 }
 
@@ -796,7 +805,8 @@ body::-webkit-scrollbar,
   color: #1155CC;
 }
 
-.p6-start-here-card > .p6-duration svg {
+.p6-start-here-card > .p6-duration svg,
+.p6-start-here-card > .p6-duration img {
   display: none;
 }
 
@@ -1299,7 +1309,8 @@ body::-webkit-scrollbar,
   color: #1155CC;
 }
 
-.p6-home__phase1 .p6-phase-card > .p6-duration svg {
+.p6-home__phase1 .p6-phase-card > .p6-duration svg,
+.p6-home__phase1 .p6-phase-card > .p6-duration img {
   display: none;
 }
 
@@ -1503,7 +1514,8 @@ body::-webkit-scrollbar,
   color: #1155CC;
 }
 
-.p6-home__phase2 .p6-phase-card > .p6-duration svg {
+.p6-home__phase2 .p6-phase-card > .p6-duration svg,
+.p6-home__phase2 .p6-phase-card > .p6-duration img {
   display: none;
 }
 
@@ -1794,7 +1806,8 @@ body::-webkit-scrollbar,
   color: #1155CC;
 }
 
-.p6-full-program-content > .p6-duration svg {
+.p6-full-program-content > .p6-duration svg,
+.p6-full-program-content > .p6-duration img {
   display: none;
 }
 

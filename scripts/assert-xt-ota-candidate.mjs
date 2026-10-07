@@ -507,6 +507,54 @@ reviewedProbeHashesByVersion['1.5.71'] = {
   'src/shared/types/api.ts': '0cf8df405bc4123d994a0eee56b15d401255e997f77eadff7e59dd7a4bd7a437',
   'src/stores/runtimeStore.ts': '16f15bbab57bc1e050e142a606c1bc80f6580861e84ed2713610772d526c475d',
 };
+// 1.5.72: approved Figma correction layered on the 1.5.70 field runtime.
+// Startup, OTA, heartbeat, recovery, playback, encryption and media-pool
+// sources remain byte-identical to 1.5.70; only HDMI-1 UI sources/assets differ.
+reviewedProbeHashesByVersion['1.5.72'] = {
+  'brightsign/autorun.brs': '611b78cfe48383f6e3d2718314669d8bd94e5275920e694be10ed5476ba7b5c0',
+  'brightsign/encryption-test/perform6-encrypted-probe.p6enc': '63ecf15060f348f9d6dc5ebf391b6cdcd0a672a2b4233acb2d43597e6ceba7c7',
+  'src/assets/Perform6-approved-chevron.png': '74c5a1f458ec4dcb23f360d4750f08c28706bdc02a0dbce3e81a367c0bd02d0e',
+  'src/assets/Perform6-approved-clock.png': 'd2a78f15140935e020eeb40c07054c9554d0770f5d24f7881182b6f18ee9b277',
+  'src/assets/Perform6-approved-logo.svg': 'c0d4588ebfd194a15550679e1efc6089ad3f5e5961cc70a912231f5c7d2796a2',
+  'src/assets/fonts/Inter-Light.woff2': 'e111a1e2ad914ccda9179b95e83fb10234dd52a1932e0b93c480476227983fd9',
+  'src/components/home/HomeHeroVideo.tsx': 'ba8d828bd1d559ae7fadceee4fede2689aade99bb8251723b5dd7b6a02e3ce9d',
+  'src/components/ui/CardContent.tsx': 'f1df05086e33cc3f4bcb421c6adb514ab5451b560c6415b35f5dbcfd47a5b4ab',
+  'src/components/ui/DisplayVolumeControl.tsx': '919a50f1d37eaee1f793753c35f5ea101cd6dd911f22900ea186cc7a4a69c12e',
+  'src/components/ui/Logo.tsx': '83c929ca044a44ddb79582bc4c183b9769c5e33d62655f37d8c747037bcdcb91',
+  'src/components/ui/SessionModal.tsx': 'b49d9cf9e666adab85f2364846eae9871017fced7fe3380a849195ca2c096273',
+  'src/components/ui/VideoPlayingModal.tsx': '25d5da51de2f6d94a70d9f6e001d919e78bf667709a1208c55a12b8414b58433',
+  'src/hooks/useOfflineVideoSrc.ts': '2f44334501802eac11ba4d74887367cc138d2d511fcb73c01f663330a795bcc7',
+  'src/hooks/useTouchProgramGate.ts': 'efc8d841b41b7006a5087493ec27564de19e465ae15ca3e6da8f9a4b0b6b336e',
+  'src/index.css': '5f253a249fba8a220316d061d685854adec67ed34a8f13b9044ad164c6a27b2d',
+  'src/lib/fullProgram.ts': 'cdfffa10a96350c55036623f0efd694eadbee6a28bf52c5c2416e4a6b296de89',
+  'src/lib/phase1.ts': '6b4b16f3fa072d90af74193afbfad32f4d37c50e8b832149c202bedd3e1c4ea2',
+  'src/lib/phase2.ts': 'daaa27fc53ead61a3b6ac1683ea1e18455fa267cf2b269e7da3f7c4abe764bbb',
+  'src/pages/Home.tsx': 'f2121c22b362c3b3a4390c102a0978c5e151b7d45fe36de4b0ff80c5cc21a8fa',
+  'src/platform/bsMessagePort.ts': 'f89c56c0df586b86e4f13fd1f00a8d88fd5fc625fdb9ecc9985ec336e029d44b',
+  'src/platform/ledPlaybackFile.ts': '8db7b85287e3bc8503cfb64ac25c08f149863d2503d974d2320beca571f5a3e5',
+  'src/platform/xcOutputBridge.ts': 'a4f6e78294c18d32cecc51106b6e09cfc8132a46f26c399c718c3b9413747f89',
+  'src/platform/xtOutputBridge.ts': '02748028f681da70ead587f596a76398f5ec85d64b4b2abb4ab7b803d60eb809',
+  'src/services/assetPoolBootstrap.ts': 'f0506e2936cbd95297876c1730a0d39368d0d12d34f6a77c96318719144f1b63',
+  'src/services/autorunCapabilities.ts': '1b02ab696b1b49a0f94f0b6e2d4b1b465a6b5fc3d2105fbc7dd7b0905d39e998',
+  'src/services/autorunDiag.ts': '54db79cc9f8c156a9042b1c0422f4024772f4319852a6b0f7cff89891d609a27',
+  'src/services/bridgeKeepalive.ts': '75425ab1433feb1b0f3d74a2b5596ba18bf5974347c4fe33fce87f7520a6616c',
+  'src/services/deviceRemoteControl.ts': 'e94df30c1564b8261cfe888d2972ab00707f0fc1d7b30592e6ab7205747b4b64',
+  'src/services/encryptedPlaybackInteropProbe.ts': '679ef0a620995a04d8f6496ee774978a7640eb2c6b970e31b89059d2283dc655',
+  'src/services/index.ts': 'ad3297632172aec92d3e052528a3fa9da8ed53b79a91460be157573fc0c76bb9',
+  'src/services/media.ts': 'defb6d918877ed30087ca67bc60381b5471d863b25903e2623bab19e15cf0bc5',
+  'src/services/mediaAssetPool.ts': 'b657ff920ce470641dcd0b64f0cfa4d7d57f891135f4e6f69b15698e0b666ab8',
+  'src/services/mediaEncryption.ts': '9b26a7a25a555c7edbb2b880d814da33a70a1e8feb49ce9b00b51fb6fa75d913',
+  'src/services/mediaEvict.ts': '56fa4d4e59347989ff74c26d5c3e4cc33602e80b8daf2d802ca85f3074cd8788',
+  'src/services/mediaKeyInteropProbe.ts': '197263f9db72f163798efd358df3969096861f6553416eabbf4cd94944fc86e5',
+  'src/services/mediaRealize.ts': '0e6afe6c6be84e500e29ce9ef60145eb341d50419fc9a7c4347084ed93fd2dc2',
+  'src/services/otaAssetPool.ts': '00d541c4c50c5b7549446eb7615fa5b9abfc0d25f518c575b33ade262a410834',
+  'src/services/remoteCommandBridge.ts': 'c774f1915d59842ae56fce9d7401899954548ad4126457b452f4c0017234e0c5',
+  'src/services/sdCacheBridge.ts': '4c764a3779282a32cc20d20f6c58109a77eb8ba10bfde8e66d396db698402d76',
+  'src/services/sync.ts': '2f1e8208b81bbe48575a5747b83d6f162c0b7d9830c7006319c1752cfcfe38b8',
+  'src/services/syncEngine.ts': '281b967b81335df9d0af035e42ba491465106b7a551b444842fe3f79057e4e9c',
+  'src/shared/types/api.ts': '3cdcc366b9ac755a262afd8a05ef13c92908211c15a884eefa6895cf659252bb',
+  'src/stores/runtimeStore.ts': '860528e4a8bb4d297046a5f2f4f346f8c1dad4afca269dfba1b4f236ef40ebcb',
+};
 const reviewedProbeHashes = reviewedProbeHashesByVersion[version];
 const dormantProbe = reviewedProbeHashes != null;
 const allowedRuntimeDelta = new Set(dormantProbe ? Object.keys(reviewedProbeHashes) : [
@@ -517,7 +565,7 @@ if (dormantProbe) {
   for (const [file, expected] of Object.entries(reviewedProbeHashes)) {
     if (sha256(fs.readFileSync(path.join(root, file))) !== expected) fail(`unreviewed dormant source: ${file}`);
   }
-  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.59' && version !== '1.5.61' && version !== '1.5.62' && version !== '1.5.63' && version !== '1.5.64' && version !== '1.5.68' && version !== '1.5.70' && version !== '1.5.71') {
+  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.59' && version !== '1.5.61' && version !== '1.5.62' && version !== '1.5.63' && version !== '1.5.64' && version !== '1.5.68' && version !== '1.5.70' && version !== '1.5.71' && version !== '1.5.72') {
     execFileSync(
       process.execPath,
       ['--test', 'scripts/encryption-lab/dormant-integration.test.mjs'],
@@ -557,7 +605,7 @@ if (dormantProbe) {
     'scripts/encryption-lab/encrypted-playback-candidate.test.mjs',
     'scripts/encryption-lab/ota-replacement.test.mjs',
   ], { cwd: root, stdio: 'inherit' });
-  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.59' || version === '1.5.61' || version === '1.5.62' || version === '1.5.63' || version === '1.5.64' || version === '1.5.68' || version === '1.5.70' || version === '1.5.71') execFileSync(process.execPath, ['--test',
+  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.59' || version === '1.5.61' || version === '1.5.62' || version === '1.5.63' || version === '1.5.64' || version === '1.5.68' || version === '1.5.70' || version === '1.5.71' || version === '1.5.72') execFileSync(process.execPath, ['--test',
     'scripts/encryption-lab/bridge-diagnostic.test.mjs',
     'scripts/encryption-lab/bridge-observability.test.mjs',
     'scripts/encryption-lab/widget-port-binding.test.mjs',
@@ -622,10 +670,16 @@ if (!failedUnresolved.some((name) => name.toLowerCase() === 'jsonescape')) {
 const expectedFiles = new Set([
   'README-SD.txt',
   'assets/Inter-Bold-Sckx8rpT.woff2',
+  ...(version === '1.5.72' ? ['assets/Inter-Light-14LG-y7V.woff2'] : []),
   'assets/Inter-Medium-D2bGa7uu.woff2',
   'assets/Inter-Regular-BOOGhInR.woff2',
   'assets/Inter-SemiBold-D273HNI0.woff2',
   'assets/Perform_6_trademark-ClFD9aGP.png',
+  ...(version === '1.5.72' ? [
+    'assets/Perform6-approved-chevron-B3fE6BGP.png',
+    'assets/Perform6-approved-clock-CEGklWTx.png',
+    'assets/Perform6-approved-logo-NZjhE405.svg',
+  ] : []),
   'assets/app.js',
   'assets/style.css',
   'autorun.brs',
