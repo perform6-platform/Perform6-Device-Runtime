@@ -3,23 +3,23 @@ export const FULL_PROGRAM_VIDEO = '/videos/phase1-gym.mp4';
 export const FULL_PROGRAM_ITEMS = [
   {
     title: 'Move Better',
-    description: 'Improve mobility, stability, and movement efficiency',
+    description: 'Improve mobility, stability, and movement efficiency.',
   },
   {
-    title: 'Build Strength & Power',
-    description: 'Increase force production and explosive performance',
+    title: 'Develop Strength & Power',
+    description: 'Increase force production and explosive power.',
   },
   {
     title: 'Improve Conditioning',
-    description: 'Train longer and perform at a higher intensity',
+    description: 'Enhance endurance to sustain and repeat high-intensity efforts.',
   },
   {
     title: 'Recover Faster',
-    description: 'Enhance recovery between training sessions',
+    description: 'Improve recovery between training sessions.',
   },
   {
-    title: 'Improve Overall Performance',
-    description: 'Develop the physical qualities that drive performance',
+    title: 'Optimize Performance',
+    description: 'Integrate all 6 Steps to maximize physical performance.',
   },
 ];
 

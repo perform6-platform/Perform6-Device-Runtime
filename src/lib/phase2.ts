@@ -3,15 +3,15 @@ const PHASE2_VIDEO = '/videos/phase1-gym.mp4';
 export const PHASE2_ITEMS = [
   {
     title: 'Build Strength',
-    description: 'Increase your ability to produce and control force',
+    description: 'Increase your ability to produce and control force.',
   },
   {
     title: 'Improve Conditioning',
-    description: 'Train longer and perform at a higher intensity',
+    description: 'Enhance endurance to sustain and repeat high-intensity efforts.',
   },
   {
     title: 'Recover Faster',
-    description: 'Recover more efficiently between training sessions',
+    description: 'Improve recovery between training sessions.',
   },
 ];
 
