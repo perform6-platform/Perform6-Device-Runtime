@@ -2,19 +2,20 @@ import { useRuntimeStore } from '../../stores/runtimeStore';
 
 function VolumeIcon({ muted = false }: { muted?: boolean }) {
   return (
-    <svg width="18" height="16" viewBox="0 0 18 16" fill="none" aria-hidden>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden>
+      {/* Figma 20×20 — vector inset ~12.5% / 22.92% / 20.83% */}
       <path
-        d="M1 5.5h3l4-3.5v13l-4-3.5H1V5.5zM12 4.5a4.5 4.5 0 010 7M14.5 2a7.5 7.5 0 010 12"
+        d="M2.5 7h3.2L9.5 4.2v11.6L5.7 13H2.5V7zM13 6.2a4 4 0 010 7.6M15.5 4a6.5 6.5 0 010 12"
         stroke="currentColor"
-        strokeWidth="1.3"
+        strokeWidth="1.7"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
       {muted && (
         <path
-          d="M2 14L16 2"
+          d="M3 16L17 4"
           stroke="currentColor"
-          strokeWidth="1.4"
+          strokeWidth="1.7"
           strokeLinecap="round"
         />
       )}

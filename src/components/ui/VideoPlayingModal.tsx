@@ -23,16 +23,17 @@ type VideoPlayingModalProps = {
   startedAt?: number;
   /** Total session length in seconds for progress UI (default 3600). */
   totalSeconds?: number;
+  className?: string;
 };
 
 function ClockIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-      <circle cx="8" cy="8" r="6.25" stroke="currentColor" strokeWidth="1.4" />
+    <svg width="38" height="38" viewBox="0 0 38 38" fill="none" aria-hidden>
+      <circle cx="19" cy="19" r="14.25" stroke="#1155CC" strokeWidth="2.5" />
       <path
-        d="M8 4.75V8l2.25 1.5"
-        stroke="currentColor"
-        strokeWidth="1.4"
+        d="M19 10V19L26 24.5"
+        stroke="#1155CC"
+        strokeWidth="2.5"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -42,11 +43,11 @@ function ClockIcon() {
 
 function CheckIcon() {
   return (
-    <svg width="12" height="10" viewBox="0 0 12 10" fill="none" aria-hidden>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden>
       <path
-        d="M1.5 5l3 3L10.5 1.5"
-        stroke="currentColor"
-        strokeWidth="1.8"
+        d="M5 10.5L8.2 13.7L15 5.5"
+        stroke="#FFFFFF"
+        strokeWidth="3"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -56,17 +57,18 @@ function CheckIcon() {
 
 function PauseIcon() {
   return (
-    <svg width="14" height="16" viewBox="0 0 14 16" fill="none" aria-hidden>
-      <rect x="2" y="1" width="3.5" height="14" rx="1" fill="currentColor" />
-      <rect x="8.5" y="1" width="3.5" height="14" rx="1" fill="currentColor" />
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
+      {/* Figma 24×24 — vector inset 25% sides, 12.5% top/bottom */}
+      <rect x="6" y="3" width="4" height="18" fill="currentColor" />
+      <rect x="14" y="3" width="4" height="18" fill="currentColor" />
     </svg>
   );
 }
 
 function PlayIcon() {
   return (
-    <svg width="14" height="16" viewBox="0 0 14 16" fill="none" aria-hidden>
-      <path d="M1 1.2v13.6L12.5 8 1 1.2z" fill="currentColor" />
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path d="M6 3v18l15-9L6 3z" fill="currentColor" />
     </svg>
   );
 }
@@ -93,11 +95,12 @@ function RestartIcon() {
 
 function ExitArrowIcon() {
   return (
-    <svg width="18" height="14" viewBox="0 0 18 14" fill="none" aria-hidden>
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
+      {/* Figma 24×24 frame — vector inset ~16.67% sides, 25% top/bottom */}
       <path
-        d="M7.5 1.5L1.5 7l6 5.5M1.5 7H16.5"
+        d="M10 6L4 12l6 6M4 12h16"
         stroke="currentColor"
-        strokeWidth="1.6"
+        strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -179,6 +182,7 @@ export function VideoPlayingModal({
   items = [],
   startedAt,
   totalSeconds = 3600,
+  className,
 }: VideoPlayingModalProps) {
   const displayPaused = useRuntimeStore((s) => s.displayPaused);
   const displayRestartNonce = useRuntimeStore((s) => s.displayRestartNonce);
@@ -224,6 +228,10 @@ export function VideoPlayingModal({
           `p6-session-modal--${accent}`,
           experienceModalClassMap[experience],
           isFullProgram && 'p6-video-playing-modal--program',
+          isFullProgram && displayPaused && !confirm && 'p6-video-playing-modal--paused',
+          isFullProgram && confirm === 'restart' && 'p6-video-playing-modal--confirm-restart',
+          isFullProgram && confirm === 'exit' && 'p6-video-playing-modal--confirm-exit',
+          className,
         )}
         onClick={(e) => e.stopPropagation()}
       >
@@ -262,38 +270,38 @@ export function VideoPlayingModal({
           </ul>
         )}
 
-        {isFullProgram && (
-          <div className="p6-video-playing-modal__now">
-            <div className="p6-video-playing-modal__now-row">
-              <div className="p6-video-playing-modal__now-left">
-                <span className="p6-video-playing-modal__now-label">Now Playing</span>
+        {isFullProgram && confirm ? (
+          <div
+            className="p6-video-playing-modal__controls p6-video-playing-modal__controls--confirm"
+            role="alertdialog"
+            aria-modal="true"
+          >
+            <div className="p6-video-playing-modal__now">
+              <div className="p6-video-playing-modal__now-row">
+                <span className="p6-video-playing-modal__now-label">NOW PLAYING</span>
                 {sessionLabel && (
                   <span className="p6-video-playing-modal__now-title">{sessionLabel}</span>
                 )}
+                <span className="p6-video-playing-modal__now-spacer" aria-hidden />
+                <span className="p6-video-playing-modal__now-time">
+                  {formatSessionTime(cappedElapsed)} / {formatSessionTime(totalSeconds)}
+                </span>
               </div>
-              <span className="p6-video-playing-modal__now-time">
-                {formatSessionTime(cappedElapsed)} / {formatSessionTime(totalSeconds)}
-              </span>
+              <div
+                className="p6-video-playing-modal__progress"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(progress * 100)}
+              >
+                <span
+                  className="p6-video-playing-modal__progress-fill"
+                  style={{ width: `${progress * 100}%` }}
+                />
+              </div>
             </div>
-            <div
-              className="p6-video-playing-modal__progress"
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.round(progress * 100)}
-            >
-              <span
-                className="p6-video-playing-modal__progress-fill"
-                style={{ width: `${progress * 100}%` }}
-              />
-            </div>
-          </div>
-        )}
-
-        {isFullProgram && confirm ? (
-          <div className="p6-confirm-panel" role="alertdialog" aria-modal="true">
             <p className="p6-confirm-panel__title">
-              {confirm === 'restart' ? 'Restart Full Program?' : 'Exit Full Program?'}
+              {confirm === 'restart' ? 'Restart Session?' : 'Exit Session?'}
             </p>
             <div className="p6-confirm-panel__actions">
               <button
@@ -301,19 +309,43 @@ export function VideoPlayingModal({
                 className="p6-session-modal__btn p6-session-modal__btn--back p6-video-playing-modal__ctrl-outline"
                 onClick={() => setConfirm(null)}
               >
-                Cancel
+                <span>Cancel</span>
               </button>
               <button
                 type="button"
                 className="p6-session-modal__btn p6-session-modal__btn--primary p6-video-playing-modal__ctrl-primary"
                 onClick={handleConfirm}
               >
-                {confirm === 'restart' ? 'Restart' : 'Exit Session'}
+                <span>{confirm === 'restart' ? 'RESTART' : 'EXIT SESSION'}</span>
               </button>
             </div>
           </div>
         ) : isFullProgram ? (
           <div className="p6-video-playing-modal__controls">
+            <div className="p6-video-playing-modal__now">
+              <div className="p6-video-playing-modal__now-row">
+                <span className="p6-video-playing-modal__now-label">NOW PLAYING</span>
+                {sessionLabel && (
+                  <span className="p6-video-playing-modal__now-title">{sessionLabel}</span>
+                )}
+                <span className="p6-video-playing-modal__now-spacer" aria-hidden />
+                <span className="p6-video-playing-modal__now-time">
+                  {formatSessionTime(cappedElapsed)} / {formatSessionTime(totalSeconds)}
+                </span>
+              </div>
+              <div
+                className="p6-video-playing-modal__progress"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(progress * 100)}
+              >
+                <span
+                  className="p6-video-playing-modal__progress-fill"
+                  style={{ width: `${progress * 100}%` }}
+                />
+              </div>
+            </div>
             <div className="p6-video-playing-modal__controls-row">
               <button
                 type="button"
@@ -339,7 +371,7 @@ export function VideoPlayingModal({
               onClick={() => setConfirm('exit')}
             >
               <ExitArrowIcon />
-              <span>EXIT SESSION</span>
+              <span>Exit Session</span>
             </button>
           </div>
         ) : (

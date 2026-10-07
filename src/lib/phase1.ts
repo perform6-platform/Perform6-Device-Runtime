@@ -174,14 +174,14 @@ export function getPhase1DefaultSessionConfig() {
 export const PHASE1_ITEMS = [
   {
     title: 'Improve Mobility',
-    description: 'Enhance range of motion in the joints and tissues',
+    description: 'Enhance range of motion in the joints and tissues.',
   },
   {
     title: 'Build Stability',
-    description: 'Increase your ability to control posture and movement',
+    description: 'Increase your ability to control posture and movement.',
   },
   {
     title: 'Develop Power',
-    description: 'Generate force quickly and move with greater speed',
+    description: 'Generate force quickly and move with greater speed.',
   },
 ];
