@@ -134,6 +134,7 @@ export function SessionModal({
         className={cn(
           'p6-session-modal',
           'p6-session-modal--confirm',
+          'p6-session-modal--overview',
           `p6-session-modal--${accent}`,
           experienceModalClassMap[experience],
           className,

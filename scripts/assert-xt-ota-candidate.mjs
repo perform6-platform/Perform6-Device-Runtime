@@ -555,6 +555,15 @@ reviewedProbeHashesByVersion['1.5.72'] = {
   'src/shared/types/api.ts': '3cdcc366b9ac755a262afd8a05ef13c92908211c15a884eefa6895cf659252bb',
   'src/stores/runtimeStore.ts': '860528e4a8bb4d297046a5f2f4f346f8c1dad4afca269dfba1b4f236ef40ebcb',
 };
+// 1.5.73: field-feedback layout correction layered on 1.5.72. Only the
+// HDMI-1 overview modal component and CSS differ; every BrightSign/runtime,
+// OTA, heartbeat, reboot, playback, encryption and media-pool source remains
+// hash-identical to the reviewed 1.5.72 candidate.
+reviewedProbeHashesByVersion['1.5.73'] = {
+  ...reviewedProbeHashesByVersion['1.5.72'],
+  'src/components/ui/SessionModal.tsx': 'd9124a71875e4b0677a37d0621488b34261f4548a24815c19b48af9c6b0b97e5',
+  'src/index.css': 'e63cef0fff2ff02e1314f5a8caa6042e3f88a78c921a88bb3336d7e9260249af',
+};
 const reviewedProbeHashes = reviewedProbeHashesByVersion[version];
 const dormantProbe = reviewedProbeHashes != null;
 const allowedRuntimeDelta = new Set(dormantProbe ? Object.keys(reviewedProbeHashes) : [
@@ -565,7 +574,7 @@ if (dormantProbe) {
   for (const [file, expected] of Object.entries(reviewedProbeHashes)) {
     if (sha256(fs.readFileSync(path.join(root, file))) !== expected) fail(`unreviewed dormant source: ${file}`);
   }
-  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.59' && version !== '1.5.61' && version !== '1.5.62' && version !== '1.5.63' && version !== '1.5.64' && version !== '1.5.68' && version !== '1.5.70' && version !== '1.5.71' && version !== '1.5.72') {
+  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.59' && version !== '1.5.61' && version !== '1.5.62' && version !== '1.5.63' && version !== '1.5.64' && version !== '1.5.68' && version !== '1.5.70' && version !== '1.5.71' && version !== '1.5.72' && version !== '1.5.73') {
     execFileSync(
       process.execPath,
       ['--test', 'scripts/encryption-lab/dormant-integration.test.mjs'],
@@ -605,7 +614,7 @@ if (dormantProbe) {
     'scripts/encryption-lab/encrypted-playback-candidate.test.mjs',
     'scripts/encryption-lab/ota-replacement.test.mjs',
   ], { cwd: root, stdio: 'inherit' });
-  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.59' || version === '1.5.61' || version === '1.5.62' || version === '1.5.63' || version === '1.5.64' || version === '1.5.68' || version === '1.5.70' || version === '1.5.71' || version === '1.5.72') execFileSync(process.execPath, ['--test',
+  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.59' || version === '1.5.61' || version === '1.5.62' || version === '1.5.63' || version === '1.5.64' || version === '1.5.68' || version === '1.5.70' || version === '1.5.71' || version === '1.5.72' || version === '1.5.73') execFileSync(process.execPath, ['--test',
     'scripts/encryption-lab/bridge-diagnostic.test.mjs',
     'scripts/encryption-lab/bridge-observability.test.mjs',
     'scripts/encryption-lab/widget-port-binding.test.mjs',
@@ -670,12 +679,12 @@ if (!failedUnresolved.some((name) => name.toLowerCase() === 'jsonescape')) {
 const expectedFiles = new Set([
   'README-SD.txt',
   'assets/Inter-Bold-Sckx8rpT.woff2',
-  ...(version === '1.5.72' ? ['assets/Inter-Light-14LG-y7V.woff2'] : []),
+  ...(version === '1.5.72' || version === '1.5.73' ? ['assets/Inter-Light-14LG-y7V.woff2'] : []),
   'assets/Inter-Medium-D2bGa7uu.woff2',
   'assets/Inter-Regular-BOOGhInR.woff2',
   'assets/Inter-SemiBold-D273HNI0.woff2',
   'assets/Perform_6_trademark-ClFD9aGP.png',
-  ...(version === '1.5.72' ? [
+  ...(version === '1.5.72' || version === '1.5.73' ? [
     'assets/Perform6-approved-chevron-B3fE6BGP.png',
     'assets/Perform6-approved-clock-CEGklWTx.png',
     'assets/Perform6-approved-logo-NZjhE405.svg',
