@@ -1,0 +1,389 @@
+/* Bluefin client-review geometry (1.5.74)
+   Keep the proven 1920x1080 master frame from 1.5.69. Home follows the
+   approved composition plus Gabe's annotated adjustments; all secondary
+   states share one rail instead of conflicting 656px/900px shells. */
+
+/* Home: preserve every existing bottom edge while adding space above. */
+.p6-home__start-here {
+  grid-area: unset;
+  grid-column: auto;
+  position: absolute;
+  top: 118px;
+  left: 491px;
+  width: 938px;
+  max-width: 938px;
+  height: 225px;
+  min-height: 225px;
+}
+
+.p6-start-here-card .p6-card-heading,
+.p6-start-here-card__title {
+  top: 30px;
+  font-size: 50px;
+}
+
+.p6-start-here-card__chevron { top: 46px; }
+.p6-start-here-card__bullets { top: 105px; width: 720px; font-size: 26px; }
+.p6-start-here-card__bullets .p6-keyword-row__item,
+.p6-start-here-card__bullets .p6-keyword-row__sep { font-size: 26px; }
+.p6-start-here-card__bullets .p6-keyword-row__item:nth-child(1),
+.p6-start-here-card__bullets .p6-keyword-row__item:nth-child(3),
+.p6-start-here-card__bullets .p6-keyword-row__item:nth-child(5) { width: auto; }
+.p6-start-here-card__description { top: 168px; font-size: 24px; }
+.p6-start-here-card__clock { top: 161px; }
+.p6-start-here-card > .p6-duration { top: 168px; font-size: 22px; }
+
+.p6-home__phase-backdrop {
+  top: 430px;
+  left: 76px;
+  width: 852px;
+  height: 624px;
+}
+
+.p6-home__full-backdrop {
+  top: 430px;
+  left: 992px;
+  width: 852px;
+  height: 528px;
+}
+
+.p6-home__col-left > .p6-heading,
+.p6-home__col-right > .p6-heading {
+  top: 450px;
+  height: 41px;
+  font-size: 34px;
+  font-weight: 600;
+}
+
+.p6-home__col-left-sub,
+.p6-home__col-right-sub {
+  top: 502px;
+  height: 31px;
+  font-size: 26px;
+}
+
+.p6-home__col-left > .p6-heading { left: 384px; width: 249px; }
+.p6-home__col-left-sub { left: 246px; width: 525px; }
+.p6-home__col-right > .p6-heading { left: 1341px; width: 142px; }
+.p6-home__col-right-sub { left: 1168px; width: 489px; }
+
+.p6-home__phase1,
+.p6-home__phase2,
+.p6-home__full-program { width: 816px; }
+
+.p6-home__phase1 {
+  top: 542px;
+  left: 94px;
+  height: 245px;
+  min-height: 245px;
+}
+
+.p6-home__phase2 {
+  top: 783px;
+  left: 94px;
+  height: 245px;
+  min-height: 245px;
+}
+
+.p6-home__full-program {
+  top: 542px;
+  left: 1010px;
+  height: 387px;
+  min-height: 387px;
+}
+
+.p6-home__phase1 .p6-phase-card__title,
+.p6-home__phase2 .p6-phase-card__title,
+.p6-full-program-content__title { top: 30px; font-size: 50px; }
+
+.p6-home__phase1 .p6-phase-card__chevron,
+.p6-home__phase2 .p6-phase-card__chevron,
+.p6-full-program-content__chevron {
+  top: 44px;
+  right: 90px;
+  left: auto;
+}
+
+.p6-home__phase1 .p6-phase-card__accent,
+.p6-home__phase2 .p6-phase-card__accent { top: 102px; height: 78px; }
+
+.p6-home__phase1 .p6-phase-card__keywords,
+.p6-home__phase2 .p6-phase-card__keywords {
+  top: 105px;
+  width: auto;
+  font-size: 26px;
+}
+
+.p6-home__phase1 .p6-phase-card__keywords .p6-keyword-row__item,
+.p6-home__phase2 .p6-phase-card__keywords .p6-keyword-row__item,
+.p6-home__phase1 .p6-phase-card__keywords .p6-keyword-row__sep,
+.p6-home__phase2 .p6-phase-card__keywords .p6-keyword-row__sep {
+  width: auto;
+  font-size: 26px;
+}
+
+.p6-home__phase1 .p6-phase-card__steps,
+.p6-home__phase2 .p6-phase-card__steps { top: 142px; font-size: 24px; }
+
+.p6-home__phase1 .p6-phase-card__description,
+.p6-home__phase2 .p6-phase-card__description {
+  top: 194px;
+  width: auto;
+  font-size: 24px;
+}
+
+.p6-home__phase1 .p6-phase-card__clock,
+.p6-home__phase2 .p6-phase-card__clock {
+  top: 187px;
+  right: 184px;
+  left: auto;
+}
+
+.p6-home__phase1 .p6-phase-card > .p6-duration,
+.p6-home__phase2 .p6-phase-card > .p6-duration {
+  top: 194px;
+  right: 28px;
+  left: auto;
+  width: auto;
+  font-size: 22px;
+}
+
+.p6-full-program-content__accent { top: 112px; height: 116px; }
+.p6-full-program-content__row1,
+.p6-full-program-content__row2,
+.p6-full-program-content__row1 .p6-keyword-row__item,
+.p6-full-program-content__row2 .p6-keyword-row__item,
+.p6-full-program-content__row1 .p6-keyword-row__sep,
+.p6-full-program-content__row2 .p6-keyword-row__sep { width: auto; font-size: 26px; }
+.p6-full-program-content__row1 { top: 118px; }
+.p6-full-program-content__row2 { top: 156px; }
+.p6-full-program-content__steps { top: 196px; width: auto; font-size: 24px; }
+.p6-full-program-content__description { top: 286px; width: auto; font-size: 24px; }
+.p6-full-program-content__clock { top: 334px; right: 146px; left: auto; }
+.p6-full-program-content > .p6-duration {
+  top: 341px;
+  right: 28px;
+  left: auto;
+  width: auto;
+  font-size: 22px;
+}
+
+/* One shared shell and content rail for all eleven secondary states. */
+.p6-session-modal--confirm.p6-session-modal--overview {
+  box-sizing: border-box;
+  width: 840px;
+  min-width: 840px;
+  max-width: 840px;
+  height: auto;
+  min-height: 0;
+  max-height: 1048px;
+  margin: 0;
+  padding: 32px 42px;
+  align-items: flex-start;
+  overflow: hidden;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__title { margin: 0 auto; }
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__session-duration {
+  width: auto;
+  height: 40px;
+  margin: 6px auto 0;
+}
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__session-duration > span {
+  width: auto;
+  height: 32px;
+  font-size: 26px;
+  line-height: 32px;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__section {
+  display: grid;
+  grid-template-columns: minmax(64px, 1fr) auto minmax(64px, 1fr);
+  align-items: center;
+  width: 756px;
+  height: 30px;
+  margin: 8px auto 16px;
+  gap: 18px;
+  align-self: stretch;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__section-line,
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__section-line:last-child {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  height: 2px;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__section-label {
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  height: 30px;
+  padding: 0 4px;
+  font-size: 24px;
+  line-height: 30px;
+  font-weight: 600;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__list {
+  display: flex;
+  width: 756px;
+  max-width: 756px;
+  height: auto;
+  margin: 0 auto;
+  gap: 12px;
+  align-self: stretch;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__item {
+  width: 756px;
+  height: 65px;
+  min-height: 65px;
+  gap: 12px;
+  align-self: stretch;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__check { width: 36px; height: 36px; }
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__check svg {
+  top: 7px;
+  left: 7px;
+  width: 22px;
+  height: 22px;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__item-body {
+  width: 708px;
+  height: 65px !important;
+  min-width: 0;
+  gap: 3px;
+  flex: 1 1 auto;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__item-text,
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__item-desc {
+  width: 708px;
+  max-width: 708px;
+  white-space: nowrap !important;
+}
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__item-desc { height: 28px; }
+
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__actions {
+  width: 756px;
+  height: 132px;
+  margin: 20px auto 0;
+  gap: 12px;
+  align-self: stretch;
+}
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__btn--primary,
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__btn--back { width: 756px; }
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__btn--primary { gap: 18px; }
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__btn--primary svg {
+  width: 20px;
+  height: 20px;
+  margin-right: 2px;
+}
+
+/* Return-to-Menu uses the same shell and rail as Begin Session. */
+.p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal
+  .p6-video-playing-modal__controls,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal
+  .p6-session-modal__actions {
+  width: 756px;
+  height: auto;
+  margin: 20px auto 0;
+  align-self: stretch;
+}
+.p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal
+  .p6-video-playing-modal__ctrl-exit { width: 756px; }
+
+/*
+ * The legacy Return-to-Menu variants carried fixed 633/703px heights and
+ * experience-specific padding.  Those selectors are more specific than the
+ * shared overview shell above, so the empty lower band survived even though
+ * the width was corrected. Keep the approved shell size, but redistribute the
+ * five content regions so the 32px outer padding and internal rhythm remain
+ * balanced instead of leaving a dead band below the button.
+ */
+.p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal.p6-session-modal--start-here,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal.p6-session-modal--phase1,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal.p6-session-modal--phase2 {
+  height: 633px;
+  min-height: 633px;
+  max-height: 1048px;
+  padding: 32px 42px;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal.p6-session-modal--start-here
+  .p6-session-modal__session-duration,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal.p6-session-modal--phase1
+  .p6-session-modal__session-duration,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal.p6-session-modal--phase2
+  .p6-session-modal__session-duration { margin-top: 28px; }
+
+.p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal.p6-session-modal--start-here
+  .p6-session-modal__section,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal.p6-session-modal--phase1
+  .p6-session-modal__section,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal.p6-session-modal--phase2
+  .p6-session-modal__section { margin: 30px auto 38px; }
+
+.p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal.p6-session-modal--start-here
+  .p6-video-playing-modal__controls,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal.p6-session-modal--phase1
+  .p6-video-playing-modal__controls,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal.p6-session-modal--phase2
+  .p6-video-playing-modal__controls { margin-top: 42px; }
+
+/* Full Program keeps the same shell while richer controls grow vertically. */
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal--program,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal--confirm-restart,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal--confirm-exit {
+  width: 840px;
+  min-width: 840px;
+  max-width: 840px;
+  height: auto;
+  min-height: 0;
+  max-height: 1048px;
+  padding: 32px 42px;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
+  .p6-video-playing-modal__controls,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
+  .p6-video-playing-modal__now,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
+  .p6-video-playing-modal__controls-row,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
+  .p6-video-playing-modal__volume,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal--confirm-restart
+  .p6-video-playing-modal__controls--confirm,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal--confirm-exit
+  .p6-video-playing-modal__controls--confirm,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal--confirm-restart
+  .p6-confirm-panel__actions,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal--confirm-exit
+  .p6-confirm-panel__actions { width: 756px; }
+
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
+  .p6-video-playing-modal__controls-row .p6-video-playing-modal__ctrl-primary,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
+  .p6-video-playing-modal__controls-row .p6-video-playing-modal__ctrl-outline,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal--confirm-restart
+  .p6-confirm-panel__actions .p6-video-playing-modal__ctrl-outline,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal--confirm-restart
+  .p6-confirm-panel__actions .p6-video-playing-modal__ctrl-primary,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal--confirm-exit
+  .p6-confirm-panel__actions .p6-video-playing-modal__ctrl-outline,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal--confirm-exit
+  .p6-confirm-panel__actions .p6-video-playing-modal__ctrl-primary { width: 370px; }
+
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
+  .p6-video-playing-modal__volume-slider-wrap,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
+  .p6-video-playing-modal__volume-slider,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
+  .p6-video-playing-modal__volume-slider::-webkit-slider-runnable-track,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
+  .p6-video-playing-modal__volume-slider::-moz-range-track { width: 680px; }

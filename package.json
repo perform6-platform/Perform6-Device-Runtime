@@ -1,6 +1,6 @@
 {
   "name": "perform6-touchscreen",
-  "version": "1.5.73",
+  "version": "1.5.74",
   "private": true,
   "description": "Perform6 BrightSign app — BA-style zones, offline SD play (no on-demand HTTPS)",
   "type": "module",
@@ -14,6 +14,7 @@
     "assert:production-field": "node scripts/assert-atlas-field-gate.mjs",
     "assert:ota-bootstrap": "node scripts/assert-ota-bootstrap.mjs",
     "assert:clean-card-media": "node scripts/assert-clean-card-media.mjs",
+    "assert:bluefin-ui": "node scripts/assert-bluefin-ui.mjs",
     "assert:xt-ota-candidate": "node scripts/assert-xt-ota-candidate.mjs",
     "assert:playback": "node scripts/assert-led-playback.mjs && node scripts/assert-program-led-command.mjs",
     "release:zip": "node scripts/build-profile-zip.mjs XT2145",

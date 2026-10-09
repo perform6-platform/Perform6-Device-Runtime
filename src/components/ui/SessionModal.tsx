@@ -38,8 +38,7 @@ function normalizeItems(items: Array<string | SessionModalItem>): SessionModalIt
 function PlayIcon() {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
-      {/* Figma frame 24×24 — vector inset left 25% / right 12.5% / top-bottom 12.5% */}
-      <path d="M6 3v18l15-9L6 3z" fill="currentColor" />
+      <path d="M7 4v16l12-8L7 4z" fill="currentColor" />
     </svg>
   );
 }
@@ -75,11 +74,11 @@ function ClockIcon() {
 
 function CheckIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden>
+    <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden>
       <path
-        d="M5 10.5L8.2 13.7L15 5.5"
+        d="M5.2 11.4L9 15.1L17 5.9"
         stroke="#FFFFFF"
-        strokeWidth="3"
+        strokeWidth="3.2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />

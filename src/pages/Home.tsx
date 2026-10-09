@@ -80,6 +80,20 @@ const SESSION_EXPERIENCE: Record<ActiveSession['source'], P6Experience> = {
   'full-program': 'full-program',
 };
 
+/** Simulator-only visual gate for the post-start / Return-to-Menu states. */
+function initialVisualAuditSession(): ActiveSession | null {
+  if (!runtimeConfig.isSimulator || typeof window === 'undefined') return null;
+  const requested = new URLSearchParams(window.location.search).get('p6VisualSession');
+  if (!requested || !(requested in SESSION_EXPERIENCE)) return null;
+  const source = requested as ActiveSession['source'];
+  return {
+    source,
+    experience: SESSION_EXPERIENCE[source],
+    videoSrc: 'data:video/mp4;base64,',
+    startedAt: Date.now(),
+  };
+}
+
 export default function Home() {
   const { playbackState, setDisplayVideoSrc } = useDisplayPlayback();
   const { runSyncNow } = useSync();
@@ -106,7 +120,9 @@ export default function Home() {
   const [phase1Open, setPhase1Open] = useState(false);
   const [phase2Open, setPhase2Open] = useState(false);
   const [fullProgramOpen, setFullProgramOpen] = useState(false);
-  const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
+  const [activeSession, setActiveSession] = useState<ActiveSession | null>(
+    initialVisualAuditSession,
+  );
 
   const sessionOpen = activeSession !== null;
   const modalOpen = startHereOpen || phase1Open || phase2Open || fullProgramOpen;
