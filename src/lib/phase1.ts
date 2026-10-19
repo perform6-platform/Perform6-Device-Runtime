@@ -1,3 +1,5 @@
+import { isGolfEdition } from '../config/experience';
+
 export type Phase1Sport = 'fitness' | 'golf';
 export type Phase1Wall = 'wall' | 'no-wall';
 
@@ -182,6 +184,8 @@ export const PHASE1_ITEMS = [
   },
   {
     title: 'Develop Power',
-    description: 'Generate force quickly and move with greater speed.',
+    description: isGolfEdition
+      ? 'Generate force quickly for greater clubhead speed and distance.'
+      : 'Generate force quickly and move with greater speed.',
   },
 ];

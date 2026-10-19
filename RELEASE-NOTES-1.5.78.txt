@@ -1,0 +1,29 @@
+Perform6 XT2145 1.5.78 - Bluefin final optical-spacing refinements
+
+Scope
+- HDMI-1 Bluefin Home-screen presentation only.
+- Derived from the field-working 1.5.77 package and runtime.
+- No changes to vertical layout, card geometry, startup, OTA installation,
+  heartbeat, remote reboot, HDMI-2 playback, encryption, media pools, cache,
+  pairing, downloads, or telemetry.
+
+Choose Your Experience
+- Shortens only the right endpoint of the left divider line by 12px so its
+  visible clearance from CHOOSE matches the right divider's clearance from
+  EXPERIENCE on the Bluefin display.
+- Preserves the divider's position, line weight, color, and right side.
+
+Full Program Home card
+- Keeps Mobility fixed and shifts the remaining first-row keyword group by
+  the measured amount needed for equal visible spacing around its bullets.
+- Keeps Strength, the first bullet, and Energy fixed; shifts only the second
+  bullet and Recovery until the visible gaps on both sides are equal.
+- Preserves all vertical spacing, card geometry, description, duration, and
+  blue vertical accent line.
+
+Validation
+- Render and geometry comparison against packaged 1.5.77 at the Bluefin
+  1920x1080 logical viewport, DPR 1.
+- Regression gate requires every non-target Home and secondary-state geometry
+  value to remain unchanged.
+- Native device-control files remain byte-identical to 1.5.77.

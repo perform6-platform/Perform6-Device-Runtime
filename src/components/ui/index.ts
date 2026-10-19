@@ -2,6 +2,7 @@ export { GlowCard } from './GlowCard';
 export { CircleArrowButton } from './CircleArrowButton';
 export { SectionDivider } from './SectionDivider';
 export { Logo } from './Logo';
+export { PreGolfIcon } from './PreGolfIcon';
 export { TouchHint } from './TouchHint';
 export {
   CardThumbnail,

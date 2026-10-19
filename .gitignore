@@ -2,6 +2,7 @@ node_modules
 dist
 releases
 .release
+tmp
 .env
 .env.local
 *.log

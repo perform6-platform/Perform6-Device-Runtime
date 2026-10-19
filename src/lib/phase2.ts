@@ -1,3 +1,5 @@
+import { isGolfEdition } from '../config/experience';
+
 const PHASE2_VIDEO = '/videos/phase1-gym.mp4';
 
 export const PHASE2_ITEMS = [
@@ -7,11 +9,15 @@ export const PHASE2_ITEMS = [
   },
   {
     title: 'Improve Conditioning',
-    description: 'Enhance endurance to sustain and repeat high-intensity efforts.',
+    description: isGolfEdition
+      ? 'Build endurance for better energy and focus on the course.'
+      : 'Enhance endurance to sustain and repeat high-intensity efforts.',
   },
   {
     title: 'Recover Faster',
-    description: 'Improve recovery between training sessions.',
+    description: isGolfEdition
+      ? 'Enhance recovery between rounds and training sessions.'
+      : 'Improve recovery between training sessions.',
   },
 ];
 

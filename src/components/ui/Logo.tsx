@@ -1,5 +1,5 @@
 import { cn } from '../../lib/cn';
-import perform6Logo from '../../assets/Perform_6_trademark.png';
+import perform6Logo from '../../assets/Perform6-approved-logo.svg';
 
 type LogoProps = {
   className?: string;

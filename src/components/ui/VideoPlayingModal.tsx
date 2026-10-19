@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { cn } from '../../lib/cn';
 import { formatSessionTime } from '../../lib/format';
 import { useRuntimeStore } from '../../stores/runtimeStore';
@@ -23,6 +23,7 @@ type VideoPlayingModalProps = {
   startedAt?: number;
   /** Total session length in seconds for progress UI (default 3600). */
   totalSeconds?: number;
+  icon?: ReactNode;
   className?: string;
 };
 
@@ -43,11 +44,11 @@ function ClockIcon() {
 
 function CheckIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden>
+    <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden>
       <path
-        d="M5 10.5L8.2 13.7L15 5.5"
+        d="M5.2 11.4L9 15.1L17 5.9"
         stroke="#FFFFFF"
-        strokeWidth="3"
+        strokeWidth="3.2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -68,7 +69,7 @@ function PauseIcon() {
 function PlayIcon() {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path d="M6 3v18l15-9L6 3z" fill="currentColor" />
+      <path d="M7 4v16l12-8L7 4z" fill="currentColor" />
     </svg>
   );
 }
@@ -182,6 +183,7 @@ export function VideoPlayingModal({
   items = [],
   startedAt,
   totalSeconds = 3600,
+  icon,
   className,
 }: VideoPlayingModalProps) {
   const displayPaused = useRuntimeStore((s) => s.displayPaused);
@@ -224,6 +226,7 @@ export function VideoPlayingModal({
         className={cn(
           'p6-session-modal',
           'p6-session-modal--confirm',
+          'p6-session-modal--overview',
           'p6-video-playing-modal',
           `p6-session-modal--${accent}`,
           experienceModalClassMap[experience],
@@ -235,7 +238,17 @@ export function VideoPlayingModal({
         )}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="p6-session-modal__title">{heading}</h2>
+        <h2
+          className={cn(
+            'p6-session-modal__title',
+            Boolean(icon) && 'p6-session-modal__title--with-icon',
+          )}
+        >
+          <span className="p6-session-modal__title-text">
+            {heading}
+            {icon && <span className="p6-session-modal__title-icon">{icon}</span>}
+          </span>
+        </h2>
 
         {sessionDuration && (
           <p className="p6-session-modal__session-duration">

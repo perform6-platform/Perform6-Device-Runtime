@@ -1,0 +1,32 @@
+Perform6 XT2145 1.5.81 - Fitness Home copy and supplied logo update
+
+Scope
+- Derived from the field-working 1.5.80 package and runtime.
+- Fitness Home wording consistency and supplied Perform6 logo asset only.
+- No changes to approved card geometry, divider lines, bullet spacing,
+  volume slider, cards, typography, secondary screens, startup, OTA,
+  heartbeat, remote reboot, HDMI-2 playback, encryption, media pools,
+  cache, pairing, downloads, telemetry, or volume behavior.
+
+Fitness Home wording
+- PHASE 1: changes "Move better. Build the foundation." to
+  "Move better. Build your foundation."
+- PHASE 2: changes "Get stronger. Elevate performance." to
+  "Get stronger. Elevate your performance."
+- These descriptions now match the corresponding secondary-card headings
+  BUILD YOUR FOUNDATION and ELEVATE YOUR PERFORMANCE.
+
+Perform6 logo
+- Replaces the previous EPS-derived SVG with Gabe's newly supplied
+  Perform6_Trademark_Transparent.svg artwork.
+- Uses the supplied path-only vector file with its transparent background and
+  native aspect ratio; no raster image, tracing, background or distortion.
+- Compensates only the Home logo image frame for the supplied SVG's different
+  native canvas, preserving the visible 1.5.80 logo size and placement.
+
+Validation
+- Packaged 12-state render and geometry comparison against 1.5.80 at the
+  Bluefin 1920x1080 logical viewport, DPR 1.
+- Regression gate permits only the two Home description strings, supplied
+  logo asset, logo-frame compensation and required release-version metadata.
+- Native device-control files remain byte-identical to 1.5.80.

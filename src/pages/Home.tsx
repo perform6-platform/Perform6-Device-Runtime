@@ -20,6 +20,7 @@ import {
   GlowCard,
   Logo,
   PhaseCardContent,
+  PreGolfIcon,
   SessionModal,
   StartHereContent,
   VideoPlayingModal,
@@ -35,6 +36,7 @@ import {
   type TouchProgramSource,
 } from '../lib/touchSessionPolicy';
 import type { P6Experience } from '../components/ui';
+import { isGolfEdition } from '../config/experience';
 
 function simOnlyFallback(url: string | null | undefined): string | null {
   if (!url) return null;
@@ -44,14 +46,16 @@ function simOnlyFallback(url: string | null | undefined): string | null {
 const START_HERE_ITEMS = [
   {
     title: 'Learn the 6-Step System',
-    description: 'Understand how all 6 Steps work together to improve performance.',
+    description: isGolfEdition
+      ? 'All 6 Steps work together to improve golf performance.'
+      : 'Understand how all 6 Steps work together to improve performance.',
   },
   {
     title: 'Complete your Safety Check',
     description: 'Identify movement limitations before training.',
   },
   {
-    title: 'Prepare your body for training',
+    title: isGolfEdition ? 'Prepare your body for golf' : 'Prepare your body for training',
     description: 'Perform the Pre-Workout foam rolling sequence.',
   },
 ];
@@ -80,6 +84,20 @@ const SESSION_EXPERIENCE: Record<ActiveSession['source'], P6Experience> = {
   'full-program': 'full-program',
 };
 
+/** Simulator-only visual gate for the post-start / Return-to-Menu states. */
+function initialVisualAuditSession(): ActiveSession | null {
+  if (!runtimeConfig.isSimulator || typeof window === 'undefined') return null;
+  const requested = new URLSearchParams(window.location.search).get('p6VisualSession');
+  if (!requested || !(requested in SESSION_EXPERIENCE)) return null;
+  const source = requested as ActiveSession['source'];
+  return {
+    source,
+    experience: SESSION_EXPERIENCE[source],
+    videoSrc: 'data:video/mp4;base64,',
+    startedAt: Date.now(),
+  };
+}
+
 export default function Home() {
   const { playbackState, setDisplayVideoSrc } = useDisplayPlayback();
   const { runSyncNow } = useSync();
@@ -106,7 +124,9 @@ export default function Home() {
   const [phase1Open, setPhase1Open] = useState(false);
   const [phase2Open, setPhase2Open] = useState(false);
   const [fullProgramOpen, setFullProgramOpen] = useState(false);
-  const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
+  const [activeSession, setActiveSession] = useState<ActiveSession | null>(
+    initialVisualAuditSession,
+  );
 
   const sessionOpen = activeSession !== null;
   const modalOpen = startHereOpen || phase1Open || phase2Open || fullProgramOpen;
@@ -382,7 +402,9 @@ export default function Home() {
   };
 
   const home = (
-    <main className="p6-home relative h-full w-full overflow-hidden">
+    <main
+      className={`p6-home relative h-full w-full overflow-hidden${isGolfEdition ? ' p6-home--golf' : ''}`}
+    >
       <HomeHeroVideo
         src={touchVideos.idle}
         paused={sessionOpen}
@@ -404,8 +426,11 @@ export default function Home() {
           <StartHereContent
             title="Start Here"
             bullets="The 6-Step System · Safety Check · Pre-Workout"
-            description="Learn the system. Check your movement. Prepare for training."
+            description={isGolfEdition
+              ? 'Learn the system. Check your movement. Foam roll.'
+              : 'Learn the system. Check movement. Prepare for training.'}
             duration="5–10 minutes"
+            titleIcon={isGolfEdition ? <PreGolfIcon className="p6-pre-golf-icon--home" /> : undefined}
           />
         </GlowCard>
 
@@ -452,9 +477,12 @@ export default function Home() {
             title="Phase 1"
             keywords="Mobility · Stability · Power"
             steps="Steps 1-3"
-            description="Move better. Build the foundation."
+            description={isGolfEdition
+              ? 'Move better. Prepare for golf.'
+              : 'Move better. Build your foundation.'}
             duration="15–20 minutes"
             approvedChevron
+            titleIcon={isGolfEdition ? <PreGolfIcon className="p6-pre-golf-icon--home" /> : undefined}
           />
         </GlowCard>
 
@@ -469,7 +497,7 @@ export default function Home() {
             title="Phase 2"
             keywords="Strength · Energy · Recovery"
             steps="Steps 4-6"
-            description="Get stronger. Elevate performance."
+            description="Get stronger. Elevate your performance."
             duration="20–35 minutes"
             approvedChevron
           />
@@ -489,7 +517,9 @@ export default function Home() {
             row1="Mobility · Stability · Power"
             row2="Strength · Energy · Recovery"
             steps="All 6 Steps"
-            description="The complete performance training system."
+            description={isGolfEdition
+              ? 'The complete golf performance training system.'
+              : 'The complete performance training system.'}
             duration="60 minutes"
           />
         </GlowCard>
@@ -505,10 +535,11 @@ export default function Home() {
         }}
         title="Start Here"
         sessionDuration="5–10 minutes"
-        sectionLabel="PREPARE FOR TRAINING"
+        sectionLabel={isGolfEdition ? 'GET READY FOR GOLF' : 'PREPARE FOR TRAINING'}
         items={START_HERE_ITEMS}
         showDuration={false}
         experience="start-here"
+        icon={isGolfEdition ? <PreGolfIcon className="p6-pre-golf-icon--secondary" /> : undefined}
       />
 
       <SessionModal
@@ -537,11 +568,12 @@ export default function Home() {
         }}
         title="Phase 1"
         sessionDuration="15–20 minutes"
-        sectionLabel="BUILD YOUR FOUNDATION"
+        sectionLabel={isGolfEdition ? 'PREPARE FOR GOLF' : 'BUILD YOUR FOUNDATION'}
         items={PHASE1_ITEMS}
         showDuration={false}
         experience="phase"
         className="p6-session-modal--phase1"
+        icon={isGolfEdition ? <PreGolfIcon className="p6-pre-golf-icon--secondary" /> : undefined}
       />
 
       <SessionModal
@@ -582,10 +614,10 @@ export default function Home() {
           activeSession?.source === 'full-program'
             ? 'PERFORMANCE OUTCOMES'
             : activeSession?.source === 'phase1'
-              ? 'BUILD YOUR FOUNDATION'
+              ? isGolfEdition ? 'PREPARE FOR GOLF' : 'BUILD YOUR FOUNDATION'
               : activeSession?.source === 'phase2'
                 ? 'ELEVATE YOUR PERFORMANCE'
-                : 'PREPARE FOR TRAINING'
+                : isGolfEdition ? 'GET READY FOR GOLF' : 'PREPARE FOR TRAINING'
         }
         items={
           activeSession?.source === 'full-program'
@@ -598,6 +630,12 @@ export default function Home() {
         }
         startedAt={activeSession?.startedAt}
         totalSeconds={activeSession?.source === 'full-program' ? 3600 : 45 * 60}
+        icon={
+          isGolfEdition &&
+          (activeSession?.source === 'start-here' || activeSession?.source === 'phase1')
+            ? <PreGolfIcon className="p6-pre-golf-icon--secondary" />
+            : undefined
+        }
         className={
           activeSession?.source === 'phase1'
             ? 'p6-session-modal--phase1'

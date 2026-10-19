@@ -1,0 +1,26 @@
+Perform6 XT2145 1.5.80 - Bluefin volume-slider midpoint correction
+
+Scope
+- HDMI-1 Full Program volume-control presentation only.
+- Derived from the field-working 1.5.79 package and runtime.
+- No changes to Home geometry, divider lines, bullet spacing, cards,
+  typography, logo, startup, OTA installation, heartbeat, remote reboot,
+  HDMI-2 playback, encryption, media pools, cache, pairing, downloads,
+  telemetry, or the functional 0-100% volume range.
+
+Full Program volume control
+- Preserves the existing 600px volume-control container and vertical spacing.
+- Adds a 20px inert right-side balancing spacer matching the speaker icon.
+- Shortens the usable slider track from 544px to 512px without moving its
+  left endpoint.
+- Produces equal 44px effective left and right internal padding.
+- Places the 50% volume endpoint at the exact 600px container midpoint.
+- Applies identically to Playing/Pause and Paused/Resume states through the
+  shared volume-control component.
+
+Validation
+- Packaged render and geometry comparison against 1.5.79 at the Bluefin
+  1920x1080 logical viewport, DPR 1.
+- Regression gate permits only the intended volume-track width and midpoint
+  correction in the two Full Program playback states.
+- Native device-control files remain byte-identical to 1.5.79.

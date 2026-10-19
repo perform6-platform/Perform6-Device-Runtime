@@ -16,6 +16,7 @@ interface ImportMetaEnv {
   readonly VITE_SYNC_INTERVAL_MS: string;
   readonly VITE_PAIRING_POLL_MS: string;
   readonly VITE_RUNTIME_VERSION: string;
+  readonly VITE_P6_EDITION: 'fitness' | 'golf';
 }
 
 interface ImportMeta {

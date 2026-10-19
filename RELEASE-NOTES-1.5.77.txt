@@ -1,0 +1,37 @@
+Perform6 XT2145 1.5.77 — Bluefin final Home-screen refinements
+
+Scope
+- HDMI-1 Bluefin presentation only.
+- Derived from the field-working 1.5.76 package and runtime.
+- No changes to startup, OTA installation, heartbeat, remote reboot, HDMI-2
+  playback, encryption, media pools, cache, pairing, downloads, or telemetry.
+
+Choose Your Experience
+- Rebuilds the divider as a content-sized three-column layout so the blue lines
+  cannot overlap the heading in BrightSign Chromium.
+- Keeps equal 24px clearance between the heading and the divider line on both
+  sides, following the same spacing principle as the secondary-card headings.
+
+Full Program Home card
+- Further reduces the card height from the bottom while preserving its top edge.
+- Lowers “The complete performance training system.” so it uses the same 24px
+  bottom padding as the Start Here, Phase 1, and Phase 2 descriptions.
+- Adds equal vertical spacing across Mobility/Stability/Power,
+  Strength/Energy/Recovery, and All 6 Steps, then centers the complete step group
+  between the title and bottom description.
+- Preserves the current blue vertical-line height and vertically aligns the blue
+  separator glyphs across both keyword rows.
+- Keeps the clock and 60-minute duration aligned at the bottom-right consistently
+  with the other Home cards.
+- Reduces the Guided background panel height so its bottom padding beneath Full
+  Program is exactly 18px—the same as the padding beneath Phase 2 inside the
+  Self-Guided panel.
+
+Validation
+- Rendered from the packaged build at the Bluefin 1920×1080 logical viewport,
+  DPR 1, using the XT2145 DWS-calibrated simulator profile.
+- Home geometry gate confirms equal divider spacing, equal 24px description
+  padding, equal 41px step-row positioning, and matching 18px panel padding.
+- XT playback, program-command, OTA integrity, BrightScript unresolved-call,
+  encryption-safety, heartbeat, reboot, and startup preservation checks pass.
+- Native device-control files remain byte-identical to 1.5.76.

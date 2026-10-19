@@ -5,6 +5,14 @@
 @font-face {
   font-family: 'Inter';
   font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('./assets/fonts/Inter-Light.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
   font-weight: 400;
   font-display: swap;
   src: url('./assets/fonts/Inter-Regular.woff2') format('woff2');
@@ -404,7 +412,8 @@ body::-webkit-scrollbar,
   pointer-events: none;
 }
 
-.p6-duration svg {
+.p6-duration svg,
+.p6-duration img {
   width: 40.95px;
   height: 34.74px;
   flex-shrink: 0;
@@ -604,13 +613,16 @@ body::-webkit-scrollbar,
 .p6-home__logo {
   grid-area: logo;
   position: relative;
-  top: 0;
-  left: -53px;
+  /* Gabe's transparent EPS-derived SVG has a wider native canvas than the
+     previous asset. Compensate at the image frame so its visible artwork
+     retains the field-approved 1.5.80 footprint without distorting paths. */
+  top: 4px;
+  left: -74.625px;
   z-index: 2;
   justify-self: start;
-  align-self: center;
-  width: 340px;
-  height: auto;
+  align-self: start;
+  width: 380px;
+  height: 83px;
   margin-bottom: 0;
 }
 
@@ -647,7 +659,7 @@ body::-webkit-scrollbar,
   top: 24px;
   left: 30px;
   display: block;
-  width: 294px;
+  width: 360px;
   height: 58px;
   margin: 0;
   padding: 0;
@@ -656,9 +668,9 @@ body::-webkit-scrollbar,
 
 .p6-start-here-card__title {
   display: block;
-  width: 294px;
+  width: 360px;
   height: 58px;
-  max-width: 294px;
+  max-width: 360px;
   opacity: 1;
   margin: 0;
   padding: 0;
@@ -669,6 +681,7 @@ body::-webkit-scrollbar,
   line-height: 100%;
   letter-spacing: 0%;
   color: #FFFFFF;
+  white-space: nowrap;
 }
 
 .p6-start-here-card__chevron {
@@ -796,7 +809,8 @@ body::-webkit-scrollbar,
   color: #1155CC;
 }
 
-.p6-start-here-card > .p6-duration svg {
+.p6-start-here-card > .p6-duration svg,
+.p6-start-here-card > .p6-duration img {
   display: none;
 }
 
@@ -1299,7 +1313,8 @@ body::-webkit-scrollbar,
   color: #1155CC;
 }
 
-.p6-home__phase1 .p6-phase-card > .p6-duration svg {
+.p6-home__phase1 .p6-phase-card > .p6-duration svg,
+.p6-home__phase1 .p6-phase-card > .p6-duration img {
   display: none;
 }
 
@@ -1503,7 +1518,8 @@ body::-webkit-scrollbar,
   color: #1155CC;
 }
 
-.p6-home__phase2 .p6-phase-card > .p6-duration svg {
+.p6-home__phase2 .p6-phase-card > .p6-duration svg,
+.p6-home__phase2 .p6-phase-card > .p6-duration img {
   display: none;
 }
 
@@ -1794,7 +1810,8 @@ body::-webkit-scrollbar,
   color: #1155CC;
 }
 
-.p6-full-program-content > .p6-duration svg {
+.p6-full-program-content > .p6-duration svg,
+.p6-full-program-content > .p6-duration img {
   display: none;
 }
 
@@ -3792,6 +3809,91 @@ body::-webkit-scrollbar,
   color: #FFFFFF;
   text-transform: none;
   white-space: nowrap;
+}
+
+/* ─── Client field review: unified secondary experience cards ───
+   All four overview cards share one geometry. The wider content rail keeps
+   every approved supporting sentence on one line; card height follows the
+   item count instead of using four independently hard-coded heights. */
+.p6-session-modal--confirm.p6-session-modal--overview {
+  box-sizing: border-box;
+  width: 900px;
+  min-width: 900px;
+  max-width: 900px;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 52px;
+  align-items: flex-start;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__title {
+  margin: 0 auto;
+  flex: none;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__section {
+  width: 796px;
+  margin: 8px auto 20px;
+  gap: 14px;
+  align-self: stretch;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__section-line,
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__section-line:last-child {
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  flex: 1 1 0;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__list {
+  width: 796px;
+  max-width: 796px;
+  height: auto;
+  margin: 0 auto;
+  gap: 20px;
+  align-self: stretch;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__item {
+  width: 796px;
+  height: 65px;
+  min-height: 65px;
+  gap: 12px;
+  align-self: stretch;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__item-body {
+  width: 748px;
+  height: 65px;
+  min-width: 0;
+  gap: 3px;
+  flex: 1 1 auto;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__item-text,
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__item-desc {
+  width: 748px;
+  max-width: 748px;
+  white-space: nowrap;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__item-desc {
+  height: 28px;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__actions {
+  width: 796px;
+  height: 132px;
+  margin: 24px auto 0;
+  gap: 12px;
+  align-self: stretch;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__btn--primary,
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__btn--back {
+  width: 796px;
 }
 
 /* ─── Start Here — Active (RETURN TO MENU) — exact Figma ─── */

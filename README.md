@@ -49,12 +49,17 @@ docker compose -f docker-compose.dev.yml up --build
 BrightSign package (local `releases/` — ready folder + optional ZIP):
 
 ```bash
-npm run release:zip:xt2145 -- 1.0.0
+npm run release:zip:xt2145:fitness
+npm run release:zip:xt2145:golf
 npm run release:zip:xc4055 -- 1.0.0
 npm run release:zip:hd226 -- 1.0.0
 # or all:
 npm run release:zip:all -- 1.0.0
 ```
+
+The XT2145 Fitness and Golf packages share the same device runtime and use
+separate build-time UI editions. See
+[docs/XT2145-EDITIONS.md](./docs/XT2145-EDITIONS.md).
 
 Copy the release **folder contents** to the SD card root (`autorun.brs`, `index.html`, `assets/`). Edit `.env.brightsign-*` → `VITE_API_BASE_URL` before production builds. See [docs/deploy-to-player.md](./docs/deploy-to-player.md).
 

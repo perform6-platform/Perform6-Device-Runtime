@@ -1,0 +1,21 @@
+Perform6 XT2145 1.5.79 - Bluefin divider optical midpoint
+
+Scope
+- HDMI-1 Bluefin Home-screen presentation only.
+- Derived from the field-working 1.5.78 package and runtime.
+- No changes to cards, typography, bullet spacing, logo, secondary screens,
+  startup, OTA installation, heartbeat, remote reboot, HDMI-2 playback,
+  encryption, media pools, cache, pairing, downloads, or telemetry.
+
+Choose Your Experience
+- Moves only the right endpoint of the left divider line 6px to the right.
+- Changes the left visible gap from 36px to 30px.
+- Keeps the right visible gap at 24px.
+- Preserves line position, weight, color, vertical alignment, label geometry,
+  and every other Home-screen element.
+
+Validation
+- Render and geometry comparison against packaged 1.5.78 at the Bluefin
+  1920x1080 logical viewport, DPR 1.
+- Regression gate permits only the intended 6px left-divider endpoint delta.
+- Native device-control files remain byte-identical to 1.5.78.

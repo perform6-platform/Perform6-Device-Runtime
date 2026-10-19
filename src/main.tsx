@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, HashRouter } from 'react-router-dom';
 import App from './App';
 import './index.css';
+import './bluefinClientReview.css';
 import { getPlatform, isBrightSignPlayer } from './platform';
 import { DeviceProvider, RuntimeProvider } from './contexts';
 import { ErrorBoundary } from './components/status';
