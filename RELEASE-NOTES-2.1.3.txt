@@ -1,0 +1,42 @@
+Perform6 XT2145 Golf UI — 2.1.3
+
+Surgical Pre-Golf presentation refinement based on Gabe's Bluefin review of
+Golf 2.1.2.
+
+Pre-Golf vector artwork
+- Preserved Gabe's supplied independent SVG badge and transparent exterior.
+- Changed the solid green to #00994D for stronger Bluefin contrast.
+- Enlarged and emboldened the internal "Pre Golf" vector lettering for better
+  touchscreen legibility.
+- Kept the approved outer icon dimensions unchanged: 62×60 px on Home and
+  74×72 px on secondary cards.
+
+Secondary-card title alignment
+- START HERE and PHASE 1 title text is centered independently on the
+  1920 px canvas.
+- The Pre-Golf icon is positioned 40 px to the right of each centered title.
+- Applied consistently to both BEGIN SESSION and RETURN TO MENU states.
+- No Pre-Golf icon was added to PHASE 2 or FULL PROGRAM.
+
+Preserved Golf UI
+- Based directly on the installed and working Golf 2.1.2 package.
+- No changes to wording, typography, card geometry, durations, checklist
+  content, controls, interactions or any unrelated screen state.
+- Gabe's transparent Perform6 Home Screen SVG remains unchanged.
+
+Runtime preservation
+- No changes to autorun.brs, startup, OTA, heartbeat, reboot or CMS
+  communication.
+- No changes to HDMI routing, playback commands, telemetry, downloads, cache,
+  encryption or media pools.
+- Device-control files remain byte-identical to the approved Fitness runtime.
+
+Validation
+- TypeScript and BrightSign production builds passed.
+- LED playback, program-command and Bluefin UI gates passed.
+- ZIP structure and integrity passed.
+- The exact packaged artifact was rendered across all 12 Bluefin states at
+  1920×1080, DPR 1 using the established simulator engine.
+
+Status
+- Approved by Gabe for Golf production use.

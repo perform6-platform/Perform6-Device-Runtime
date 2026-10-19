@@ -327,6 +327,84 @@
   height: 40px !important;
   flex: none;
 }
+
+/* Golf edition — presentation-only additions. */
+.p6-pre-golf-icon {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 62px;
+  height: 60px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.p6-pre-golf-icon > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.p6-start-here-card .p6-card-heading--with-title-icon,
+.p6-home__phase1 .p6-card-heading--with-title-icon {
+  position: absolute;
+  top: 30px;
+  left: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 40px;
+  width: auto;
+  max-width: none;
+  height: 58px;
+}
+
+.p6-start-here-card .p6-card-heading--with-title-icon .p6-start-here-card__title,
+.p6-home__phase1 .p6-card-heading--with-title-icon .p6-phase-card__title {
+  position: static;
+  width: auto;
+  max-width: none;
+  flex: 0 0 auto;
+}
+
+.p6-pre-golf-icon--home {
+  width: 62px;
+  height: 60px;
+  transform: translateY(-3px);
+}
+
+.p6-session-modal__title--with-icon {
+  display: block;
+  width: 100% !important;
+  max-width: none !important;
+  text-align: center;
+}
+
+.p6-session-modal__title--with-icon .p6-session-modal__title-text {
+  position: relative;
+  display: inline-block;
+}
+
+.p6-session-modal__title-icon {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 40px);
+  display: flex;
+  align-items: center;
+  transform: translateY(-50%);
+}
+
+.p6-pre-golf-icon--secondary {
+  width: 74px;
+  height: 72px;
+}
+
+/* The Golf sentence is longer than Fitness. Increase only its text rail;
+   card geometry and the clock/duration rail remain untouched. */
+.p6-home--golf .p6-full-program-content__description {
+  width: 550px;
+}
 .p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__session-duration > span {
   width: auto;
   height: 32px;

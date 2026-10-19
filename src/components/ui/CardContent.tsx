@@ -96,6 +96,7 @@ type StartHereContentProps = {
   bullets: string;
   description: string;
   duration: string;
+  titleIcon?: ReactNode;
 };
 
 export function StartHereContent({
@@ -103,11 +104,13 @@ export function StartHereContent({
   bullets,
   description,
   duration,
+  titleIcon,
 }: StartHereContentProps) {
   return (
     <div className="p6-start-here-card">
-      <div className="p6-card-heading">
+      <div className={cn('p6-card-heading', Boolean(titleIcon) && 'p6-card-heading--with-title-icon')}>
         <h2 className="p6-title p6-start-here-card__title">{title}</h2>
+        {titleIcon}
       </div>
       <ApprovedChevronIcon className="p6-start-here-card__chevron" />
       <KeywordRow keywords={bullets} className="p6-start-here-card__bullets" />
@@ -127,6 +130,7 @@ type PhaseCardContentProps = {
   thumbnail?: ReactNode;
   /** Use Start Here approved chevron SVG instead of CircleArrowButton. */
   approvedChevron?: boolean;
+  titleIcon?: ReactNode;
 };
 
 export function PhaseCardContent({
@@ -136,11 +140,13 @@ export function PhaseCardContent({
   description,
   duration,
   approvedChevron = false,
+  titleIcon,
 }: PhaseCardContentProps) {
   return (
     <div className="p6-phase-card">
-      <div className="p6-card-heading">
+      <div className={cn('p6-card-heading', Boolean(titleIcon) && 'p6-card-heading--with-title-icon')}>
         <h3 className="p6-title p6-phase-card__title">{title}</h3>
+        {titleIcon}
         {approvedChevron ? null : <CircleArrowButton />}
       </div>
       {approvedChevron ? (

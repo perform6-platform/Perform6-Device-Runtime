@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { cn } from '../../lib/cn';
 import { formatSessionTime } from '../../lib/format';
 import { useRuntimeStore } from '../../stores/runtimeStore';
@@ -23,6 +23,7 @@ type VideoPlayingModalProps = {
   startedAt?: number;
   /** Total session length in seconds for progress UI (default 3600). */
   totalSeconds?: number;
+  icon?: ReactNode;
   className?: string;
 };
 
@@ -182,6 +183,7 @@ export function VideoPlayingModal({
   items = [],
   startedAt,
   totalSeconds = 3600,
+  icon,
   className,
 }: VideoPlayingModalProps) {
   const displayPaused = useRuntimeStore((s) => s.displayPaused);
@@ -236,7 +238,17 @@ export function VideoPlayingModal({
         )}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="p6-session-modal__title">{heading}</h2>
+        <h2
+          className={cn(
+            'p6-session-modal__title',
+            Boolean(icon) && 'p6-session-modal__title--with-icon',
+          )}
+        >
+          <span className="p6-session-modal__title-text">
+            {heading}
+            {icon && <span className="p6-session-modal__title-icon">{icon}</span>}
+          </span>
+        </h2>
 
         {sessionDuration && (
           <p className="p6-session-modal__session-duration">

@@ -241,7 +241,7 @@ function uploadProfileToR2(profileSlug) {
 function main() {
   const profileKey = (process.argv[2] || '').toUpperCase();
   const version = process.argv[3] || process.env.npm_package_version || '0.1.0';
-  const memberArg = (process.argv[4] || '').toUpperCase();
+  const fourthArg = (process.argv[4] || '').toUpperCase();
 
   const profile = PROFILES[profileKey];
   if (!profile) {
@@ -253,8 +253,13 @@ function main() {
     );
   }
 
-  if (memberArg && profileKey !== 'HD226') {
-    fail(`Cluster member is only valid for HD226 (got ${memberArg})`);
+  const edition = profileKey === 'XT2145' ? fourthArg || 'FITNESS' : '';
+  const memberArg = profileKey === 'HD226' ? fourthArg : '';
+  if (profileKey === 'XT2145' && !['FITNESS', 'GOLF'].includes(edition)) {
+    fail(`Invalid XT2145 edition "${edition}". Use FITNESS or GOLF`);
+  }
+  if (fourthArg && profileKey !== 'HD226' && profileKey !== 'XT2145') {
+    fail(`A fourth argument is only valid for XT2145 edition or HD226 member (got ${fourthArg})`);
   }
   if (memberArg && !CLUSTER_MEMBERS.includes(memberArg)) {
     fail(`Invalid cluster member "${memberArg}". Use DEVICE_A … DEVICE_J`);
@@ -267,12 +272,17 @@ function main() {
 
   const member = profileKey === 'HD226' ? memberArg || 'DEVICE_A' : '';
   const memberSuffix = member ? `-${member.toLowerCase()}` : '';
-  const packageBase = `perform6-${profile.slug}${memberSuffix}-${version}`;
-  const outDir = path.join(root, 'releases', profile.slug);
+  const editionSuffix = profileKey === 'XT2145' ? `-${edition.toLowerCase()}` : '';
+  const packageBase = `perform6-${profile.slug}${editionSuffix}${memberSuffix}-${version}`;
+  const releaseChannel = profileKey === 'XT2145'
+    ? `${profile.slug}-${edition.toLowerCase()}`
+    : profile.slug;
+  const outDir = path.join(root, 'releases', releaseChannel);
   const outFolder = path.join(outDir, packageBase);
   const outZip = path.join(outDir, `${packageBase}.zip`);
 
   console.log(`[release:zip] profile=${profileKey} version=${version}` +
+    (edition ? ` edition=${edition}` : '') +
     (member ? ` member=${member}` : ''));
   console.log(`[release:zip] mode=${profile.mode}`);
   console.log(`[release:zip] api from ${path.basename(envFile)} (edit VITE_API_BASE_URL for production)`);
@@ -289,6 +299,9 @@ function main() {
   const buildEnv = {};
   if (member) {
     buildEnv.VITE_CLUSTER_MEMBER = member;
+  }
+  if (edition) {
+    buildEnv.VITE_P6_EDITION = edition.toLowerCase();
   }
   // Keep runtime version aligned with package version when provided.
   buildEnv.VITE_RUNTIME_VERSION = version;
@@ -395,6 +408,7 @@ function main() {
     JSON.stringify(
       {
         profile: profileKey,
+        edition: edition ? edition.toLowerCase() : null,
         version,
         clusterMember: member || null,
         builtAt: new Date().toISOString(),
@@ -589,14 +603,14 @@ function main() {
     }
   }
 
-  uploadProfileToR2(profile.slug);
+  uploadProfileToR2(releaseChannel);
 
   console.log(`\n[release:zip] Folder: ${path.relative(root, outFolder)}`);
   console.log(`[release:zip] ZIP:    ${path.relative(root, outZip)}`);
   console.log('[release:zip] SD card: copy folder CONTENTS to card root (not the folder itself)');
   console.log('[release:zip] Required on SD root: autorun.brs, index.html, assets/');
   console.log(
-    `[release:zip] R2 keys: releases/${profile.slug}/${packageBase}/… and .zip`,
+    `[release:zip] R2 keys: releases/${releaseChannel}/${packageBase}/… and .zip`,
   );
 }
 

@@ -102,6 +102,7 @@ export function SessionModal({
   primaryLabel = 'BEGIN SESSION',
   accent = 'blue',
   experience = 'phase',
+  icon,
   className,
 }: SessionModalProps) {
   const normalizedItems = normalizeItems(items);
@@ -140,9 +141,18 @@ export function SessionModal({
         )}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 id="p6-session-modal-title" className="p6-session-modal__title">
+        <h2
+          id="p6-session-modal-title"
+          className={cn(
+            'p6-session-modal__title',
+            Boolean(icon) && 'p6-session-modal__title--with-icon',
+          )}
+        >
           {eyebrow && <span className="p6-session-modal__eyebrow">{eyebrow}</span>}
-          {title}
+          <span className="p6-session-modal__title-text">
+            {title}
+            {icon && <span className="p6-session-modal__title-icon">{icon}</span>}
+          </span>
         </h2>
 
         {sessionDuration && (

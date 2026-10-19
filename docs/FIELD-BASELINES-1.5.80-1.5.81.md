@@ -1,6 +1,6 @@
 # Perform6 XT2145 field baselines: 1.5.80 and 1.5.81
 
-Last updated: 2026-10-17
+Last updated: 2026-10-20
 
 ## Status checkpoint
 
@@ -19,10 +19,10 @@ Last updated: 2026-10-17
 - SHA-256:
   `9248d54b0b92819837e615019ca89fcebbe27b4b552e4858cfb5a896a358924d`
 
-### 1.5.81 — pending Gabe's visual confirmation
+### 1.5.81 — approved Fitness baseline
 
 - 1.5.81 is derived directly from the field-confirmed 1.5.80 package/runtime.
-- Only these visible Fitness Home changes require Gabe's confirmation:
+- Gabe has approved these visible Fitness Home changes on the physical Bluefin:
   1. Phase 1 wording: `Move better. Build your foundation.`
   2. Phase 2 wording: `Get stronger. Elevate your performance.`
   3. Home logo: Gabe's supplied transparent SVG derived from his original EPS.
@@ -54,12 +54,10 @@ functional volume behavior.
 
 ## Baseline selection rule
 
-- Use **1.5.80** whenever a new branch must begin from the latest version that
-  Gabe has fully confirmed on the physical Bluefin.
-- Use **1.5.81** as the successor baseline only after Gabe confirms the new logo
-  and the two wording changes, or when the work explicitly needs those changes.
-- Until that confirmation arrives, do not reinterpret or modify the 1.5.81
-  Home presentation while working on an unrelated feature.
+- Use **1.5.81** as the approved Fitness baseline for future Fitness work.
+- Keep **1.5.80** as the preceding field-confirmed fallback.
+- Do not reinterpret or modify the approved 1.5.81 Home presentation while
+  working on an unrelated feature.
 - Any future candidate must preserve the chosen baseline's startup/OTA/
   heartbeat/reboot path and should be rendered from its packaged ZIP through
   the 12-state Bluefin simulator before installation.

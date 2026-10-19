@@ -208,10 +208,12 @@ async function clickLabel(cdp, label) {
 }
 
 async function capture(cdp, outputDir, name) {
+  // Delayed sync diagnostics are outside the UI presentation under review.
+  await evaluate(cdp, `(() => { const alert=document.querySelector('[role="alert"]'); if(alert) alert.style.setProperty('display','none','important'); return true; })()`);
   const shot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false, fromSurface: true });
   writeFileSync(join(outputDir, `${name}.png`), Buffer.from(shot.data, 'base64'));
   const geometry = await evaluate(cdp, `(() => {
-    const selectors=['.p6-home__start-here','.p6-home__phase-backdrop','.p6-home__phase1','.p6-home__phase2','.p6-home__full-backdrop','.p6-home__full-program','.p6-session-modal','.p6-video-playing-modal__controls','.p6-video-playing-modal__now','.p6-video-playing-modal__now-row','.p6-video-playing-modal__progress','.p6-display-volume','.p6-confirm-panel__title'];
+    const selectors=['.p6-home__start-here','.p6-home__phase-backdrop','.p6-home__phase1','.p6-home__phase2','.p6-home__full-backdrop','.p6-home__full-program','.p6-start-here-card__title','.p6-phase-card__title','.p6-session-modal__title-text','.p6-pre-golf-icon','.p6-start-here-card__description','.p6-start-here-card__clock','.p6-full-program-content__description','.p6-full-program-content__clock','.p6-session-modal','.p6-session-modal__title','.p6-video-playing-modal__controls','.p6-video-playing-modal__now','.p6-video-playing-modal__now-row','.p6-video-playing-modal__progress','.p6-display-volume','.p6-confirm-panel__title'];
     const rect=(el)=>{const r=el.getBoundingClientRect();const c=getComputedStyle(el);return{x:r.x,y:r.y,width:r.width,height:r.height,fontSize:c.fontSize,fontWeight:c.fontWeight,padding:c.padding,display:c.display}};
     return Object.fromEntries(selectors.map((selector)=>[selector,[...document.querySelectorAll(selector)].map(rect)]));
   })()`);
@@ -223,7 +225,16 @@ async function resetHome(cdp, baseUrl) {
   await cdp.send('Page.navigate', { url: `${baseUrl}/#/touch` });
   await loaded.catch(() => {});
   await waitFor(cdp, "document.querySelector('[aria-label=\"Start Here\"]')");
-  await evaluate(cdp, `(() => { const alert=document.querySelector('[role="alert"]'); if(alert) alert.style.setProperty('display','none','important'); return true; })()`);
+  await evaluate(cdp, `(() => {
+    let style=document.getElementById('p6-ui-audit-suppress-status');
+    if(!style){
+      style=document.createElement('style');
+      style.id='p6-ui-audit-suppress-status';
+      style.textContent='[role="alert"]{display:none!important}';
+      document.head.appendChild(style);
+    }
+    return true;
+  })()`);
 }
 
 async function main() {
@@ -325,7 +336,13 @@ body{margin:0;background:#05070b;color:#edf3ff;font:16px/1.45 Inter,Arial,sans-s
   } finally {
     chrome.kill('SIGTERM');
     await new Promise((resolveClose) => server.close(resolveClose));
-    if (extracted) rmSync(scratch, { recursive: true, force: true });
+    if (chrome.exitCode === null) {
+      await Promise.race([
+        new Promise((resolveExit) => chrome.once('exit', resolveExit)),
+        new Promise((resolveWait) => setTimeout(resolveWait, 2_000)),
+      ]);
+    }
+    if (extracted) rmSync(scratch, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 }
 

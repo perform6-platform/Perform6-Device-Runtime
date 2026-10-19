@@ -1,3 +1,5 @@
+import { isGolfEdition } from '../config/experience';
+
 export const FULL_PROGRAM_VIDEO = '/videos/phase1-gym.mp4';
 
 export const FULL_PROGRAM_ITEMS = [
@@ -7,19 +9,27 @@ export const FULL_PROGRAM_ITEMS = [
   },
   {
     title: 'Develop Strength & Power',
-    description: 'Increase force production and explosive power.',
+    description: isGolfEdition
+      ? 'Increase strength and explosive power for golf.'
+      : 'Increase force production and explosive power.',
   },
   {
     title: 'Improve Conditioning',
-    description: 'Enhance endurance to sustain and repeat high-intensity efforts.',
+    description: isGolfEdition
+      ? 'Build endurance for better energy and focus on the course.'
+      : 'Enhance endurance to sustain and repeat high-intensity efforts.',
   },
   {
     title: 'Recover Faster',
-    description: 'Improve recovery between training sessions.',
+    description: isGolfEdition
+      ? 'Enhance recovery between rounds and training sessions.'
+      : 'Improve recovery between training sessions.',
   },
   {
     title: 'Optimize Performance',
-    description: 'Integrate all 6 Steps to maximize physical performance.',
+    description: isGolfEdition
+      ? 'Integrate all 6 Steps to elevate physical performance for golf.'
+      : 'Integrate all 6 Steps to maximize physical performance.',
   },
 ];
 

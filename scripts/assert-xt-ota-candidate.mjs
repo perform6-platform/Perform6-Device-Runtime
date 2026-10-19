@@ -618,7 +618,25 @@ reviewedProbeHashesByVersion['1.5.81'] = {
   ...reviewedProbeHashesByVersion['1.5.80'],
   'src/assets/Perform6-approved-logo.svg': '7b5fe0d1c25c96c808fe385f9192cb6b92a63404a12ad1581ed46da784a36ead',
   'src/index.css': '94cd8ed9e873ff398a5614b748935e95d3054204aabdf9ab8c22236cea15afad',
-  'src/pages/Home.tsx': '942314804c3221662e36e42e42df6ec6c61439c5c5ef46ba6a189ea37ee3e7cb',
+  'src/assets/pre-golf-icon.svg': 'f5ca1c902649c23bef06b01665584c73b57fc11397fc24a130a797f25185a7c6',
+  'src/bluefinClientReview.css': '9341d7b271ae18930955f4eeff28229262e2ab615ba3cc65d457a7190cd95a30',
+  'src/components/ui/CardContent.tsx': 'e1b3e978d5ae5174ff5978509c4a76340e18734b254de011f79ccc120ed9174d',
+  'src/components/ui/PreGolfIcon.tsx': '53a046884bfc820fc793097b55ed53b53fbbfc2ec3e42b40c98879d012080ee1',
+  'src/components/ui/SessionModal.tsx': 'dfdfd71d010ea3a546ff2127373b93c8bf979d78076ee002947fb3b640f60949',
+  'src/components/ui/VideoPlayingModal.tsx': 'a48bfaf11ba48da54582f44281d27a8df4deb3641f33891648ff288a142a0a7e',
+  'src/components/ui/index.ts': 'c69811f3753e15620a4899b917ee5a5c5bff24b207beca426324aba0993855b0',
+  'src/config/experience.ts': '625c7cc75f3c3669f3f655c5e89f726d63a9c87a40615d79bec32335a6452b56',
+  'src/lib/fullProgram.ts': 'e692279b22e382401c5f2aae3f2440d429a5b5e5fbabe857ef994965b7c8a9f5',
+  'src/lib/phase1.ts': 'be3327859f94a8d39ea9029289c0ed7668d0f99fa65b822703334e667ec4f76d',
+  'src/lib/phase2.ts': '17f2fd56d8f13a4abc0e266f2fff1ec9dadbb4ec89e944b3dc2ce7c790970d43',
+  'src/pages/Home.tsx': '6508fb3020e59d331426e2d09e322a2cdb90743193fc3c5eec3807d55e7389eb',
+  'src/vite-env.d.ts': 'b535a38253b1cfa56573b0fd0a503e052d23ca2eec029ac4532c0404713769ab',
+};
+// 2.1.3 uses the same reviewed runtime source as 1.5.81. The build-time
+// edition flag changes only the copy and Pre-Golf presentation compiled into
+// the web bundle; the BrightSign control path remains shared and hash-pinned.
+reviewedProbeHashesByVersion['2.1.3'] = {
+  ...reviewedProbeHashesByVersion['1.5.81'],
 };
 const reviewedProbeHashes = reviewedProbeHashesByVersion[version];
 const dormantProbe = reviewedProbeHashes != null;
@@ -630,7 +648,7 @@ if (dormantProbe) {
   for (const [file, expected] of Object.entries(reviewedProbeHashes)) {
     if (sha256(fs.readFileSync(path.join(root, file))) !== expected) fail(`unreviewed dormant source: ${file}`);
   }
-  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.59' && version !== '1.5.61' && version !== '1.5.62' && version !== '1.5.63' && version !== '1.5.64' && version !== '1.5.68' && version !== '1.5.70' && version !== '1.5.71' && version !== '1.5.72' && version !== '1.5.73' && version !== '1.5.74' && version !== '1.5.76' && version !== '1.5.77' && version !== '1.5.78' && version !== '1.5.79' && version !== '1.5.80' && version !== '1.5.81') {
+  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.59' && version !== '1.5.61' && version !== '1.5.62' && version !== '1.5.63' && version !== '1.5.64' && version !== '1.5.68' && version !== '1.5.70' && version !== '1.5.71' && version !== '1.5.72' && version !== '1.5.73' && version !== '1.5.74' && version !== '1.5.76' && version !== '1.5.77' && version !== '1.5.78' && version !== '1.5.79' && version !== '1.5.80' && version !== '1.5.81' && version !== '2.1.3') {
     execFileSync(
       process.execPath,
       ['--test', 'scripts/encryption-lab/dormant-integration.test.mjs'],
@@ -670,7 +688,7 @@ if (dormantProbe) {
     'scripts/encryption-lab/encrypted-playback-candidate.test.mjs',
     'scripts/encryption-lab/ota-replacement.test.mjs',
   ], { cwd: root, stdio: 'inherit' });
-  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.59' || version === '1.5.61' || version === '1.5.62' || version === '1.5.63' || version === '1.5.64' || version === '1.5.68' || version === '1.5.70' || version === '1.5.71' || version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81') execFileSync(process.execPath, ['--test',
+  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.59' || version === '1.5.61' || version === '1.5.62' || version === '1.5.63' || version === '1.5.64' || version === '1.5.68' || version === '1.5.70' || version === '1.5.71' || version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' || version === '2.1.3') execFileSync(process.execPath, ['--test',
     'scripts/encryption-lab/bridge-diagnostic.test.mjs',
     'scripts/encryption-lab/bridge-observability.test.mjs',
     'scripts/encryption-lab/widget-port-binding.test.mjs',
@@ -735,18 +753,19 @@ if (!failedUnresolved.some((name) => name.toLowerCase() === 'jsonescape')) {
 const expectedFiles = new Set([
   'README-SD.txt',
   'assets/Inter-Bold-Sckx8rpT.woff2',
-  ...(version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' ? ['assets/Inter-Light-14LG-y7V.woff2'] : []),
+  ...(version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' || version === '2.1.3' ? ['assets/Inter-Light-14LG-y7V.woff2'] : []),
   'assets/Inter-Medium-D2bGa7uu.woff2',
   'assets/Inter-Regular-BOOGhInR.woff2',
   'assets/Inter-SemiBold-D273HNI0.woff2',
   'assets/Perform_6_trademark-ClFD9aGP.png',
-  ...(version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' ? [
+  ...(version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' || version === '2.1.3' ? [
     'assets/Perform6-approved-chevron-B3fE6BGP.png',
     'assets/Perform6-approved-clock-CEGklWTx.png',
-    version === '1.5.81'
+    version === '1.5.81' || version === '2.1.3'
       ? 'assets/Perform6-approved-logo-Cnk2bSRp.svg'
       : 'assets/Perform6-approved-logo-NZjhE405.svg',
   ] : []),
+  ...(version === '1.5.81' || version === '2.1.3' ? ['assets/pre-golf-icon-CYdrIKvT.svg'] : []),
   'assets/app.js',
   'assets/style.css',
   'autorun.brs',
@@ -779,6 +798,10 @@ const manifest = JSON.parse(
 );
 if (manifest.profile !== 'XT2145' || manifest.version !== version) {
   fail(`manifest identity mismatch: ${manifest.profile ?? '?'} ${manifest.version ?? '?'}`);
+}
+const expectedEdition = version === '1.5.81' ? 'fitness' : version === '2.1.3' ? 'golf' : null;
+if (expectedEdition && manifest.edition !== expectedEdition) {
+  fail(`manifest edition mismatch: expected ${expectedEdition}, received ${manifest.edition ?? '?'}`);
 }
 if (manifest.storageEncryption?.enabled !== false) {
   fail('storage encryption must remain disabled for the clean-card pool test');
