@@ -420,7 +420,7 @@ export default function Home() {
           <StartHereContent
             title="Start Here"
             bullets="The 6-Step System · Safety Check · Pre-Workout"
-            description="Learn the system. Check your movement. Prepare for training."
+            description="Learn the system. Check movement. Prepare for training."
             duration="5–10 minutes"
           />
         </GlowCard>
@@ -468,7 +468,7 @@ export default function Home() {
             title="Phase 1"
             keywords="Mobility · Stability · Power"
             steps="Steps 1-3"
-            description="Move better. Build the foundation."
+            description="Move better. Build your foundation."
             duration="15–20 minutes"
             approvedChevron
           />
@@ -485,7 +485,7 @@ export default function Home() {
             title="Phase 2"
             keywords="Strength · Energy · Recovery"
             steps="Steps 4-6"
-            description="Get stronger. Elevate performance."
+            description="Get stronger. Elevate your performance."
             duration="20–35 minutes"
             approvedChevron
           />

@@ -1,4 +1,4 @@
-/* Bluefin client-review geometry (1.5.74)
+/* Bluefin client-review geometry (1.5.80)
    Keep the proven 1920x1080 master frame from 1.5.69. Home follows the
    approved composition plus Gabe's annotated adjustments; all secondary
    states share one rail instead of conflicting 656px/900px shells. */
@@ -8,12 +8,12 @@
   grid-area: unset;
   grid-column: auto;
   position: absolute;
-  top: 118px;
-  left: 491px;
-  width: 938px;
-  max-width: 938px;
-  height: 225px;
-  min-height: 225px;
+  top: 117px;
+  left: 471px;
+  width: 978px;
+  max-width: 978px;
+  height: 203px;
+  min-height: 203px;
 }
 
 .p6-start-here-card .p6-card-heading,
@@ -22,16 +22,67 @@
   font-size: 50px;
 }
 
-.p6-start-here-card__chevron { top: 46px; }
-.p6-start-here-card__bullets { top: 105px; width: 720px; font-size: 26px; }
+.p6-start-here-card__chevron { top: 34px; }
+.p6-start-here-card__bullets { top: 100px; width: 720px; font-size: 26px; }
 .p6-start-here-card__bullets .p6-keyword-row__item,
 .p6-start-here-card__bullets .p6-keyword-row__sep { font-size: 26px; }
 .p6-start-here-card__bullets .p6-keyword-row__item:nth-child(1),
 .p6-start-here-card__bullets .p6-keyword-row__item:nth-child(3),
 .p6-start-here-card__bullets .p6-keyword-row__item:nth-child(5) { width: auto; }
-.p6-start-here-card__description { top: 168px; font-size: 24px; }
-.p6-start-here-card__clock { top: 161px; }
-.p6-start-here-card > .p6-duration { top: 168px; font-size: 22px; }
+.p6-start-here-card__description {
+  top: 150px;
+  left: 30px;
+  right: 250px;
+  width: auto;
+  font-size: 24px;
+}
+.p6-start-here-card__clock {
+  top: 143px;
+  right: 172px;
+  left: auto;
+}
+.p6-start-here-card > .p6-duration {
+  top: 150px;
+  right: 28px;
+  left: auto;
+  width: auto;
+  font-size: 22px;
+}
+
+/*
+ * Keep the divider clear of the label at the label's rendered width.
+ * BrightSign's Chromium expands the legacy percentage letter-spacing more
+ * than desktop Chrome, so fixed line endpoints are not safe here.
+ */
+.p6-home__divider {
+  position: relative;
+  top: -19px;
+  left: 350.875px;
+  width: 1024px;
+  height: 36px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  column-gap: 24px;
+  align-items: center;
+}
+.p6-home__divider-track {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.p6-home__divider-track--left .p6-section-divider__line {
+  position: static;
+  width: calc(100% - 6px);
+}
+.p6-home__divider-track--right .p6-section-divider__line {
+  position: static;
+  width: 100%;
+}
+.p6-home__divider .p6-section-divider__label {
+  position: static;
+  width: auto;
+  height: 36px;
+}
 
 .p6-home__phase-backdrop {
   top: 430px;
@@ -44,12 +95,12 @@
   top: 430px;
   left: 992px;
   width: 852px;
-  height: 528px;
+  height: 483px;
 }
 
 .p6-home__col-left > .p6-heading,
 .p6-home__col-right > .p6-heading {
-  top: 450px;
+  top: 445px;
   height: 41px;
   font-size: 34px;
   font-weight: 600;
@@ -57,7 +108,7 @@
 
 .p6-home__col-left-sub,
 .p6-home__col-right-sub {
-  top: 502px;
+  top: 497px;
   height: 31px;
   font-size: 26px;
 }
@@ -74,22 +125,22 @@
 .p6-home__phase1 {
   top: 542px;
   left: 94px;
-  height: 245px;
-  min-height: 245px;
+  height: 238px;
+  min-height: 238px;
 }
 
 .p6-home__phase2 {
-  top: 783px;
+  top: 798px;
   left: 94px;
-  height: 245px;
-  min-height: 245px;
+  height: 238px;
+  min-height: 238px;
 }
 
 .p6-home__full-program {
   top: 542px;
   left: 1010px;
-  height: 387px;
-  min-height: 387px;
+  height: 353px;
+  min-height: 353px;
 }
 
 .p6-home__phase1 .p6-phase-card__title,
@@ -97,15 +148,20 @@
 .p6-full-program-content__title { top: 30px; font-size: 50px; }
 
 .p6-home__phase1 .p6-phase-card__chevron,
-.p6-home__phase2 .p6-phase-card__chevron,
 .p6-full-program-content__chevron {
   top: 44px;
   right: 90px;
   left: auto;
 }
 
+.p6-home__phase2 .p6-phase-card__chevron {
+  top: 40px;
+  right: 90px;
+  left: auto;
+}
+
 .p6-home__phase1 .p6-phase-card__accent,
-.p6-home__phase2 .p6-phase-card__accent { top: 102px; height: 78px; }
+.p6-home__phase2 .p6-phase-card__accent { top: 106px; height: 60px; }
 
 .p6-home__phase1 .p6-phase-card__keywords,
 .p6-home__phase2 .p6-phase-card__keywords {
@@ -121,47 +177,117 @@
   width: auto;
   font-size: 26px;
 }
+.p6-home__phase1 .p6-phase-card__keywords .p6-keyword-row__item:nth-child(1),
+.p6-home__phase1 .p6-phase-card__keywords .p6-keyword-row__item:nth-child(3),
+.p6-home__phase1 .p6-phase-card__keywords .p6-keyword-row__item:nth-child(5),
+.p6-home__phase2 .p6-phase-card__keywords .p6-keyword-row__item:nth-child(1),
+.p6-home__phase2 .p6-phase-card__keywords .p6-keyword-row__item:nth-child(3),
+.p6-home__phase2 .p6-phase-card__keywords .p6-keyword-row__item:nth-child(5) {
+  width: auto;
+  flex: 0 0 auto;
+}
+.p6-home__phase1 .p6-phase-card__keywords .p6-keyword-row__sep,
+.p6-home__phase2 .p6-phase-card__keywords .p6-keyword-row__sep {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px !important;
+  height: 29px;
+  flex: 0 0 12px;
+  overflow: visible;
+  border-radius: 0;
+  background: transparent;
+  color: #1155CC;
+  font-size: 26px;
+  line-height: 26px;
+}
 
 .p6-home__phase1 .p6-phase-card__steps,
 .p6-home__phase2 .p6-phase-card__steps { top: 142px; font-size: 24px; }
 
 .p6-home__phase1 .p6-phase-card__description,
 .p6-home__phase2 .p6-phase-card__description {
-  top: 194px;
+  top: 185px;
   width: auto;
   font-size: 24px;
 }
 
+.p6-home__phase2 .p6-phase-card__description {
+  color: #D0D2D5BB;
+}
+
 .p6-home__phase1 .p6-phase-card__clock,
 .p6-home__phase2 .p6-phase-card__clock {
-  top: 187px;
-  right: 184px;
+  top: 178px;
   left: auto;
 }
+.p6-home__phase1 .p6-phase-card__clock { right: 185px; }
+.p6-home__phase2 .p6-phase-card__clock { right: 190px; }
 
 .p6-home__phase1 .p6-phase-card > .p6-duration,
 .p6-home__phase2 .p6-phase-card > .p6-duration {
-  top: 194px;
+  top: 185px;
   right: 28px;
   left: auto;
   width: auto;
   font-size: 22px;
 }
 
-.p6-full-program-content__accent { top: 112px; height: 116px; }
+.p6-full-program-content__accent { top: 139px; height: 110px; }
 .p6-full-program-content__row1,
 .p6-full-program-content__row2,
 .p6-full-program-content__row1 .p6-keyword-row__item,
 .p6-full-program-content__row2 .p6-keyword-row__item,
 .p6-full-program-content__row1 .p6-keyword-row__sep,
 .p6-full-program-content__row2 .p6-keyword-row__sep { width: auto; font-size: 26px; }
-.p6-full-program-content__row1 { top: 118px; }
-.p6-full-program-content__row2 { top: 156px; }
-.p6-full-program-content__steps { top: 196px; width: auto; font-size: 24px; }
-.p6-full-program-content__description { top: 286px; width: auto; font-size: 24px; }
-.p6-full-program-content__clock { top: 334px; right: 146px; left: auto; }
+.p6-full-program-content__row1 .p6-keyword-row__sep,
+.p6-full-program-content__row2 .p6-keyword-row__sep {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px !important;
+  height: 29px;
+  flex: 0 0 12px;
+  overflow: visible;
+  border-radius: 0;
+  background: transparent;
+  color: #1155CC;
+  font-size: 26px;
+  line-height: 26px;
+}
+.p6-full-program-content__row1 .p6-keyword-row__item,
+.p6-full-program-content__row2 .p6-keyword-row__item {
+  width: auto !important;
+  flex: 0 0 auto;
+}
+.p6-full-program-content__row1 .p6-keyword-row__item:nth-child(1) {
+  width: 100px !important;
+  flex: 0 0 100px;
+}
+.p6-full-program-content__row2 .p6-keyword-row__item:nth-child(1) {
+  width: 107px !important;
+  flex: 0 0 107px;
+}
+.p6-full-program-content__row1 .p6-keyword-row__item:nth-child(3) {
+  width: 101px !important;
+  flex: 0 0 101px;
+}
+.p6-full-program-content__row2 .p6-keyword-row__item:nth-child(3) {
+  width: 87px !important;
+  flex: 0 0 87px;
+}
+.p6-full-program-content__row1 { top: 140px; }
+.p6-full-program-content__row2 { top: 181px; }
+.p6-full-program-content__steps { top: 222px; width: auto; font-size: 24px; }
+.p6-full-program-content__description {
+  top: 300px;
+  width: auto;
+  color: #D0D2D5BB;
+  font-size: 24px;
+}
+.p6-full-program-content__clock { top: 293px; right: 152px; left: auto; }
 .p6-full-program-content > .p6-duration {
-  top: 341px;
+  top: 300px;
   right: 28px;
   left: auto;
   width: auto;
@@ -171,23 +297,35 @@
 /* One shared shell and content rail for all eleven secondary states. */
 .p6-session-modal--confirm.p6-session-modal--overview {
   box-sizing: border-box;
-  width: 840px;
-  min-width: 840px;
-  max-width: 840px;
+  width: 808px;
+  min-width: 808px;
+  max-width: 808px;
   height: auto;
   min-height: 0;
   max-height: 1048px;
   margin: 0;
-  padding: 32px 42px;
+  padding: 32px 24px;
   align-items: flex-start;
   overflow: hidden;
 }
 
 .p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__title { margin: 0 auto; }
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__title {
+  letter-spacing: 0;
+}
 .p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__session-duration {
   width: auto;
   height: 40px;
-  margin: 6px auto 0;
+  margin: 16px auto 0;
+}
+
+/* Override legacy Phase-specific 38px rows with the shared 40px duration rail. */
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--phase1
+  .p6-session-modal__session-duration,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--phase2
+  .p6-session-modal__session-duration {
+  height: 40px !important;
+  flex: none;
 }
 .p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__session-duration > span {
   width: auto;
@@ -200,9 +338,9 @@
   display: grid;
   grid-template-columns: minmax(64px, 1fr) auto minmax(64px, 1fr);
   align-items: center;
-  width: 756px;
+  width: 760px;
   height: 30px;
-  margin: 8px auto 16px;
+  margin: 16px auto 20px;
   gap: 18px;
   align-self: stretch;
 }
@@ -228,18 +366,18 @@
 
 .p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__list {
   display: flex;
-  width: 756px;
-  max-width: 756px;
+  width: 760px;
+  max-width: 760px;
   height: auto;
   margin: 0 auto;
-  gap: 12px;
+  gap: 18px;
   align-self: stretch;
 }
 
 .p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__item {
-  width: 756px;
-  height: 65px;
-  min-height: 65px;
+  width: 760px;
+  height: 72px;
+  min-height: 72px;
   gap: 12px;
   align-self: stretch;
 }
@@ -253,7 +391,7 @@
 }
 
 .p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__item-body {
-  width: 708px;
+  width: 712px;
   height: 65px !important;
   min-width: 0;
   gap: 3px;
@@ -262,26 +400,43 @@
 
 .p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__item-text,
 .p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__item-desc {
-  width: 708px;
-  max-width: 708px;
+  width: 712px;
+  max-width: 712px;
   white-space: nowrap !important;
 }
 .p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__item-desc { height: 28px; }
 
 .p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__actions {
-  width: 756px;
+  width: 760px;
   height: 132px;
   margin: 20px auto 0;
   gap: 12px;
   align-self: stretch;
 }
 .p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__btn--primary,
-.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__btn--back { width: 756px; }
+.p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__btn--back { width: 760px; }
 .p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__btn--primary { gap: 18px; }
 .p6-session-modal--confirm.p6-session-modal--overview .p6-session-modal__btn--primary svg {
-  width: 20px;
-  height: 20px;
+  width: 28px;
+  height: 28px;
   margin-right: 2px;
+}
+
+/*
+ * Gabe's wider one-line layout must retain the approved Figma's vertical
+ * cadence. Width removes wrapping; it must not collapse the title, duration,
+ * divider, checklist and actions into a squat card.
+ */
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--start-here,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--phase1,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--phase2 {
+  height: 663px;
+  min-height: 663px;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program {
+  height: 843px;
+  min-height: 843px;
 }
 
 /* Return-to-Menu uses the same shell and rail as Begin Session. */
@@ -289,13 +444,13 @@
   .p6-video-playing-modal__controls,
 .p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal
   .p6-session-modal__actions {
-  width: 756px;
+  width: 760px;
   height: auto;
   margin: 20px auto 0;
   align-self: stretch;
 }
 .p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal
-  .p6-video-playing-modal__ctrl-exit { width: 756px; }
+  .p6-video-playing-modal__ctrl-exit { width: 760px; }
 
 /*
  * The legacy Return-to-Menu variants carried fixed 633/703px heights and
@@ -308,10 +463,10 @@
 .p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal.p6-session-modal--start-here,
 .p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal.p6-session-modal--phase1,
 .p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal.p6-session-modal--phase2 {
-  height: 633px;
-  min-height: 633px;
+  height: 620px;
+  min-height: 620px;
   max-height: 1048px;
-  padding: 32px 42px;
+  padding: 32px 24px;
 }
 
 .p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal.p6-session-modal--start-here
@@ -319,35 +474,48 @@
 .p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal.p6-session-modal--phase1
   .p6-session-modal__session-duration,
 .p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal.p6-session-modal--phase2
-  .p6-session-modal__session-duration { margin-top: 28px; }
+  .p6-session-modal__session-duration { margin-top: 22px; }
 
 .p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal.p6-session-modal--start-here
   .p6-session-modal__section,
 .p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal.p6-session-modal--phase1
   .p6-session-modal__section,
 .p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal.p6-session-modal--phase2
-  .p6-session-modal__section { margin: 30px auto 38px; }
+  .p6-session-modal__section { margin: 22px auto 26px; }
 
 .p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal.p6-session-modal--start-here
   .p6-video-playing-modal__controls,
 .p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal.p6-session-modal--phase1
   .p6-video-playing-modal__controls,
 .p6-session-modal--confirm.p6-session-modal--overview.p6-video-playing-modal.p6-session-modal--phase2
-  .p6-video-playing-modal__controls { margin-top: 42px; }
+  .p6-video-playing-modal__controls { margin-top: 26px; }
 
 /* Full Program keeps the same shell while richer controls grow vertically. */
 .p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal,
 .p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal--program,
 .p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal--confirm-restart,
 .p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal--confirm-exit {
-  width: 840px;
-  min-width: 840px;
-  max-width: 840px;
-  height: auto;
-  min-height: 0;
+  width: 808px;
+  min-width: 808px;
+  max-width: 808px;
+  height: 980px;
+  min-height: 980px;
   max-height: 1048px;
-  padding: 32px 42px;
+  padding: 32px 24px;
 }
+
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal--confirm-restart,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal--confirm-exit {
+  height: 909px;
+  min-height: 909px;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
+  .p6-video-playing-modal__controls,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal--confirm-restart
+  .p6-video-playing-modal__controls--confirm,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal--confirm-exit
+  .p6-video-playing-modal__controls--confirm { margin-top: 24px; }
 
 .p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
   .p6-video-playing-modal__controls,
@@ -364,7 +532,47 @@
 .p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal--confirm-restart
   .p6-confirm-panel__actions,
 .p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal--confirm-exit
-  .p6-confirm-panel__actions { width: 756px; }
+  .p6-confirm-panel__actions { width: 760px; }
+
+/* The outer Full Program rail is 760px; its inner status rail must match it. */
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
+  .p6-video-playing-modal__now-row,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
+  .p6-video-playing-modal__progress {
+  width: 734px;
+}
+
+/* Keep all three status-row labels on one typographic baseline. */
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
+  .p6-video-playing-modal__now-label,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
+  .p6-video-playing-modal__now-title,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
+  .p6-video-playing-modal__now-time {
+  height: 20px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
+  .p6-video-playing-modal__now-label {
+  width: auto;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
+  .p6-video-playing-modal__now-spacer {
+  width: auto;
+  flex: 1 1 auto;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal--confirm-restart
+  .p6-confirm-panel__title,
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal--confirm-exit
+  .p6-confirm-panel__title {
+  width: 760px;
+  text-align: center;
+}
 
 .p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
   .p6-video-playing-modal__controls-row .p6-video-playing-modal__ctrl-primary,
@@ -377,13 +585,44 @@
 .p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal--confirm-exit
   .p6-confirm-panel__actions .p6-video-playing-modal__ctrl-outline,
 .p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal--confirm-exit
-  .p6-confirm-panel__actions .p6-video-playing-modal__ctrl-primary { width: 370px; }
+  .p6-confirm-panel__actions .p6-video-playing-modal__ctrl-primary { width: 372px; }
 
 .p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
-  .p6-video-playing-modal__volume-slider-wrap,
+  .p6-video-playing-modal__volume {
+  width: 600px;
+  margin-right: auto;
+  margin-left: auto;
+  padding: 0 12px;
+  gap: 12px;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
+  .p6-video-playing-modal__volume::after {
+  /*
+   * Balance the 20px speaker on the left so the usable slider track is
+   * centered within the fixed 600px control. With the existing 12px gaps,
+   * the track retains equal 44px effective padding on both sides.
+   */
+  content: '';
+  display: block;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  pointer-events: none;
+}
+
+.p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
+  .p6-video-playing-modal__volume-slider-wrap {
+  width: auto;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 .p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
   .p6-video-playing-modal__volume-slider,
 .p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
   .p6-video-playing-modal__volume-slider::-webkit-slider-runnable-track,
 .p6-session-modal--confirm.p6-session-modal--overview.p6-session-modal--full-program.p6-video-playing-modal
-  .p6-video-playing-modal__volume-slider::-moz-range-track { width: 680px; }
+  .p6-video-playing-modal__volume-slider::-moz-range-track {
+  width: 100%;
+}

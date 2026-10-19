@@ -14,14 +14,21 @@ Home screen
 - Normalizes title top padding and internal spacing.
 
 Secondary screens
-- Uses one 840px card shell and one 756px content rail across Begin Session,
+- Uses one 808px card shell and one 760px content rail across Begin Session,
   Return to Menu, Pause, Resume, Restart, and Exit states.
 - Keeps all supporting descriptions on one line.
+- Narrows the outer shell and trims horizontal padding to the minimum safe
+  geometry for the longest approved description, removing empty side space.
 - Reduces the excessive padding introduced in 1.5.73.
 - Increases subtitle and duration text while retaining item-copy sizing.
 - Prevents divider lines from crossing subtitle text.
 - Slightly enlarges white checkmarks without changing blue circles.
 - Refines spacing around the BEGIN SESSION play arrow.
+- Restores the approved prototype's vertical breathing room between title,
+  duration, subtitle/divider, checklist rows, and controls while retaining
+  Gabe's wider cards and single-line supporting descriptions.
+- Uses content-calculated heights for Begin, Full Program, playing, and
+  confirmation states so wider layouts remain proportionate rather than squat.
 - Preserves the established Return-card size while redistributing title,
   duration, divider, checklist, and action spacing so top and bottom padding
   remain balanced instead of leaving an empty lower band.

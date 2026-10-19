@@ -1,0 +1,33 @@
+Perform6 XT2145 1.5.76 — Bluefin client-review refinement
+
+Scope
+- HDMI-1 Bluefin presentation only.
+- Derived from the exact field-working 1.5.75 package and runtime.
+- No startup, OTA, heartbeat, reboot, HDMI-2 playback, encryption, media-pool,
+  cache, pairing, download, or telemetry behavior changes.
+
+Home screen
+- Revises Start Here copy to “Learn the system. Check movement. Prepare for training.”
+- Reduces Start Here height while preserving its bottom edge and balances its
+  three content rows; raises its chevron slightly.
+- Makes both Choose Your Experience divider gaps symmetrical.
+- Moves Self-Guided and Guided title/subtitle groups up together while keeping
+  their internal spacing unchanged.
+- Leaves Phase 1 unchanged.
+- Raises the Phase 2 chevron slightly and matches its supporting-copy color to
+  Start Here and Phase 1.
+- Normalizes Full Program bullet spacing, extends its blue accent line, positions
+  its supporting copy with spacing matching the title-to-Mobility gap, matches
+  its muted color, and reduces its height while preserving the top edge and
+  bottom clock/duration padding.
+
+Full Program playback screens
+- Shortens and centers the complete volume control in both Pause and Resume
+  states while retaining the established vertical spacing.
+
+Validation
+- The shipped package is rendered directly at the Bluefin logical viewport of
+  1920×1080 with DPR 1.
+- All twelve UI states are captured; unchanged states are regression-compared
+  with the field-working 1.5.75 package.
+- Native runtime and device-control files must remain byte-identical to 1.5.75.

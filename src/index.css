@@ -613,13 +613,16 @@ body::-webkit-scrollbar,
 .p6-home__logo {
   grid-area: logo;
   position: relative;
-  top: 15px;
-  left: -54.125px;
+  /* Gabe's transparent EPS-derived SVG has a wider native canvas than the
+     previous asset. Compensate at the image frame so its visible artwork
+     retains the field-approved 1.5.80 footprint without distorting paths. */
+  top: 4px;
+  left: -74.625px;
   z-index: 2;
   justify-self: start;
   align-self: start;
-  width: 340px;
-  height: 59.554px;
+  width: 380px;
+  height: 83px;
   margin-bottom: 0;
 }
 

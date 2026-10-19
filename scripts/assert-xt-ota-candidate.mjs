@@ -564,6 +564,62 @@ reviewedProbeHashesByVersion['1.5.73'] = {
   'src/components/ui/SessionModal.tsx': 'd9124a71875e4b0677a37d0621488b34261f4548a24815c19b48af9c6b0b97e5',
   'src/index.css': 'e63cef0fff2ff02e1314f5a8caa6042e3f88a78c921a88bb3336d7e9260249af',
 };
+// 1.5.74: client-review geometry layered on the reviewed 1.5.73 runtime.
+// Only HDMI-1 UI composition and the post-start simulator audit route differ;
+// native startup, OTA, heartbeat, reboot, encryption, media and HDMI-2 remain
+// hash-identical to the field-bootable 1.5.72/1.5.73 packages.
+reviewedProbeHashesByVersion['1.5.74'] = {
+  ...reviewedProbeHashesByVersion['1.5.73'],
+  'src/bluefinClientReview.css': 'efa1cc82e8d0640e30d2629e2700395d86e9cb83778a7f0d4d5c9c7863c52224',
+  'src/components/ui/SessionModal.tsx': 'ad66e45a942429fd7698bd0e14893ee10e2b3bc73f8beae61250ce467d2518ea',
+  'src/components/ui/VideoPlayingModal.tsx': '279e11d1e3148584b2edceb501b6326b628b1bf16b85f60025422e57fbbeee26',
+  'src/main.tsx': '670390daf92ac7222e83dfe85adccdc69f172451f8757673787e260a86399c95',
+  'src/pages/Home.tsx': '16387157b883042c2d4e0227d0844acef9ff60a08ee713c75b73a5bab1099f38',
+};
+// 1.5.76: Gabe's 10/11 Bluefin review layered on the field-confirmed 1.5.75
+// runtime. Only the HDMI-1 review stylesheet and one visible Start Here copy
+// string differ; all device-control sources remain on the reviewed 1.5.74/
+// field-working 1.5.75 chain.
+reviewedProbeHashesByVersion['1.5.76'] = {
+  ...reviewedProbeHashesByVersion['1.5.74'],
+  'src/bluefinClientReview.css': '688d287bf24714403cebdd284d9ba8989254ee7db3da92d27d24bad4acb84d1d',
+  'src/pages/Home.tsx': '82597d1eda5fd7a8fec89a719edd165972ab66ff433559244c36297e5b2e82d7',
+};
+// 1.5.77: Gabe's final 10/12 Home refinements layered on the field-confirmed
+// 1.5.76 runtime. Only the HDMI-1 review stylesheet differs.
+reviewedProbeHashesByVersion['1.5.77'] = {
+  ...reviewedProbeHashesByVersion['1.5.76'],
+  'src/bluefinClientReview.css': '6aec75a14fbf81ffe7e9bb44981de9d4b57a48db708cb5781db34d485b618fd7',
+};
+// 1.5.78: Gabe's final optical-spacing corrections layered on the
+// field-confirmed 1.5.77 runtime. Only the HDMI-1 review stylesheet differs.
+reviewedProbeHashesByVersion['1.5.78'] = {
+  ...reviewedProbeHashesByVersion['1.5.77'],
+  'src/bluefinClientReview.css': '7daf55f595b30834461ab8bd66fbda9694c38b25d74e2387eecc860f3417714b',
+};
+// 1.5.79: optical midpoint correction layered on the field-confirmed 1.5.78
+// runtime. Only the left Home divider endpoint moves; every other runtime
+// source remains hash-identical to 1.5.78.
+reviewedProbeHashesByVersion['1.5.79'] = {
+  ...reviewedProbeHashesByVersion['1.5.78'],
+  'src/bluefinClientReview.css': '20c028764d7034c4ea8b973fa186e1bb1dde9981db9d1b18170e96530543ffa9',
+};
+// 1.5.80: Full Program volume-slider midpoint correction layered on the
+// field-confirmed 1.5.79 runtime. Only the HDMI-1 review stylesheet differs.
+reviewedProbeHashesByVersion['1.5.80'] = {
+  ...reviewedProbeHashesByVersion['1.5.79'],
+  'src/bluefinClientReview.css': 'd6fca4f905b881e2b9330e49da02fe276983822621f83be00e017ac40ba50a6f',
+};
+// 1.5.81: Fitness Home copy consistency and Gabe's supplied transparent
+// vector logo layered on the field-confirmed 1.5.80 runtime. Only the Home
+// logo frame is compensated for the new asset canvas; every device-control
+// source and all reviewed card/divider/volume CSS remain unchanged.
+reviewedProbeHashesByVersion['1.5.81'] = {
+  ...reviewedProbeHashesByVersion['1.5.80'],
+  'src/assets/Perform6-approved-logo.svg': '7b5fe0d1c25c96c808fe385f9192cb6b92a63404a12ad1581ed46da784a36ead',
+  'src/index.css': '94cd8ed9e873ff398a5614b748935e95d3054204aabdf9ab8c22236cea15afad',
+  'src/pages/Home.tsx': '942314804c3221662e36e42e42df6ec6c61439c5c5ef46ba6a189ea37ee3e7cb',
+};
 const reviewedProbeHashes = reviewedProbeHashesByVersion[version];
 const dormantProbe = reviewedProbeHashes != null;
 const allowedRuntimeDelta = new Set(dormantProbe ? Object.keys(reviewedProbeHashes) : [
@@ -574,7 +630,7 @@ if (dormantProbe) {
   for (const [file, expected] of Object.entries(reviewedProbeHashes)) {
     if (sha256(fs.readFileSync(path.join(root, file))) !== expected) fail(`unreviewed dormant source: ${file}`);
   }
-  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.59' && version !== '1.5.61' && version !== '1.5.62' && version !== '1.5.63' && version !== '1.5.64' && version !== '1.5.68' && version !== '1.5.70' && version !== '1.5.71' && version !== '1.5.72' && version !== '1.5.73') {
+  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.59' && version !== '1.5.61' && version !== '1.5.62' && version !== '1.5.63' && version !== '1.5.64' && version !== '1.5.68' && version !== '1.5.70' && version !== '1.5.71' && version !== '1.5.72' && version !== '1.5.73' && version !== '1.5.74' && version !== '1.5.76' && version !== '1.5.77' && version !== '1.5.78' && version !== '1.5.79' && version !== '1.5.80' && version !== '1.5.81') {
     execFileSync(
       process.execPath,
       ['--test', 'scripts/encryption-lab/dormant-integration.test.mjs'],
@@ -614,7 +670,7 @@ if (dormantProbe) {
     'scripts/encryption-lab/encrypted-playback-candidate.test.mjs',
     'scripts/encryption-lab/ota-replacement.test.mjs',
   ], { cwd: root, stdio: 'inherit' });
-  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.59' || version === '1.5.61' || version === '1.5.62' || version === '1.5.63' || version === '1.5.64' || version === '1.5.68' || version === '1.5.70' || version === '1.5.71' || version === '1.5.72' || version === '1.5.73') execFileSync(process.execPath, ['--test',
+  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.59' || version === '1.5.61' || version === '1.5.62' || version === '1.5.63' || version === '1.5.64' || version === '1.5.68' || version === '1.5.70' || version === '1.5.71' || version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81') execFileSync(process.execPath, ['--test',
     'scripts/encryption-lab/bridge-diagnostic.test.mjs',
     'scripts/encryption-lab/bridge-observability.test.mjs',
     'scripts/encryption-lab/widget-port-binding.test.mjs',
@@ -679,15 +735,17 @@ if (!failedUnresolved.some((name) => name.toLowerCase() === 'jsonescape')) {
 const expectedFiles = new Set([
   'README-SD.txt',
   'assets/Inter-Bold-Sckx8rpT.woff2',
-  ...(version === '1.5.72' || version === '1.5.73' ? ['assets/Inter-Light-14LG-y7V.woff2'] : []),
+  ...(version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' ? ['assets/Inter-Light-14LG-y7V.woff2'] : []),
   'assets/Inter-Medium-D2bGa7uu.woff2',
   'assets/Inter-Regular-BOOGhInR.woff2',
   'assets/Inter-SemiBold-D273HNI0.woff2',
   'assets/Perform_6_trademark-ClFD9aGP.png',
-  ...(version === '1.5.72' || version === '1.5.73' ? [
+  ...(version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' ? [
     'assets/Perform6-approved-chevron-B3fE6BGP.png',
     'assets/Perform6-approved-clock-CEGklWTx.png',
-    'assets/Perform6-approved-logo-NZjhE405.svg',
+    version === '1.5.81'
+      ? 'assets/Perform6-approved-logo-Cnk2bSRp.svg'
+      : 'assets/Perform6-approved-logo-NZjhE405.svg',
   ] : []),
   'assets/app.js',
   'assets/style.css',
