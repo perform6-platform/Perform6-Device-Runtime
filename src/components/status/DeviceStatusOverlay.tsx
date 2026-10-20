@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useDeviceContext } from '../../contexts/DeviceContext';
 import { usePairing, useRuntime, useSync } from '../../hooks/useRuntime';
 import { PrimaryOutputOnly } from '../../layout/PrimaryOutputOnly';
 import { runtimeConfig } from '../../config/runtime';
 import { useDeviceStore } from '../../stores/deviceStore';
+import { useRuntimeStore } from '../../stores/runtimeStore';
 import {
   probeApiReachability,
   type NetworkHealth,
@@ -18,13 +19,17 @@ type OverlayKind = 'none' | 'checking' | 'offline' | 'error';
 export function DeviceStatusOverlay() {
   const { deviceInfo } = useDeviceContext();
   const { connectionStatus } = useRuntime();
-  const { registrationStatus, retryPairing } = usePairing();
-  const { syncState } = useSync();
+  const { isReady, registrationStatus, retryPairing } = usePairing();
+  const { syncState, runSyncNow } = useSync();
   const pairingCode = useDeviceStore((s) => s.pairingCode);
+  const hasPlaybackManifest = useRuntimeStore(
+    (s) => Boolean(s.playbackState.manifest?.screens?.length),
+  );
 
   const [health, setHealth] = useState<NetworkHealth>('checking');
   const [detail, setDetail] = useState('Checking network…');
   const [busy, setBusy] = useState(false);
+  const previousHealth = useRef<NetworkHealth>('checking');
 
   const runProbe = useCallback(async () => {
     const result = await probeApiReachability();
@@ -57,9 +62,16 @@ export function DeviceStatusOverlay() {
     };
   }, [runProbe]);
 
+  useEffect(() => {
+    const prior = previousHealth.current;
+    previousHealth.current = health;
+    if (prior === 'offline' && health === 'online' && isReady) {
+      void runSyncNow();
+    }
+  }, [health, isReady, runSyncNow]);
+
   const syncError = syncState.error || syncState.credentialsError;
   const phaseError = syncState.runtimePhase === 'error' || registrationStatus === 'error';
-  const storeOffline = connectionStatus === 'offline';
 
   // Pairing LCD owns the screen while a code is shown or claim is pending.
   const pairingLcdActive =
@@ -71,7 +83,11 @@ export function DeviceStatusOverlay() {
   let kind: OverlayKind = 'none';
   if (phaseError || syncError) {
     kind = 'error';
-  } else if (!pairingLcdActive && (health === 'offline' || (storeOffline && phaseError))) {
+  } else if (
+    !pairingLcdActive &&
+    !hasPlaybackManifest &&
+    (health === 'offline' || connectionStatus === 'offline')
+  ) {
     kind = 'offline';
   }
 
@@ -96,8 +112,9 @@ export function DeviceStatusOverlay() {
     setBusy(true);
     try {
       const next = await runProbe();
-      if (next === 'online' && (registrationStatus === 'error' || phaseError)) {
-        retryPairing();
+      if (next !== 'online') return;
+      if (isReady) {
+        await runSyncNow();
       } else if (registrationStatus === 'error' || phaseError) {
         retryPairing();
       }

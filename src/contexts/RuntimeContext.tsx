@@ -342,7 +342,6 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           onManifest: (earlyManifest) => {
             if (earlyManifest) {
               setPlaybackManifest(earlyManifest);
-              savePlaybackManifestCache(earlyManifest);
             }
           },
         },
@@ -358,7 +357,11 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         // Media landed in perform6-media (pool realize or autorun) inside runSyncEngine.
         if (result.manifest) {
           setPlaybackManifest(result.manifest);
-          savePlaybackManifestCache(result.manifest);
+          savePlaybackManifestCache(
+            result.manifest,
+            result.syncData,
+            info.hardwareProfile,
+          );
           setSyncState({
             lastCheckAt: new Date().toISOString(),
             lastSyncAt: new Date().toISOString(),
@@ -420,6 +423,29 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         pushDebugLog({
           category: 'sync',
           message: `Sync failed — using mock manifest: ${result.error}`,
+        });
+        return;
+      }
+
+      const offlineManifest = result.offlineUnavailable
+        ? loadPlaybackManifestCache(info.hardwareProfile)
+        : null;
+      if (offlineManifest) {
+        // Expected cold-boot path when the venue has no internet: keep the last
+        // completed schedule active and retry normal sync in the background.
+        // Server/auth/content errors remain fatal and never use this fallback.
+        setPlaybackManifest(offlineManifest);
+        setSyncState({
+          lastCheckAt: new Date().toISOString(),
+          inProgress: false,
+          error: null,
+          runtimePhase: 'ready',
+        });
+        setConnectionStatus('offline');
+        pushDebugLog({
+          category: 'sync',
+          message: 'Sync unavailable — continuing with cached offline schedule',
+          data: { screens: offlineManifest.screens.length },
         });
         return;
       }
@@ -1054,7 +1080,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isDeviceReady() || !deviceInfo) return;
-    const cached = loadPlaybackManifestCache();
+    const cached = loadPlaybackManifestCache(deviceInfo.hardwareProfile);
     if (cached) {
       setPlaybackManifest(cached);
       pushDebugLog({

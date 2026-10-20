@@ -295,6 +295,10 @@ function main() {
   assertLedPlaybackBus(autorun);
   run(process.execPath, [path.join(root, 'scripts', 'assert-led-playback.mjs')]);
   run(process.execPath, [path.join(root, 'scripts', 'assert-program-led-command.mjs')]);
+  run(process.execPath, [
+    '--test',
+    path.join(root, 'scripts', 'encryption-lab', 'offline-persistence.test.mjs'),
+  ]);
 
   const buildEnv = {};
   if (member) {

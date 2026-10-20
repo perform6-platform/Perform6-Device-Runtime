@@ -1,0 +1,40 @@
+Perform6 XT2145 Golf — 2.1.4 offline cold-boot candidate
+
+Baseline
+- Derived from the approved Golf 2.1.3 runtime and UI.
+- All approved Golf layout, wording, logos, Pre-Golf artwork, typography and
+  interactions are unchanged.
+
+Offline startup persistence
+- Gives every BrightSign HTML-widget constructor a stable persistent browser
+  storage directory on the presentation storage volume.
+- Preserves paired-device credentials, the cached playback manifest and cache
+  readiness metadata across a complete loss of power.
+- Retains the existing classic-widget fallback and configures its local
+  storage before the application URL is loaded.
+
+Offline schedule restoration
+- Stores a sanitized schedule source after a completed successful sync.
+- Rebuilds the playback manifest at offline boot so the rotation day is
+  derived from the cached rotation start date instead of freezing the last
+  server-reported day.
+- Does not persist media encryption keys, OTA metadata, remote commands or
+  download authorization data in the offline schedule cache.
+- Remains backward compatible with the manifest-only cache written by 2.1.3.
+
+Preserved behavior
+- No change to CMS endpoints, heartbeat cadence, remote commands, HDMI modes,
+  decoder allocation, playback commands, media pools, cache filenames,
+  download/transcode behavior, encryption or OTA installation logic.
+- Native HDMI-2 resume-from-SD behavior remains unchanged.
+
+Required field test
+- Install while Ethernet is connected and wait for a successful sync.
+- Confirm online runtime, heartbeat and cached content.
+- Disconnect Ethernet and perform a complete power cycle.
+- Confirm the Bluefin opens the runtime without requesting a pairing code and
+  cached content follows the locally calculated rotation.
+- Reconnect Ethernet and confirm heartbeat and synchronization resume.
+
+Status
+- Local OTA test candidate only; not yet approved for production.

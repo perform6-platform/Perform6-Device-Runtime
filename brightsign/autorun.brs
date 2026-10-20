@@ -203,6 +203,13 @@ Sub AttachHtmlWidgetPort(html as Object, msgPort as Object)
   html.SetPort(msgPort)
 End Sub
 
+Function HtmlPersistentStoragePath() as String
+  ' BrightSign's /./ form resolves on the presentation storage volume. Keep
+  ' this outside the OTA package file set so credentials and offline manifests
+  ' survive package replacement and a complete loss of power.
+  return "/./perform6-browser-storage"
+End Function
+
 Function TryCreateHtmlWidget(rect as Object, msgPort as Object, url as String) as Object
   html = invalid
 
@@ -215,6 +222,7 @@ Function TryCreateHtmlWidget(rect as Object, msgPort as Object, url as String) a
   cfg.brightsign_js_objects_enabled = true
   cfg.javascript_enabled = true
   cfg.nodejs_enabled = true
+  cfg.storage_path = HtmlPersistentStoragePath()
   html = CreateObject("roHtmlWidget", rect, cfg)
   if type(html) = "roHtmlWidget" then
     LedLog("BRIDGE|WIDGET_PORT|attach=constructor-only|nodejs=1")
@@ -227,6 +235,7 @@ Function TryCreateHtmlWidget(rect as Object, msgPort as Object, url as String) a
   cfg2.port = msgPort
   cfg2.brightsign_js_objects_enabled = true
   cfg2.javascript_enabled = true
+  cfg2.storage_path = HtmlPersistentStoragePath()
   html = CreateObject("roHtmlWidget", rect, cfg2)
   if type(html) = "roHtmlWidget" then
     SafePrint("=== Perform6: HtmlWidget minimal config OK (constructor port only) ===")
@@ -239,6 +248,7 @@ Function TryCreateHtmlWidget(rect as Object, msgPort as Object, url as String) a
   cfg3.port = msgPort
   cfg3.brightsign_js_objects_enabled = true
   cfg3.javascript_enabled = true
+  cfg3.storage_path = HtmlPersistentStoragePath()
   html = CreateObject("roHtmlWidget", rect, cfg3)
   if type(html) = "roHtmlWidget" then
     SafePrint("=== Perform6: HtmlWidget url+port config OK (constructor port only) ===")
@@ -250,6 +260,7 @@ Function TryCreateHtmlWidget(rect as Object, msgPort as Object, url as String) a
     SafePrint("=== Perform6: HtmlWidget classic constructor OK ===")
     AttachHtmlWidgetPort(html, msgPort)
     html.EnableJavascript(true)
+    html.SetLocalStorageDir(HtmlPersistentStoragePath())
     html.SetUrl(url)
     return html
   end if
