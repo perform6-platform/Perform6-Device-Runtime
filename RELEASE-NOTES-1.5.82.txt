@@ -1,0 +1,51 @@
+Perform6 XT2145 Fitness — 1.5.82 offline cold-boot candidate
+
+Baseline
+- Derived from the approved Fitness 1.5.81 runtime and UI.
+- All approved Fitness layout, wording, logo, typography and interactions are
+  unchanged.
+
+Offline startup persistence
+- Gives every BrightSign HTML-widget constructor a stable persistent browser
+  storage directory on the presentation storage volume.
+- Preserves paired-device credentials, the cached playback manifest and cache
+  readiness metadata across a complete loss of power.
+- Retains the existing classic-widget fallback and configures its local
+  storage before the application URL is loaded.
+
+Offline schedule restoration
+- Stores a sanitized schedule source after a completed successful sync.
+- Rebuilds the playback manifest at offline boot so the rotation day is
+  derived from the cached rotation start date instead of freezing the last
+  server-reported day.
+- Treats a transport-level /sync/check failure as an expected offline
+  condition only when a valid cached manifest is available.
+- Launches and keeps the cached Fitness touchscreen runtime usable without
+  Ethernet instead of displaying a fatal network-error overlay.
+- Keeps server, authentication, content and missing-cache failures visible;
+  those failures are not hidden by the offline fallback.
+- Prevents the network-health overlay from covering a usable cached runtime.
+- Automatically performs a normal synchronization when connectivity returns.
+- Makes Retry Connection synchronize an already-paired device instead of
+  incorrectly starting the pairing workflow again.
+- Does not persist media encryption keys, OTA metadata, remote commands or
+  download authorization data in the offline schedule cache.
+- Remains backward compatible with the manifest-only cache written by 1.5.81.
+
+Preserved behavior
+- No change to CMS endpoints, heartbeat cadence, remote commands, HDMI modes,
+  decoder allocation, playback commands, media pools, cache filenames,
+  download/transcode behavior, encryption or OTA installation logic.
+- Native HDMI-2 resume-from-SD behavior remains unchanged.
+
+Required field test
+- Install while Ethernet is connected and wait for a successful sync.
+- Confirm online runtime, heartbeat and cached content.
+- Disconnect Ethernet and perform a complete power cycle.
+- Confirm the Bluefin opens the runtime without requesting a pairing code and
+  cached content follows the locally calculated rotation.
+- Reconnect Ethernet and confirm heartbeat and synchronization resume.
+
+Status
+- Uses the same offline recovery path field-validated on Golf 2.1.5.
+- Fitness 1.5.82 requires its own final device acceptance test before release.

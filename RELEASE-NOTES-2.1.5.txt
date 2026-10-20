@@ -1,0 +1,12 @@
+Perform6 XT2145 Golf — 2.1.5 offline runtime recovery candidate
+
+- Derived directly from the installed Golf 2.1.4 candidate.
+- Preserves paired-device credentials and the last completed playback schedule across a full loss of power.
+- Treats a transport-level /sync/check failure as an expected offline condition only when a valid cached manifest is available.
+- Launches and keeps the cached Golf touchscreen runtime usable without Ethernet instead of displaying a fatal network-error overlay.
+- Keeps server, authentication, content, and missing-cache failures visible; they are not hidden by the offline fallback.
+- Prevents the network-health overlay from covering an otherwise usable cached runtime.
+- Automatically performs a normal synchronization when connectivity returns.
+- Makes Retry Connection run synchronization for an already-paired device rather than incorrectly attempting to pair it again.
+- Preserves the approved Golf 2.1.3/2.1.4 UI, wording, logos, Pre-Golf artwork, typography, layout, controls, and interactions.
+- Does not change OTA downloading, asset-pool realization, OTA commit/reboot, heartbeat cadence, CMS endpoints, HDMI routing, playback commands, media pools, encryption, or remote-command behavior.

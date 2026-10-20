@@ -38,6 +38,7 @@ import {
   markEncryptedMediaCached,
   stageEncryptedMediaKeys,
 } from './mediaEncryption';
+import { ApiError } from './api';
 
 export interface SyncEngineResult {
   success: boolean;
@@ -47,6 +48,8 @@ export interface SyncEngineResult {
   otaApplied?: boolean;
   otaError?: string;
   error?: string;
+  /** Transport-level API failure (status 0), safe for cached offline fallback. */
+  offlineUnavailable?: boolean;
   completeReportFailures?: number;
 }
 
@@ -477,6 +480,7 @@ export async function runSyncEngine(
       manifest: null,
       syncData: null,
       error: e instanceof Error ? e.message : 'Sync failed',
+      offlineUnavailable: e instanceof ApiError && e.status === 0,
       completeReportFailures,
     };
   } finally {
