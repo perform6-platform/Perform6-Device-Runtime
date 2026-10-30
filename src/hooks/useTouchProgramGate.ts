@@ -17,10 +17,25 @@ import { hasSdCachedMedia, isSdBulkDownloadInProgress, subscribeSdCacheProgress 
 
 const PROGRAM_RETRY_SYNC_MS = 60_000;
 
+function simulatorPendingSlot(): TouchPlaybackSlot | null {
+  if (!runtimeConfig.isSimulator || typeof window === 'undefined') return null;
+  const requested = new URLSearchParams(window.location.search).get('p6PendingSlot');
+  if (
+    requested === 'start-here' ||
+    requested === 'phase1' ||
+    requested === 'phase2' ||
+    requested === 'full-program'
+  ) {
+    return requested;
+  }
+  return null;
+}
+
 export function useTouchProgramGate(
   manifest: PlaybackManifest | null | undefined,
   runSyncNow?: () => Promise<void>,
 ) {
+  const pendingSlot = simulatorPendingSlot();
   const [tick, setTick] = useState(0);
   const [downloadUi, setDownloadUi] = useState<DownloadUiState>(() => getDownloadUiState());
 
@@ -42,8 +57,12 @@ export function useTouchProgramGate(
     });
   }, []);
 
-  const programsReady = runtimeConfig.isSimulator || areTouchProgramsReady(manifest);
-  const criticalReady = runtimeConfig.isSimulator || areCriticalTouchContentReady(manifest);
+  const programsReady = runtimeConfig.isSimulator
+    ? pendingSlot == null
+    : areTouchProgramsReady(manifest);
+  const criticalReady = runtimeConfig.isSimulator
+    ? pendingSlot == null
+    : areCriticalTouchContentReady(manifest);
   const showDownloadOverlay = !criticalReady;
 
   useEffect(() => {
@@ -61,15 +80,35 @@ export function useTouchProgramGate(
 
   void tick;
 
-  const { ready, total } = countTouchProgramsReady(manifest);
+  const counts = countTouchProgramsReady(manifest);
+  const { ready, total } = pendingSlot ? { ready: 3, total: 4 } : counts;
 
   const isSlotReady = (slot: TouchPlaybackSlot) =>
-    runtimeConfig.isSimulator || isTouchProgramSlotReady(manifest, slot);
+    runtimeConfig.isSimulator
+      ? slot !== pendingSlot
+      : isTouchProgramSlotReady(manifest, slot);
+
+  const effectiveDownloadUi: DownloadUiState = pendingSlot
+    ? {
+        phase: 'downloading',
+        currentLabel: 'Preparing program media',
+        completedFiles: 2,
+        totalFiles: 4,
+        cachePath: null,
+        fileBytesDownloaded: 1_331_433_472,
+        fileBytesTotal: 2_147_483_648,
+        batchBytesDownloaded: 3_221_225_472,
+        batchBytesTotal: 5_368_709_120,
+        etaSeconds: 180,
+        retryInSeconds: null,
+        statusMessage: 'Downloading video to device',
+      }
+    : downloadUi;
 
   return {
     programsReady,
     showDownloadOverlay,
-    downloadUi,
+    downloadUi: effectiveDownloadUi,
     programsReadyCount: ready,
     programsTotalCount: total,
     isSlotReady,

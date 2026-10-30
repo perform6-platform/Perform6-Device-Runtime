@@ -73,6 +73,19 @@ export function DeviceStatusOverlay() {
   const syncError = syncState.error || syncState.credentialsError;
   const phaseError = syncState.runtimePhase === 'error' || registrationStatus === 'error';
 
+  // Visual-review route only: keep network/pairing diagnostics from covering
+  // simulator-only component previews. This query is inert in BRIGHTSIGN mode.
+  if (
+    runtimeConfig.isSimulator &&
+    typeof window !== 'undefined' &&
+    (() => {
+      const query = new URLSearchParams(window.location.search);
+      return query.has('p6DownloadPreview') || query.has('p6PendingSlot');
+    })()
+  ) {
+    return null;
+  }
+
   // Pairing LCD owns the screen while a code is shown or claim is pending.
   const pairingLcdActive =
     Boolean(pairingCode) ||

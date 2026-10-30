@@ -361,6 +361,17 @@ function main() {
   fs.writeFileSync(path.join(outFolder, 'index.html'), packagedIndex);
   fs.cpSync(distAssets, path.join(outFolder, 'assets'), { recursive: true });
 
+  // The pre-React loading shell references this stable public URL directly.
+  // Package only the approved logo it needs; the legacy public image remains
+  // outside the OTA payload and cannot reappear during cold boot.
+  const approvedBootLogo = path.join(root, 'dist', 'images', 'perform6-approved-logo.svg');
+  if (!fs.existsSync(approvedBootLogo)) {
+    fail('Build output missing approved initial-shell logo');
+  }
+  const packageImages = path.join(outFolder, 'images');
+  fs.mkdirSync(packageImages, { recursive: true });
+  fs.copyFileSync(approvedBootLogo, path.join(packageImages, 'perform6-approved-logo.svg'));
+
   // XT/XC: Perform6 logo on LED until the first deployment video arrives.
   const ledIdlePng = path.join(root, 'brightsign', 'led-idle.png');
   if (
@@ -464,6 +475,7 @@ function main() {
           'autorun.brs',
           'index.html',
           'assets/',
+          'images/perform6-approved-logo.svg',
           'perform6-profile.txt',
           'perform6-display.txt',
           'perform6-ops.json',

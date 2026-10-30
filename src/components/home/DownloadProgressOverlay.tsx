@@ -12,16 +12,22 @@ type DownloadProgressOverlayProps = {
   ui: DownloadUiState;
   programsReadyCount: number;
   programsTotalCount: number;
+  programLabel?: string;
+  onReturnToMenu?: () => void;
 };
 
 export function DownloadProgressOverlay({
   ui,
   programsReadyCount,
   programsTotalCount,
+  programLabel,
+  onReturnToMenu,
 }: DownloadProgressOverlayProps) {
   const eta = formatEta(ui.etaSeconds);
   const filePercent = formatPercent(ui.fileBytesDownloaded, ui.fileBytesTotal);
   const batchPercent = formatPercent(ui.batchBytesDownloaded, ui.batchBytesTotal);
+  const progressPercent = filePercent ?? batchPercent;
+  const focused = Boolean(programLabel);
 
   const statusLine =
     ui.phase === 'error'
@@ -50,41 +56,63 @@ export function DownloadProgressOverlay({
         ? `File ${Math.min(ui.completedFiles + (ui.cachePath ? 1 : 0), ui.totalFiles)} of ${ui.totalFiles}`
         : null;
 
-  return (
+  const content = (
     <aside
-      className="p6-download-overlay"
+      className={`p6-download-overlay${focused ? ' p6-download-overlay--focused' : ''}`}
       aria-live="polite"
       aria-label="Video download progress"
+      role={focused ? 'dialog' : 'status'}
+      aria-modal={focused ? true : undefined}
     >
-      <p className="p6-download-overlay__status">{statusLine}</p>
-      {ui.currentLabel ? (
+      <p className="p6-download-overlay__status">
+        {focused
+          ? ui.phase === 'error'
+            ? 'DOWNLOAD NEEDS ATTENTION'
+            : 'VIDEO DOWNLOADING'
+          : statusLine}
+      </p>
+      {focused ? (
+        <>
+          <h2 className="p6-download-overlay__heading">
+            {programLabel} is being downloaded to this device.
+          </h2>
+          <p className="p6-download-overlay__message">
+            {ui.phase === 'error'
+              ? statusLine
+              : 'This program will become available automatically when the download finishes.'}
+          </p>
+        </>
+      ) : ui.currentLabel ? (
         <p className="p6-download-overlay__title">{ui.currentLabel}</p>
       ) : null}
-      {ui.cachePath ? (
+      {!focused && ui.cachePath ? (
         <p className="p6-download-overlay__path" title={ui.cachePath}>
           {ui.cachePath}
         </p>
       ) : null}
-      {filePercent != null ? (
+      {progressPercent != null ? (
         <div className="p6-download-overlay__bar-wrap">
           <div
             className="p6-download-overlay__bar"
             role="progressbar"
-            aria-valuenow={filePercent}
+            aria-valuenow={progressPercent}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-label="Current file download progress"
           >
             <span
               className="p6-download-overlay__bar-fill"
-              style={{ width: `${filePercent}%` }}
+              style={{ width: `${progressPercent}%` }}
             />
           </div>
           <p className="p6-download-overlay__bytes">
-            {fileProgressLabel}
-            {filePercent != null ? ` · ${filePercent}%` : ''}
+            {focused ? 'Download progress' : fileProgressLabel}
+            {progressPercent != null ? ` · ${progressPercent}%` : ''}
           </p>
         </div>
+      ) : null}
+      {focused && progressPercent == null ? (
+        <p className="p6-download-overlay__preparing">{statusLine}</p>
       ) : null}
       {batchProgressLabel ? (
         <p className="p6-download-overlay__meta">
@@ -101,6 +129,17 @@ export function DownloadProgressOverlay({
           {eta ? ` · ${eta} left` : ''}
         </p>
       ) : null}
+      {focused && onReturnToMenu ? (
+        <button
+          type="button"
+          className="p6-download-overlay__return"
+          onClick={onReturnToMenu}
+        >
+          RETURN TO MENU
+        </button>
+      ) : null}
     </aside>
   );
+
+  return focused ? <div className="p6-download-overlay__scrim">{content}</div> : content;
 }

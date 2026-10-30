@@ -37,6 +37,7 @@ import {
 } from '../lib/touchSessionPolicy';
 import type { P6Experience } from '../components/ui';
 import { isGolfEdition } from '../config/experience';
+import type { DownloadUiState } from '../services/downloadProgress';
 
 function simOnlyFallback(url: string | null | undefined): string | null {
   if (!url) return null;
@@ -61,6 +62,28 @@ const START_HERE_ITEMS = [
 ];
 
 const OVERVIEW_IDLE_MS = 60_000;
+
+function downloadCardPreview(): ActiveSession['source'] | null {
+  if (!runtimeConfig.isSimulator || typeof window === 'undefined') return null;
+  const requested = new URLSearchParams(window.location.search).get('p6DownloadPreview');
+  if (!requested || !(requested in SESSION_EXPERIENCE)) return null;
+  return requested as ActiveSession['source'];
+}
+
+const DOWNLOAD_CARD_PREVIEW_UI: DownloadUiState = {
+  phase: 'downloading',
+  currentLabel: 'Preparing program media',
+  completedFiles: 2,
+  totalFiles: 4,
+  cachePath: null,
+  fileBytesDownloaded: 1_331_433_472,
+  fileBytesTotal: 2_147_483_648,
+  batchBytesDownloaded: 3_221_225_472,
+  batchBytesTotal: 5_368_709_120,
+  etaSeconds: 180,
+  retryInSeconds: null,
+  statusMessage: 'Downloading video to device',
+};
 
 type ActiveSession = {
   source: TouchProgramSource;
@@ -99,6 +122,7 @@ function initialVisualAuditSession(): ActiveSession | null {
 }
 
 export default function Home() {
+  const previewDownloadSource = downloadCardPreview();
   const { playbackState, setDisplayVideoSrc } = useDisplayPlayback();
   const { runSyncNow } = useSync();
   const resetDisplayControls = useRuntimeStore((s) => s.resetDisplayControls);
@@ -124,6 +148,7 @@ export default function Home() {
   const [phase1Open, setPhase1Open] = useState(false);
   const [phase2Open, setPhase2Open] = useState(false);
   const [fullProgramOpen, setFullProgramOpen] = useState(false);
+  const [pendingDownloadSource, setPendingDownloadSource] = useState<ActiveSession['source'] | null>(null);
   const [activeSession, setActiveSession] = useState<ActiveSession | null>(
     initialVisualAuditSession,
   );
@@ -138,6 +163,24 @@ export default function Home() {
     setPhase2Open(false);
     setFullProgramOpen(false);
   }, []);
+
+  const openOverview = useCallback((source: ActiveSession['source']) => {
+    setStartHereOpen(source === 'start-here');
+    setPhase1Open(source === 'phase1');
+    setPhase2Open(source === 'phase2');
+    setFullProgramOpen(source === 'full-program');
+  }, []);
+
+  const pendingDownloadReady = pendingDownloadSource
+    ? isSlotReady(pendingDownloadSource)
+    : false;
+
+  useEffect(() => {
+    if (!pendingDownloadSource || !pendingDownloadReady) return;
+    const readySource = pendingDownloadSource;
+    setPendingDownloadSource(null);
+    openOverview(readySource);
+  }, [openOverview, pendingDownloadReady, pendingDownloadSource]);
 
   useInactivityTimeout({
     enabled: overviewOpen,
@@ -370,35 +413,35 @@ export default function Home() {
   }, [closeOverview, setDisplayPaused]);
 
   const handleStartHereOpen = () => {
-    if (!isSlotReady('start-here')) return;
-    setPhase1Open(false);
-    setPhase2Open(false);
-    setFullProgramOpen(false);
-    setStartHereOpen(true);
+    if (!isSlotReady('start-here')) {
+      setPendingDownloadSource('start-here');
+      return;
+    }
+    openOverview('start-here');
   };
 
   const handlePhase1Open = () => {
-    if (!isSlotReady('phase1')) return;
-    setStartHereOpen(false);
-    setPhase2Open(false);
-    setFullProgramOpen(false);
-    setPhase1Open(true);
+    if (!isSlotReady('phase1')) {
+      setPendingDownloadSource('phase1');
+      return;
+    }
+    openOverview('phase1');
   };
 
   const handlePhase2Open = () => {
-    if (!isSlotReady('phase2')) return;
-    setStartHereOpen(false);
-    setPhase1Open(false);
-    setFullProgramOpen(false);
-    setPhase2Open(true);
+    if (!isSlotReady('phase2')) {
+      setPendingDownloadSource('phase2');
+      return;
+    }
+    openOverview('phase2');
   };
 
   const handleFullProgramOpen = () => {
-    if (!isSlotReady('full-program')) return;
-    setStartHereOpen(false);
-    setPhase1Open(false);
-    setPhase2Open(false);
-    setFullProgramOpen(true);
+    if (!isSlotReady('full-program')) {
+      setPendingDownloadSource('full-program');
+      return;
+    }
+    openOverview('full-program');
   };
 
   const home = (
@@ -420,7 +463,7 @@ export default function Home() {
           experience="start-here"
           className="p6-home__start-here"
           onClick={handleStartHereOpen}
-          disabled={!isSlotReady('start-here')}
+          data-download-pending={!isSlotReady('start-here') || undefined}
           aria-label={isSlotReady('start-here') ? 'Start Here' : 'Start Here — downloading'}
         >
           <StartHereContent
@@ -470,7 +513,7 @@ export default function Home() {
           experience="phase"
           className="p6-home__phase1"
           onClick={handlePhase1Open}
-          disabled={!isSlotReady('phase1')}
+          data-download-pending={!isSlotReady('phase1') || undefined}
           aria-label={isSlotReady('phase1') ? 'Phase 1' : 'Phase 1 — downloading'}
         >
           <PhaseCardContent
@@ -490,7 +533,7 @@ export default function Home() {
           experience="phase"
           className="p6-home__phase2"
           onClick={handlePhase2Open}
-          disabled={!isSlotReady('phase2')}
+          data-download-pending={!isSlotReady('phase2') || undefined}
           aria-label={isSlotReady('phase2') ? 'Phase 2' : 'Phase 2 — downloading'}
         >
           <PhaseCardContent
@@ -509,7 +552,7 @@ export default function Home() {
           experience="full-program"
           className="p6-home__full-program"
           onClick={handleFullProgramOpen}
-          disabled={!isSlotReady('full-program')}
+          data-download-pending={!isSlotReady('full-program') || undefined}
           aria-label={isSlotReady('full-program') ? 'Full Program' : 'Full Program — downloading'}
         >
           <FullProgramContent
@@ -645,11 +688,31 @@ export default function Home() {
         }
       />
 
-      {showDownloadOverlay ? (
+      {showDownloadOverlay && !pendingDownloadSource ? (
         <DownloadProgressOverlay
           ui={downloadUi}
           programsReadyCount={programsReadyCount}
           programsTotalCount={programsTotalCount}
+        />
+      ) : null}
+
+      {pendingDownloadSource ? (
+        <DownloadProgressOverlay
+          ui={downloadUi}
+          programsReadyCount={programsReadyCount}
+          programsTotalCount={programsTotalCount}
+          programLabel={SESSION_LABEL[pendingDownloadSource]}
+          onReturnToMenu={() => setPendingDownloadSource(null)}
+        />
+      ) : null}
+
+      {previewDownloadSource ? (
+        <DownloadProgressOverlay
+          ui={DOWNLOAD_CARD_PREVIEW_UI}
+          programsReadyCount={3}
+          programsTotalCount={4}
+          programLabel={SESSION_LABEL[previewDownloadSource]}
+          onReturnToMenu={() => undefined}
         />
       ) : null}
     </main>

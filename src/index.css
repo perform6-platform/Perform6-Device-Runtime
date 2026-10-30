@@ -1904,6 +1904,96 @@ body::-webkit-scrollbar,
   color: rgba(255, 255, 255, 0.72);
 }
 
+.p6-download-overlay__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: rgba(0, 0, 0, 0.64);
+  backdrop-filter: blur(3px);
+}
+
+.p6-download-overlay--focused {
+  position: relative;
+  right: auto;
+  bottom: auto;
+  width: 760px;
+  max-width: calc(100% - 4rem);
+  padding: 42px 48px 38px;
+  border-radius: 18px;
+  border: 2px solid #1155CC;
+  background: #0B182C;
+  box-shadow: none;
+  text-align: center;
+  pointer-events: auto;
+}
+
+.p6-download-overlay--focused .p6-download-overlay__status {
+  font-size: 18px;
+  letter-spacing: 0.16em;
+  color: #1155CC;
+}
+
+.p6-download-overlay__heading {
+  margin: 18px 0 0;
+  color: #fff;
+  font-size: 34px;
+  font-weight: 650;
+  line-height: 1.22;
+}
+
+.p6-download-overlay__message {
+  max-width: 620px;
+  margin: 16px auto 0;
+  color: rgba(208, 210, 213, 0.82);
+  font-size: 21px;
+  line-height: 1.45;
+}
+
+.p6-download-overlay--focused .p6-download-overlay__bar-wrap {
+  margin-top: 30px;
+}
+
+.p6-download-overlay--focused .p6-download-overlay__bar {
+  height: 12px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.p6-download-overlay--focused .p6-download-overlay__bar-fill {
+  background: #1155CC;
+}
+
+.p6-download-overlay--focused .p6-download-overlay__bytes,
+.p6-download-overlay--focused .p6-download-overlay__meta,
+.p6-download-overlay__preparing {
+  margin-top: 13px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 18px;
+}
+
+.p6-download-overlay__return {
+  width: 100%;
+  margin-top: 30px;
+  padding: 18px 24px;
+  border: none;
+  border-radius: 10px;
+  background: #1155CC;
+  box-shadow:
+    0 0 12px rgba(17, 85, 204, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+}
+
+.p6-download-overlay__return:active {
+  background: #0D47B0;
+}
+
 /* ─── Session modal ─── */
 
 .p6-modal-overlay {
