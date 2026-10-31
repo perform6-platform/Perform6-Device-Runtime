@@ -4,7 +4,7 @@ import { PrimaryOutputOnly } from '../../layout/PrimaryOutputOnly';
 import { useDeviceStore } from '../../stores/deviceStore';
 import { useRuntimeStore } from '../../stores/runtimeStore';
 import { isDeviceReady } from '../../stores/deviceStore';
-import perform6Logo from '../../assets/Perform_6_trademark.png';
+import perform6Logo from '../../assets/Perform6-approved-logo.svg';
 
 /**
  * Full-screen BrightSign boot panel with live status lines.

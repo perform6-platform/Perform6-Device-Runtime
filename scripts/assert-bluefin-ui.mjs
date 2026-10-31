@@ -10,6 +10,12 @@ const css = read('src/bluefinClientReview.css');
 const sessionModal = read('src/components/ui/SessionModal.tsx');
 const playingModal = read('src/components/ui/VideoPlayingModal.tsx');
 const home = read('src/pages/Home.tsx');
+const bootSplash = read('src/components/status/BootSplash.tsx');
+const bootShell = read('index.html');
+const downloadOverlay = read('src/components/home/DownloadProgressOverlay.tsx');
+const approvedLogo = read('src/assets/Perform6-approved-logo.svg');
+const packagedBootLogo = read('public/images/perform6-approved-logo.svg');
+const ledIdle = fs.readFileSync(path.join(root, 'brightsign/led-idle.png'));
 
 function requireText(source, value, label) {
   if (!source.includes(value)) throw new Error(`Bluefin UI gate failed: ${label}`);
@@ -24,6 +30,25 @@ requireText(sessionModal, "'p6-session-modal--overview'", 'Begin Session is outs
 requireText(playingModal, "'p6-session-modal--overview'", 'Return/playing states are outside the shared shell');
 requireText(home, 'runtimeConfig.isSimulator', 'visual audit path is not simulator-only');
 requireText(home, "get('p6VisualSession')", 'post-start visual audit path is missing');
+requireText(bootSplash, "Perform6-approved-logo.svg", 'runtime startup still uses the legacy logo');
+requireText(bootShell, './images/perform6-approved-logo.svg', 'initial loading shell still uses the legacy logo');
+requireText(home, "setPendingDownloadSource('start-here')", 'Start Here unavailable-media card is missing');
+requireText(home, "setPendingDownloadSource('phase1')", 'Phase 1 unavailable-media card is missing');
+requireText(home, "setPendingDownloadSource('phase2')", 'Phase 2 unavailable-media card is missing');
+requireText(home, "setPendingDownloadSource('full-program')", 'Full Program unavailable-media card is missing');
+requireText(downloadOverlay, 'VIDEO DOWNLOADING', 'focused download-card heading is missing');
+requireText(downloadOverlay, 'RETURN TO MENU', 'focused download-card return action is missing');
+if (approvedLogo !== packagedBootLogo) {
+  throw new Error('Bluefin UI gate failed: initial-shell logo differs from the approved runtime vector');
+}
+if (
+  ledIdle.length < 24 ||
+  ledIdle.toString('hex', 0, 8) !== '89504e470d0a1a0a' ||
+  ledIdle.readUInt32BE(16) !== 3840 ||
+  ledIdle.readUInt32BE(20) !== 2160
+) {
+  throw new Error('Bluefin UI gate failed: LED idle logo is not a 3840x2160 PNG');
+}
 requireText(css, 'width: 808px;', 'secondary shell width changed');
 requireText(css, 'width: 760px;', 'secondary content rail changed');
 requireText(css, 'white-space: nowrap !important;', 'supporting copy can wrap');
