@@ -51,7 +51,11 @@ test('offline cache stores only schedule inputs and recalculates rotation', () =
   assert.match(cache, /source:\s*syncData \? offlineSource\(syncData\) : undefined/);
   assert.doesNotMatch(cache, /JSON\.stringify\(syncData\)/);
   assert.doesNotMatch(cache, /keyHex|ivHex|requiredMedia|retainMediaVersionIds/);
-  assert.match(cache, /rotationStartDate: syncData\.device\.rotationStartDate/);
+  assert.match(
+    cache,
+    /rotationStartDate:\s*syncData\.device\.effectiveRotationStartDate \?\?\s*syncData\.device\.rotationStartDate/,
+  );
+  assert.match(cache, /scheduleTimeZone: syncData\.device\.scheduleTimeZone/);
   assert.doesNotMatch(cache, /currentRotationDay: syncData\.device\.currentRotationDay/);
   assert.match(cache, /buildRuntimeManifest\(/);
 });

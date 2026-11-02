@@ -21,10 +21,10 @@
     "assert:playback": "node scripts/assert-led-playback.mjs && node scripts/assert-program-led-command.mjs",
     "release:zip": "node scripts/build-profile-zip.mjs XT2145",
     "release:zip:xt2145": "node scripts/build-profile-zip.mjs XT2145",
-    "release:zip:xt2145:fitness": "node scripts/build-profile-zip.mjs XT2145 1.5.83 FITNESS",
-    "release:zip:xt2145:golf": "node scripts/build-profile-zip.mjs XT2145 2.1.7 GOLF",
+    "release:zip:xt2145:fitness": "node scripts/build-profile-zip.mjs XT2145 1.5.82 FITNESS",
+    "release:zip:xt2145:golf": "node scripts/build-profile-zip.mjs XT2145 2.1.8 GOLF",
     "release:zip:xc4055": "node scripts/build-profile-zip.mjs XC4055",
-    "release:zip:hd226": "node scripts/build-profile-zip.mjs HD226",
+    "release:zip:hd226": "node scripts/build-profile-zip.mjs HD226 1.2.1",
     "release:zip:all": "node scripts/build-all-profile-zips.mjs"
   },
   "dependencies": {
