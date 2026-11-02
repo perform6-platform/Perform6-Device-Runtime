@@ -15,6 +15,11 @@ export interface SyncCheckResponseData {
   device?: {
     id: string;
     rotationStartDate?: string;
+    effectiveRotationStartDate?: string | null;
+    /** IANA zone for the gym calendar. Offline day changes use this, not the player OS zone. */
+    scheduleTimeZone?: string | null;
+    rotationCycleDays?: number;
+    nextRotationAt?: string | null;
     currentRotationDay?: number;
   };
   runtime?: {
@@ -206,6 +211,8 @@ export interface DeviceHeartbeatRequest {
     mediaVersionId?: string;
     screenKey?: string;
     sessionStartedAt?: number;
+    /** Played milliseconds, excluding time spent paused. */
+    sessionElapsedMs?: number;
   };
   metadata?: Record<string, unknown>;
 }

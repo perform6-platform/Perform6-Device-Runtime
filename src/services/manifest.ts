@@ -22,6 +22,7 @@ import type {
   PlaybackManifest,
   PlaybackScreen,
 } from '../shared/types';
+import { rotationDayForInstant } from './scheduleClock';
 
 function isClusterMemberKey(value: string): value is ClusterMember {
   return (CLUSTER_MEMBERS as readonly string[]).includes(value);
@@ -48,15 +49,17 @@ export function resolveMediaFileUrl(fileUrl: string): string {
   return `${apiOrigin}${fileUrl.startsWith('/') ? fileUrl : `/${fileUrl}`}`;
 }
 
-export function computeRotationDay(rotationStartDate?: string, fallbackDay = 1): number {
+export function computeRotationDay(
+  rotationStartDate?: string,
+  timeZone?: string | null,
+  fallbackDay = 1,
+  cycleDays = 36,
+): number {
   if (!rotationStartDate) return fallbackDay;
-  const start = new Date(rotationStartDate);
-  const today = new Date();
-  if (Number.isNaN(start.getTime())) return fallbackDay;
-  start.setHours(0, 0, 0, 0);
-  today.setHours(0, 0, 0, 0);
-  const diffDays = Math.floor((today.getTime() - start.getTime()) / 86_400_000);
-  return (Math.max(diffDays, 0) % 36) + 1;
+  return (
+    rotationDayForInstant(rotationStartDate, new Date(), timeZone, cycleDays) ??
+    fallbackDay
+  );
 }
 
 export function pickVideoForSlot(
@@ -104,7 +107,11 @@ function slotToScreen(
     video && (video.mediaVersionId || video.fileUrl)
       ? videoItemToMediaAsset(video)
       : null;
-  const playlist = (slot?.items ?? [])
+  // Rotating slots may carry the cached window (one item per day). Play only
+  // the selected day so the player does not cycle the whole week.
+  const playlistSource =
+    slot?.isRotating && video ? [video] : (slot?.items ?? []);
+  const playlist = playlistSource
     .filter((item) => item.mediaVersionId || item.fileUrl)
     .map(videoItemToMediaAsset);
 
@@ -454,9 +461,12 @@ function mergeXtTouchScreens(
 function manifestToScreens(
   manifest: BackendPlaybackManifest,
   profile: HardwareProfile,
+  rotationDayOverride?: number,
 ): PlaybackScreen[] {
   const rotationDay =
-    manifest.rotationDay ?? computeRotationDay(manifest.rotationStartDate);
+    rotationDayOverride ??
+    manifest.rotationDay ??
+    computeRotationDay(manifest.rotationStartDate);
   const content = manifest.content ?? {};
   const screens: PlaybackScreen[] = [];
 
@@ -508,9 +518,22 @@ export function buildRuntimeManifest(
   syncData: SyncCheckResponseData,
   profile: HardwareProfile,
 ): PlaybackManifest | null {
+  const rotationStart =
+    syncData.device?.effectiveRotationStartDate ??
+    syncData.device?.rotationStartDate;
+  const scheduleTimeZone = syncData.device?.scheduleTimeZone;
+  // Same civil-date rule as the API. Do not keep the server's snapshot once
+  // the gym timezone is known — midnight must advance without another sync.
   const rotationDay =
-    syncData.device?.currentRotationDay ??
-    computeRotationDay(syncData.device?.rotationStartDate);
+    rotationStart && scheduleTimeZone
+      ? computeRotationDay(
+          rotationStart,
+          scheduleTimeZone,
+          syncData.device?.currentRotationDay ?? 1,
+          syncData.device?.rotationCycleDays ?? 36,
+        )
+      : (syncData.device?.currentRotationDay ??
+        computeRotationDay(rotationStart, scheduleTimeZone));
 
   let screens: PlaybackScreen[] = [];
 
@@ -539,7 +562,7 @@ export function buildRuntimeManifest(
         ? parseXtTouchScreens(logicalScreens, rotationDay)
         : [];
     const fromContent = syncData.playbackManifest
-      ? manifestToScreens(syncData.playbackManifest, profile)
+      ? manifestToScreens(syncData.playbackManifest, profile, rotationDay)
       : [];
     screens = mergeXtTouchScreens(fromLogical, fromContent);
   }
@@ -567,7 +590,7 @@ export function buildRuntimeManifest(
         rotationDay,
       );
     } else {
-      screens = manifestToScreens(pm, profile);
+      screens = manifestToScreens(pm, profile, rotationDay);
     }
   }
 

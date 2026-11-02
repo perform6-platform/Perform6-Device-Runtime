@@ -17,6 +17,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { writePosixZip } from './posix-zip.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
@@ -161,7 +162,7 @@ function assertLedPlaybackBus(autorunPath) {
   console.log('[release:zip] LED SD bus assert OK (realized .mp4, BA bridge, JS write)');
 }
 
-function run(command, args, env = {}) {
+function runOrThrow(command, args, env = {}) {
   const result = spawnSync(command, args, {
     cwd: root,
     env: { ...process.env, ...env },
@@ -169,40 +170,29 @@ function run(command, args, env = {}) {
     shell: false,
   });
   if (result.status !== 0) {
-    fail(`Command failed: ${command} ${args.join(' ')}`);
+    throw new Error(`Command failed: ${command} ${args.join(' ')}`);
+  }
+}
+
+function run(command, args, env = {}) {
+  try {
+    runOrThrow(command, args, env);
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
   }
 }
 
 function zipDirectory(packageFolder, zipPath) {
   // Zip the folder itself so Extract All creates perform6-…/ in Downloads.
+  // Entry names are always POSIX paths. Compress-Archive writes `\`, which
+  // macOS extracts as literal filenames instead of folders.
   fs.mkdirSync(path.dirname(zipPath), { recursive: true });
   if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
-
-  const parent = path.dirname(packageFolder);
-  const base = path.basename(packageFolder);
-
-  if (process.platform === 'win32') {
-    const ps = [
-      'Compress-Archive',
-      '-Path',
-      `"${packageFolder}"`,
-      '-DestinationPath',
-      `"${zipPath}"`,
-      '-Force',
-    ].join(' ');
-    const result = spawnSync('powershell.exe', ['-NoProfile', '-Command', ps], {
-      cwd: root,
-      stdio: 'inherit',
-    });
-    if (result.status !== 0) fail(`PowerShell Compress-Archive failed for ${zipPath}`);
-    return;
+  try {
+    writePosixZip(packageFolder, zipPath);
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
   }
-
-  const result = spawnSync('zip', ['-r', zipPath, base], {
-    cwd: parent,
-    stdio: 'inherit',
-  });
-  if (result.status !== 0) fail(`zip failed for ${zipPath} (is "zip" installed?)`);
 }
 
 /** Upload this profile's releases/* to R2 (uses backend .env credentials). */
@@ -298,6 +288,12 @@ function main() {
   run(process.execPath, [
     '--test',
     path.join(root, 'scripts', 'encryption-lab', 'offline-persistence.test.mjs'),
+    path.join(root, 'scripts', 'posix-zip.test.mjs'),
+  ]);
+  run(process.execPath, [
+    '--experimental-strip-types',
+    '--test',
+    path.join(root, 'scripts', 'encryption-lab', 'offline-rollover.test.mjs'),
   ]);
 
   const buildEnv = {};
@@ -598,26 +594,51 @@ function main() {
     ].join('\n'),
   );
 
-  // Optional single-file package for cloud / R2 / email
-  zipDirectory(outFolder, outZip);
-
-  // A field XT release is not uploadable until the final folder and ZIP pass
-  // the fail-closed safety inspection. This runs after packaging and before
-  // any R2 upload, so the exact bytes destined for production are checked.
-  if (profileKey === 'XT2145') {
-    if (process.env.SKIP_XT_OTA_ASSERT === '1') {
-      console.log(
-        '[release:zip] SKIP_XT_OTA_ASSERT=1 — skipping assert-xt-ota-candidate (packaging only)',
-      );
-    } else {
-      run(process.execPath, [
-        path.join(root, 'scripts', 'assert-xt-ota-candidate.mjs'),
+  // Write a temporary ZIP, run every gate, and publish the final name only
+  // after they pass. A failed gate deletes the temporary ZIP and any previous
+  // file at the final name so a bad package cannot be sent.
+  const stagingZip = `${outZip}.partial`;
+  if (fs.existsSync(stagingZip)) fs.rmSync(stagingZip, { force: true });
+  zipDirectory(outFolder, stagingZip);
+  try {
+    runOrThrow(process.execPath, [
+      path.join(root, 'scripts', 'assert-zip-posix-paths.mjs'),
+      stagingZip,
+    ]);
+    if (profileKey === 'HD226') {
+      runOrThrow(process.execPath, [
+        path.join(root, 'scripts', 'assert-hd226-package.mjs'),
         version,
+        member,
         outFolder,
-        outZip,
+        stagingZip,
       ]);
     }
+
+    // A field XT release is not uploadable until the final folder and ZIP pass
+    // the fail-closed safety inspection. This runs before the ZIP is published
+    // and before any R2 upload.
+    if (profileKey === 'XT2145') {
+      if (process.env.SKIP_XT_OTA_ASSERT === '1') {
+        console.log(
+          '[release:zip] SKIP_XT_OTA_ASSERT=1 — skipping assert-xt-ota-candidate (packaging only)',
+        );
+      } else {
+        runOrThrow(process.execPath, [
+          path.join(root, 'scripts', 'assert-xt-ota-candidate.mjs'),
+          version,
+          outFolder,
+          stagingZip,
+        ]);
+      }
+    }
+  } catch (error) {
+    fs.rmSync(stagingZip, { force: true });
+    if (fs.existsSync(outZip)) fs.rmSync(outZip, { force: true });
+    fail(error instanceof Error ? error.message : String(error));
   }
+  if (fs.existsSync(outZip)) fs.rmSync(outZip, { force: true });
+  fs.renameSync(stagingZip, outZip);
 
   uploadProfileToR2(releaseChannel);
 

@@ -1091,6 +1091,24 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     }
   }, [deviceInfo, hasCredentials, pushDebugLog, setPlaybackManifest]);
 
+  // Re-pick the cached day's file at local midnight. Does not download or touch OTA.
+  useEffect(() => {
+    if (!isDeviceReady() || !deviceInfo || runtimeConfig.isSimulator) return;
+    const id = window.setInterval(() => {
+      const rebuilt = loadPlaybackManifestCache(deviceInfo.hardwareProfile);
+      if (!rebuilt) return;
+      const current = useRuntimeStore.getState().playbackState.manifest;
+      if (current?.deployment.currentDay === rebuilt.deployment.currentDay) return;
+      setPlaybackManifest(rebuilt);
+      pushDebugLog({
+        category: 'playback',
+        message: 'Rotation day advanced from the gym schedule timezone',
+        data: { day: rebuilt.deployment.currentDay },
+      });
+    }, 60_000);
+    return () => window.clearInterval(id);
+  }, [deviceInfo, hasCredentials, pushDebugLog, setPlaybackManifest]);
+
   useEffect(() => {
     if (!isDeviceReady() || !deviceInfo) return;
     void runSyncNow();

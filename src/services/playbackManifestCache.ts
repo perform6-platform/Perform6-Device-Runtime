@@ -21,9 +21,13 @@ function offlineSource(syncData: SyncCheckResponseData): OfflineManifestSource {
     device: syncData.device
       ? {
           id: syncData.device.id,
-          rotationStartDate: syncData.device.rotationStartDate,
+          rotationStartDate:
+            syncData.device.effectiveRotationStartDate ??
+            syncData.device.rotationStartDate,
+          scheduleTimeZone: syncData.device.scheduleTimeZone ?? 'UTC',
+          rotationCycleDays: syncData.device.rotationCycleDays ?? 36,
           // Do not persist the server's point-in-time rotation day. Offline
-          // boot must derive today's day from rotationStartDate.
+          // boot derives today's civil date in scheduleTimeZone.
         }
       : undefined,
     deployment: syncData.deployment,

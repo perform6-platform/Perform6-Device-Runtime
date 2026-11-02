@@ -6,6 +6,8 @@ export interface TouchCurrentContent {
   mediaVersionId: string | null;
   screenKey: string;
   sessionStartedAt: number | null;
+  /** Played time with pause excluded. Null when no session is open. */
+  sessionElapsedMs?: number | null;
 }
 
 export interface TouchUiState {
@@ -37,6 +39,51 @@ export function setTouchUiState(partial: Partial<TouchUiState>): void {
 
 export function resetTouchUiState(): void {
   touchUiState = { ...defaultState };
+}
+
+let sessionOriginMs: number | null = null;
+let sessionKey: string | null = null;
+let pausedTotalMs = 0;
+let pauseStartedAt: number | null = null;
+
+/** Tracks played time for monitoring. Does not affect the player or the HDMI bridge. */
+export function syncSessionClock(input: {
+  active: boolean;
+  startedAt: number | null;
+  paused: boolean;
+}): void {
+  if (!input.active || input.startedAt == null) {
+    sessionOriginMs = null;
+    sessionKey = null;
+    pausedTotalMs = 0;
+    pauseStartedAt = null;
+    return;
+  }
+
+  const key = String(input.startedAt);
+  if (key !== sessionKey) {
+    sessionKey = key;
+    sessionOriginMs = input.startedAt;
+    pausedTotalMs = 0;
+    pauseStartedAt = null;
+  }
+
+  if (input.paused) {
+    if (pauseStartedAt == null) pauseStartedAt = Date.now();
+    return;
+  }
+
+  if (pauseStartedAt != null) {
+    pausedTotalMs += Date.now() - pauseStartedAt;
+    pauseStartedAt = null;
+  }
+}
+
+/** Milliseconds the session has actually been playing. Frozen while paused. */
+export function readSessionElapsedMs(now = Date.now()): number | null {
+  if (sessionOriginMs == null) return null;
+  const activePause = pauseStartedAt != null ? now - pauseStartedAt : 0;
+  return Math.max(0, now - sessionOriginMs - pausedTotalMs - activePause);
 }
 
 export function buildTouchCurrentContent(input: {

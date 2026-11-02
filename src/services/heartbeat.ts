@@ -5,7 +5,7 @@ import { flushDeviceLogs } from './deviceLogsApi';
 import { peekDeviceLogCount } from './deviceLogCollector';
 import type { DeviceRemoteCommand } from './remoteCommandBridge';
 import { getKeepaliveBridgeSnapshot } from './bridgeKeepalive';
-import { getTouchUiState } from './touchUiTelemetry';
+import { getTouchUiState, readSessionElapsedMs } from './touchUiTelemetry';
 
 export interface DeviceHeartbeatResult {
   success: boolean;
@@ -31,6 +31,7 @@ export async function sendDeviceHeartbeat(
             mediaVersionId: touchUi.currentContent.mediaVersionId ?? undefined,
             screenKey: touchUi.currentContent.screenKey,
             sessionStartedAt: touchUi.currentContent.sessionStartedAt ?? undefined,
+            sessionElapsedMs: readSessionElapsedMs() ?? undefined,
           }
         : undefined),
     metadata: {
