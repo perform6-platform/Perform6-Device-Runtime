@@ -956,15 +956,15 @@ const expectedFiles = new Set([
   ...(version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' || version === '1.5.82' || version === '1.5.83' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '1.5.84' || version === '2.1.9' ? [
     'assets/Perform6-approved-chevron-B3fE6BGP.png',
     'assets/Perform6-approved-clock-CEGklWTx.png',
-    version === '1.5.82' || version === '1.5.84' || version === '2.1.8' || version === '2.1.9'
+    version === '1.5.82' || version === '2.1.8'
       ? 'assets/Perform6-approved-logo-CTiBQMFD.svg'
-      : version === '1.5.81' || version === '1.5.83' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7'
+      : version === '1.5.81' || version === '1.5.83' || version === '1.5.84' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.9'
       ? 'assets/Perform6-approved-logo-Cnk2bSRp.svg'
       : 'assets/Perform6-approved-logo-NZjhE405.svg',
   ] : []),
-  ...(version === '1.5.82' || version === '1.5.84' || version === '2.1.8' || version === '2.1.9'
+  ...(version === '1.5.82' || version === '2.1.8'
     ? ['assets/pre-golf-icon-BvdIvTc0.svg']
-    : version === '1.5.81' || version === '1.5.83' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7'
+    : version === '1.5.81' || version === '1.5.83' || version === '1.5.84' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.9'
       ? ['assets/pre-golf-icon-CYdrIKvT.svg']
       : []),
   'assets/app.js',
