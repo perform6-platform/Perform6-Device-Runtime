@@ -4,7 +4,7 @@ import {
   getPlaybackTelemetrySnapshot,
   type ScreenPlaybackSample,
 } from './playbackTelemetry';
-import { getTouchUiState } from './touchUiTelemetry';
+import { getTouchUiState, readSessionElapsedMs } from './touchUiTelemetry';
 
 export async function sendPlaybackTelemetry(
   auth: DeviceAuthContext,
@@ -29,6 +29,7 @@ export async function sendPlaybackTelemetry(
             mediaVersionId: touchUi.currentContent.mediaVersionId,
             screenKey: touchUi.currentContent.screenKey,
             sessionStartedAt: touchUi.currentContent.sessionStartedAt,
+            sessionElapsedMs: readSessionElapsedMs(),
           }
         : undefined,
       sampledAt: new Date().toISOString(),

@@ -14,6 +14,7 @@ import {
 import {
   buildTouchCurrentContent,
   setTouchUiState,
+  syncSessionClock,
 } from '../services/touchUiTelemetry';
 import {
   FullProgramContent,
@@ -313,6 +314,11 @@ export default function Home() {
 
   useEffect(() => {
     if (activeSession) {
+      syncSessionClock({
+        active: true,
+        startedAt: activeSession.startedAt,
+        paused: displayPaused,
+      });
       const media = getTouchSlotMedia(playbackState.manifest, activeSession.source);
       setTouchUiState({
         playbackState: displayPaused ? 'PAUSED' : 'PLAYING',
@@ -326,6 +332,8 @@ export default function Home() {
       });
       return;
     }
+
+    syncSessionClock({ active: false, startedAt: null, paused: false });
 
     if (modalOpen) {
       let slot = 'touch-default';
