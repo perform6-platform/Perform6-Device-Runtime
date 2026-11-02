@@ -162,7 +162,7 @@ function assertLedPlaybackBus(autorunPath) {
   console.log('[release:zip] LED SD bus assert OK (realized .mp4, BA bridge, JS write)');
 }
 
-function run(command, args, env = {}) {
+function runOrThrow(command, args, env = {}) {
   const result = spawnSync(command, args, {
     cwd: root,
     env: { ...process.env, ...env },
@@ -170,7 +170,15 @@ function run(command, args, env = {}) {
     shell: false,
   });
   if (result.status !== 0) {
-    fail(`Command failed: ${command} ${args.join(' ')}`);
+    throw new Error(`Command failed: ${command} ${args.join(' ')}`);
+  }
+}
+
+function run(command, args, env = {}) {
+  try {
+    runOrThrow(command, args, env);
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
   }
 }
 
@@ -586,39 +594,51 @@ function main() {
     ].join('\n'),
   );
 
-  // Optional single-file package for cloud / R2 / email
-  zipDirectory(outFolder, outZip);
-  run(process.execPath, [
-    path.join(root, 'scripts', 'assert-zip-posix-paths.mjs'),
-    outZip,
-  ]);
-  if (profileKey === 'HD226') {
-    run(process.execPath, [
-      path.join(root, 'scripts', 'assert-hd226-package.mjs'),
-      version,
-      member,
-      outFolder,
-      outZip,
+  // Write a temporary ZIP, run every gate, and publish the final name only
+  // after they pass. A failed gate deletes the temporary ZIP and any previous
+  // file at the final name so a bad package cannot be sent.
+  const stagingZip = `${outZip}.partial`;
+  if (fs.existsSync(stagingZip)) fs.rmSync(stagingZip, { force: true });
+  zipDirectory(outFolder, stagingZip);
+  try {
+    runOrThrow(process.execPath, [
+      path.join(root, 'scripts', 'assert-zip-posix-paths.mjs'),
+      stagingZip,
     ]);
-  }
-
-  // A field XT release is not uploadable until the final folder and ZIP pass
-  // the fail-closed safety inspection. This runs after packaging and before
-  // any R2 upload, so the exact bytes destined for production are checked.
-  if (profileKey === 'XT2145') {
-    if (process.env.SKIP_XT_OTA_ASSERT === '1') {
-      console.log(
-        '[release:zip] SKIP_XT_OTA_ASSERT=1 — skipping assert-xt-ota-candidate (packaging only)',
-      );
-    } else {
-      run(process.execPath, [
-        path.join(root, 'scripts', 'assert-xt-ota-candidate.mjs'),
+    if (profileKey === 'HD226') {
+      runOrThrow(process.execPath, [
+        path.join(root, 'scripts', 'assert-hd226-package.mjs'),
         version,
+        member,
         outFolder,
-        outZip,
+        stagingZip,
       ]);
     }
+
+    // A field XT release is not uploadable until the final folder and ZIP pass
+    // the fail-closed safety inspection. This runs before the ZIP is published
+    // and before any R2 upload.
+    if (profileKey === 'XT2145') {
+      if (process.env.SKIP_XT_OTA_ASSERT === '1') {
+        console.log(
+          '[release:zip] SKIP_XT_OTA_ASSERT=1 — skipping assert-xt-ota-candidate (packaging only)',
+        );
+      } else {
+        runOrThrow(process.execPath, [
+          path.join(root, 'scripts', 'assert-xt-ota-candidate.mjs'),
+          version,
+          outFolder,
+          stagingZip,
+        ]);
+      }
+    }
+  } catch (error) {
+    fs.rmSync(stagingZip, { force: true });
+    if (fs.existsSync(outZip)) fs.rmSync(outZip, { force: true });
+    fail(error instanceof Error ? error.message : String(error));
   }
+  if (fs.existsSync(outZip)) fs.rmSync(outZip, { force: true });
+  fs.renameSync(stagingZip, outZip);
 
   uploadProfileToR2(releaseChannel);
 
