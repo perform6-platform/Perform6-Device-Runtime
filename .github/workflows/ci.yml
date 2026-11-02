@@ -44,6 +44,29 @@ jobs:
           path: perform6-touchscreen-ci.zip
           retention-days: 14
 
+  release-packages:
+    name: Fitness, Golf, and HD226 packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build startup packages without uploading
+        env:
+          SKIP_R2_UPLOAD: '1'
+        run: |
+          node scripts/build-profile-zip.mjs XT2145 1.5.84 FITNESS
+          node scripts/build-profile-zip.mjs XT2145 2.1.9 GOLF
+          node scripts/build-profile-zip.mjs HD226 1.2.2
+
   docker:
     name: Docker Build
     runs-on: ubuntu-latest

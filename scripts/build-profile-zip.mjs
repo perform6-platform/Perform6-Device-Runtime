@@ -17,6 +17,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { writePosixZip } from './posix-zip.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
@@ -175,34 +176,15 @@ function run(command, args, env = {}) {
 
 function zipDirectory(packageFolder, zipPath) {
   // Zip the folder itself so Extract All creates perform6-…/ in Downloads.
+  // Entry names are always POSIX paths. Compress-Archive writes `\`, which
+  // macOS extracts as literal filenames instead of folders.
   fs.mkdirSync(path.dirname(zipPath), { recursive: true });
   if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
-
-  const parent = path.dirname(packageFolder);
-  const base = path.basename(packageFolder);
-
-  if (process.platform === 'win32') {
-    const ps = [
-      'Compress-Archive',
-      '-Path',
-      `"${packageFolder}"`,
-      '-DestinationPath',
-      `"${zipPath}"`,
-      '-Force',
-    ].join(' ');
-    const result = spawnSync('powershell.exe', ['-NoProfile', '-Command', ps], {
-      cwd: root,
-      stdio: 'inherit',
-    });
-    if (result.status !== 0) fail(`PowerShell Compress-Archive failed for ${zipPath}`);
-    return;
+  try {
+    writePosixZip(packageFolder, zipPath);
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
   }
-
-  const result = spawnSync('zip', ['-r', zipPath, base], {
-    cwd: parent,
-    stdio: 'inherit',
-  });
-  if (result.status !== 0) fail(`zip failed for ${zipPath} (is "zip" installed?)`);
 }
 
 /** Upload this profile's releases/* to R2 (uses backend .env credentials). */
@@ -298,6 +280,12 @@ function main() {
   run(process.execPath, [
     '--test',
     path.join(root, 'scripts', 'encryption-lab', 'offline-persistence.test.mjs'),
+    path.join(root, 'scripts', 'posix-zip.test.mjs'),
+  ]);
+  run(process.execPath, [
+    '--experimental-strip-types',
+    '--test',
+    path.join(root, 'scripts', 'encryption-lab', 'offline-rollover.test.mjs'),
   ]);
 
   const buildEnv = {};
@@ -600,6 +588,19 @@ function main() {
 
   // Optional single-file package for cloud / R2 / email
   zipDirectory(outFolder, outZip);
+  run(process.execPath, [
+    path.join(root, 'scripts', 'assert-zip-posix-paths.mjs'),
+    outZip,
+  ]);
+  if (profileKey === 'HD226') {
+    run(process.execPath, [
+      path.join(root, 'scripts', 'assert-hd226-package.mjs'),
+      version,
+      member,
+      outFolder,
+      outZip,
+    ]);
+  }
 
   // A field XT release is not uploadable until the final folder and ZIP pass
   // the fail-closed safety inspection. This runs after packaging and before

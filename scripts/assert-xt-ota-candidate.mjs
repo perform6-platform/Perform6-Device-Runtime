@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { listZipEntryNames } from './posix-zip.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const safeBaseline = 'c7011b5';
@@ -757,17 +758,92 @@ const currentScheduleRuntimeHashes = {
 };
 reviewedProbeHashesByVersion['1.5.82'] = currentScheduleRuntimeHashes;
 reviewedProbeHashesByVersion['2.1.8'] = currentScheduleRuntimeHashes;
+// 1.5.84 and 2.1.9 use the same runtime with LF-normalized pins, so a Windows
+// CRLF checkout and the GitHub LF checkout produce the same gate result.
+const canonicalScheduleRuntimeHashes = {
+  'brightsign/autorun.brs': '323703d4c8e89464619ad4eae6fa361ded629a2388bd7d7111cacd4c371f0d9d',
+  'brightsign/encryption-test/perform6-encrypted-probe.p6enc': '63ecf15060f348f9d6dc5ebf391b6cdcd0a672a2b4233acb2d43597e6ceba7c7',
+  'brightsign/led-idle.png': '786a2eb5dbed12d3c461b1a9331bb4757e6e920d2dd4774dbfd582d6f1aecb58',
+  'src/assets/Perform6-approved-chevron.png': '74c5a1f458ec4dcb23f360d4750f08c28706bdc02a0dbce3e81a367c0bd02d0e',
+  'src/assets/Perform6-approved-clock.png': 'd2a78f15140935e020eeb40c07054c9554d0770f5d24f7881182b6f18ee9b277',
+  'src/assets/Perform6-approved-logo.svg': '7b5fe0d1c25c96c808fe385f9192cb6b92a63404a12ad1581ed46da784a36ead',
+  'src/assets/fonts/Inter-Light.woff2': 'e111a1e2ad914ccda9179b95e83fb10234dd52a1932e0b93c480476227983fd9',
+  'src/assets/pre-golf-icon.svg': 'f5ca1c902649c23bef06b01665584c73b57fc11397fc24a130a797f25185a7c6',
+  'src/bluefinClientReview.css': '9341d7b271ae18930955f4eeff28229262e2ab615ba3cc65d457a7190cd95a30',
+  'src/components/home/DownloadProgressOverlay.tsx': 'f8dcb79c12ed3081a2605bb347939f752a9a0a04a2ee486c72be5220376b653e',
+  'src/components/home/HomeHeroVideo.tsx': 'ba8d828bd1d559ae7fadceee4fede2689aade99bb8251723b5dd7b6a02e3ce9d',
+  'src/components/status/BootSplash.tsx': '9369110d2824ceba6ff5811b9d83b17345506a61656dd91ec2b28f49202d6486',
+  'src/components/status/DeviceStatusOverlay.tsx': '7096f6239ee0b90c4c208062235fbe867a2fb2be44e74228dbf15d55a0ed4226',
+  'src/components/ui/CardContent.tsx': 'e1b3e978d5ae5174ff5978509c4a76340e18734b254de011f79ccc120ed9174d',
+  'src/components/ui/DisplayVolumeControl.tsx': '919a50f1d37eaee1f793753c35f5ea101cd6dd911f22900ea186cc7a4a69c12e',
+  'src/components/ui/Logo.tsx': '83c929ca044a44ddb79582bc4c183b9769c5e33d62655f37d8c747037bcdcb91',
+  'src/components/ui/PreGolfIcon.tsx': '53a046884bfc820fc793097b55ed53b53fbbfc2ec3e42b40c98879d012080ee1',
+  'src/components/ui/SessionModal.tsx': 'dfdfd71d010ea3a546ff2127373b93c8bf979d78076ee002947fb3b640f60949',
+  'src/components/ui/VideoPlayingModal.tsx': 'a48bfaf11ba48da54582f44281d27a8df4deb3641f33891648ff288a142a0a7e',
+  'src/components/ui/index.ts': 'c69811f3753e15620a4899b917ee5a5c5bff24b207beca426324aba0993855b0',
+  'src/config/experience.ts': '625c7cc75f3c3669f3f655c5e89f726d63a9c87a40615d79bec32335a6452b56',
+  'src/contexts/RuntimeContext.tsx': 'c47cd02ca448f9c729849e5fd46167d46fcfd9c10280105b40ef8c2ff0130920',
+  'src/hooks/useOfflineVideoSrc.ts': '2f44334501802eac11ba4d74887367cc138d2d511fcb73c01f663330a795bcc7',
+  'src/hooks/useTouchProgramGate.ts': '3d6e695979824c45e3ccfbc85615ac1f7111f70fe17d3d257b729301c9000107',
+  'src/index.css': 'f8e094c7ba02248c832b56b3d76245eb6bd4cdfccc7f680c32c2b2029f94e2d9',
+  'src/lib/fullProgram.ts': 'e692279b22e382401c5f2aae3f2440d429a5b5e5fbabe857ef994965b7c8a9f5',
+  'src/lib/phase1.ts': 'be3327859f94a8d39ea9029289c0ed7668d0f99fa65b822703334e667ec4f76d',
+  'src/lib/phase2.ts': '17f2fd56d8f13a4abc0e266f2fff1ec9dadbb4ec89e944b3dc2ce7c790970d43',
+  'src/main.tsx': '670390daf92ac7222e83dfe85adccdc69f172451f8757673787e260a86399c95',
+  'src/pages/Home.tsx': 'edf25de91300336913d9995832abfb4943d04fa13c20946829068a85bd6c0dc4',
+  'src/platform/bsMessagePort.ts': 'f89c56c0df586b86e4f13fd1f00a8d88fd5fc625fdb9ecc9985ec336e029d44b',
+  'src/platform/ledPlaybackFile.ts': '8db7b85287e3bc8503cfb64ac25c08f149863d2503d974d2320beca571f5a3e5',
+  'src/platform/xcOutputBridge.ts': 'a4f6e78294c18d32cecc51106b6e09cfc8132a46f26c399c718c3b9413747f89',
+  'src/platform/xtOutputBridge.ts': '02748028f681da70ead587f596a76398f5ec85d64b4b2abb4ab7b803d60eb809',
+  'src/services/assetPoolBootstrap.ts': 'f0506e2936cbd95297876c1730a0d39368d0d12d34f6a77c96318719144f1b63',
+  'src/services/autorunCapabilities.ts': '1b02ab696b1b49a0f94f0b6e2d4b1b465a6b5fc3d2105fbc7dd7b0905d39e998',
+  'src/services/autorunDiag.ts': '54db79cc9f8c156a9042b1c0422f4024772f4319852a6b0f7cff89891d609a27',
+  'src/services/bridgeKeepalive.ts': '75425ab1433feb1b0f3d74a2b5596ba18bf5974347c4fe33fce87f7520a6616c',
+  'src/services/deviceRemoteControl.ts': 'e94df30c1564b8261cfe888d2972ab00707f0fc1d7b30592e6ab7205747b4b64',
+  'src/services/encryptedPlaybackInteropProbe.ts': '679ef0a620995a04d8f6496ee774978a7640eb2c6b970e31b89059d2283dc655',
+  'src/services/heartbeat.ts': '1a9c30ad7cdf1bc3f55d4b22f4fa0d0f3337fb860efd744f168ba945feda0c07',
+  'src/services/index.ts': 'ad3297632172aec92d3e052528a3fa9da8ed53b79a91460be157573fc0c76bb9',
+  'src/services/manifest.ts': 'c2c6f4e8ad12ddc6fabd2df7a3a86965d98495ff649ecd109a32f16278597460',
+  'src/services/media.ts': 'defb6d918877ed30087ca67bc60381b5471d863b25903e2623bab19e15cf0bc5',
+  'src/services/mediaAssetPool.ts': 'b657ff920ce470641dcd0b64f0cfa4d7d57f891135f4e6f69b15698e0b666ab8',
+  'src/services/mediaEncryption.ts': '9b26a7a25a555c7edbb2b880d814da33a70a1e8feb49ce9b00b51fb6fa75d913',
+  'src/services/mediaEvict.ts': '56fa4d4e59347989ff74c26d5c3e4cc33602e80b8daf2d802ca85f3074cd8788',
+  'src/services/mediaKeyInteropProbe.ts': '197263f9db72f163798efd358df3969096861f6553416eabbf4cd94944fc86e5',
+  'src/services/mediaRealize.ts': '0e6afe6c6be84e500e29ce9ef60145eb341d50419fc9a7c4347084ed93fd2dc2',
+  'src/services/otaAssetPool.ts': '00d541c4c50c5b7549446eb7615fa5b9abfc0d25f518c575b33ade262a410834',
+  'src/services/playbackManifestCache.ts': '7ddd968ff3443b7c8fa839466624e98d840d192414c66da92267fa28d22b9c12',
+  'src/services/playbackTelemetryApi.ts': 'c10a09cd9a046c36b3cc3231eb1e57f3617b2c92526d0fd7e8df5f0501dff4c3',
+  'src/services/remoteCommandBridge.ts': 'c774f1915d59842ae56fce9d7401899954548ad4126457b452f4c0017234e0c5',
+  'src/services/scheduleClock.ts': 'cb0bc1b2062456d7b40aee1a00520d1b0b3481fda4dd63eb1722ddf7d4d733d2',
+  'src/services/sdCacheBridge.ts': '4c764a3779282a32cc20d20f6c58109a77eb8ba10bfde8e66d396db698402d76',
+  'src/services/sync.ts': '2f1e8208b81bbe48575a5747b83d6f162c0b7d9830c7006319c1752cfcfe38b8',
+  'src/services/syncEngine.ts': 'e7f80ef0a890b6e7b1a9d6617afcb054f21e2fdbd0dc29fec3c299abf8be0023',
+  'src/services/touchUiTelemetry.ts': '6588045cb20631e739348f6badd92460a3026c0afebea9538a3da6b39c096cb9',
+  'src/shared/types/api.ts': '6729ba16d2289345e1c8068877b8e6ef0e1ad9f2af1c8c94561750e602cd78be',
+  'src/stores/runtimeStore.ts': '860528e4a8bb4d297046a5f2f4f346f8c1dad4afca269dfba1b4f236ef40ebcb',
+  'src/vite-env.d.ts': 'b535a38253b1cfa56573b0fd0a503e052d23ca2eec029ac4532c0404713769ab',
+};
+reviewedProbeHashesByVersion['1.5.84'] = canonicalScheduleRuntimeHashes;
+reviewedProbeHashesByVersion['2.1.9'] = canonicalScheduleRuntimeHashes;
 const reviewedProbeHashes = reviewedProbeHashesByVersion[version];
 const dormantProbe = reviewedProbeHashes != null;
 const allowedRuntimeDelta = new Set(dormantProbe ? Object.keys(reviewedProbeHashes) : [
   'src/services/assetPoolBootstrap.ts',
   'src/services/mediaAssetPool.ts',
 ]);
+const canonicalSourceHash = version === '1.5.84' || version === '2.1.9';
+function sourceDigest(file) {
+  const body = fs.readFileSync(path.join(root, file));
+  if (!canonicalSourceHash || /\.(png|woff2|p6enc|jpg|jpeg|gif|webp|mp4|zip)$/i.test(file)) {
+    return sha256(body);
+  }
+  return sha256(Buffer.from(body.toString('utf8').replace(/\r\n/g, '\n'), 'utf8'));
+}
 if (dormantProbe) {
   for (const [file, expected] of Object.entries(reviewedProbeHashes)) {
-    if (sha256(fs.readFileSync(path.join(root, file))) !== expected) fail(`unreviewed dormant source: ${file}`);
+    if (sourceDigest(file) !== expected) fail(`unreviewed dormant source: ${file}`);
   }
-  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.59' && version !== '1.5.61' && version !== '1.5.62' && version !== '1.5.63' && version !== '1.5.64' && version !== '1.5.68' && version !== '1.5.70' && version !== '1.5.71' && version !== '1.5.72' && version !== '1.5.73' && version !== '1.5.74' && version !== '1.5.76' && version !== '1.5.77' && version !== '1.5.78' && version !== '1.5.79' && version !== '1.5.80' && version !== '1.5.81' && version !== '1.5.82' && version !== '1.5.83' && version !== '2.1.3' && version !== '2.1.4' && version !== '2.1.5' && version !== '2.1.6' && version !== '2.1.7' && version !== '2.1.8') {
+  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.59' && version !== '1.5.61' && version !== '1.5.62' && version !== '1.5.63' && version !== '1.5.64' && version !== '1.5.68' && version !== '1.5.70' && version !== '1.5.71' && version !== '1.5.72' && version !== '1.5.73' && version !== '1.5.74' && version !== '1.5.76' && version !== '1.5.77' && version !== '1.5.78' && version !== '1.5.79' && version !== '1.5.80' && version !== '1.5.81' && version !== '1.5.82' && version !== '1.5.83' && version !== '1.5.84' && version !== '2.1.3' && version !== '2.1.4' && version !== '2.1.5' && version !== '2.1.6' && version !== '2.1.7' && version !== '2.1.8' && version !== '2.1.9') {
     execFileSync(
       process.execPath,
       ['--test', 'scripts/encryption-lab/dormant-integration.test.mjs'],
@@ -807,7 +883,7 @@ if (dormantProbe) {
     'scripts/encryption-lab/encrypted-playback-candidate.test.mjs',
     'scripts/encryption-lab/ota-replacement.test.mjs',
   ], { cwd: root, stdio: 'inherit' });
-  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.59' || version === '1.5.61' || version === '1.5.62' || version === '1.5.63' || version === '1.5.64' || version === '1.5.68' || version === '1.5.70' || version === '1.5.71' || version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' || version === '1.5.82' || version === '1.5.83' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8') execFileSync(process.execPath, ['--test',
+  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.59' || version === '1.5.61' || version === '1.5.62' || version === '1.5.63' || version === '1.5.64' || version === '1.5.68' || version === '1.5.70' || version === '1.5.71' || version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' || version === '1.5.82' || version === '1.5.83' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '1.5.84' || version === '2.1.9') execFileSync(process.execPath, ['--test',
     'scripts/encryption-lab/bridge-diagnostic.test.mjs',
     'scripts/encryption-lab/bridge-observability.test.mjs',
     'scripts/encryption-lab/widget-port-binding.test.mjs',
@@ -872,21 +948,21 @@ if (!failedUnresolved.some((name) => name.toLowerCase() === 'jsonescape')) {
 const expectedFiles = new Set([
   'README-SD.txt',
   'assets/Inter-Bold-Sckx8rpT.woff2',
-  ...(version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' || version === '1.5.82' || version === '1.5.83' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' ? ['assets/Inter-Light-14LG-y7V.woff2'] : []),
+  ...(version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' || version === '1.5.82' || version === '1.5.83' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '1.5.84' || version === '2.1.9' ? ['assets/Inter-Light-14LG-y7V.woff2'] : []),
   'assets/Inter-Medium-D2bGa7uu.woff2',
   'assets/Inter-Regular-BOOGhInR.woff2',
   'assets/Inter-SemiBold-D273HNI0.woff2',
-  ...(version === '1.5.82' || version === '1.5.83' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' ? [] : ['assets/Perform_6_trademark-ClFD9aGP.png']),
-  ...(version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' || version === '1.5.82' || version === '1.5.83' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' ? [
+  ...(version === '1.5.82' || version === '1.5.83' || version === '1.5.84' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '2.1.9' ? [] : ['assets/Perform_6_trademark-ClFD9aGP.png']),
+  ...(version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' || version === '1.5.82' || version === '1.5.83' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '1.5.84' || version === '2.1.9' ? [
     'assets/Perform6-approved-chevron-B3fE6BGP.png',
     'assets/Perform6-approved-clock-CEGklWTx.png',
-    version === '1.5.82' || version === '2.1.8'
+    version === '1.5.82' || version === '1.5.84' || version === '2.1.8' || version === '2.1.9'
       ? 'assets/Perform6-approved-logo-CTiBQMFD.svg'
       : version === '1.5.81' || version === '1.5.83' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7'
       ? 'assets/Perform6-approved-logo-Cnk2bSRp.svg'
       : 'assets/Perform6-approved-logo-NZjhE405.svg',
   ] : []),
-  ...(version === '1.5.82' || version === '2.1.8'
+  ...(version === '1.5.82' || version === '1.5.84' || version === '2.1.8' || version === '2.1.9'
     ? ['assets/pre-golf-icon-BvdIvTc0.svg']
     : version === '1.5.81' || version === '1.5.83' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7'
       ? ['assets/pre-golf-icon-CYdrIKvT.svg']
@@ -895,7 +971,7 @@ const expectedFiles = new Set([
   'assets/style.css',
   'autorun.brs',
   'index.html',
-  ...(version === '1.5.82' || version === '1.5.83' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' ? ['images/perform6-approved-logo.svg'] : []),
+  ...(version === '1.5.82' || version === '1.5.83' || version === '1.5.84' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '2.1.9' ? ['images/perform6-approved-logo.svg'] : []),
   'led-idle.png',
   'perform6-display.txt',
   'perform6-ops.emergency.json',
@@ -925,9 +1001,9 @@ const manifest = JSON.parse(
 if (manifest.profile !== 'XT2145' || manifest.version !== version) {
   fail(`manifest identity mismatch: ${manifest.profile ?? '?'} ${manifest.version ?? '?'}`);
 }
-const expectedEdition = version === '1.5.81' || version === '1.5.82'
+const expectedEdition = version === '1.5.81' || version === '1.5.82' || version === '1.5.84'
   ? 'fitness'
-  : version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.8'
+  : version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.8' || version === '2.1.9'
     ? 'golf'
     : null;
 if (expectedEdition && manifest.edition !== expectedEdition) {
@@ -975,6 +1051,9 @@ function readZipEntry(zipFile, entryPath) {
   }
 }
 
+for (const storedName of listZipEntryNames(zipPath)) {
+  if (storedName.includes('\\')) fail(`ZIP entry uses a Windows path separator: ${storedName}`);
+}
 const zipEntries = listZipEntries(zipPath)
   .trim()
   .split(/\r?\n/)
