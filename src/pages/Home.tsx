@@ -265,6 +265,17 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, [activeSession?.startedAt, activeSession?.source]);
 
+  // Full Program plays once, but a pause with no interaction returns Home after 45 minutes.
+  useEffect(() => {
+    if (!activeSession || activeSession.source !== 'full-program' || !displayPaused) return;
+
+    const timer = window.setTimeout(() => {
+      returnToMainMenuRef.current();
+    }, TOUCH_LOOP_SESSION_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [activeSession?.startedAt, activeSession?.source, displayPaused]);
+
   // Touch-only: Full Program plays once — when HDMI video ends, return to menu.
   useEffect(() => {
     if (!activeSession || activeSession.source !== 'full-program') {

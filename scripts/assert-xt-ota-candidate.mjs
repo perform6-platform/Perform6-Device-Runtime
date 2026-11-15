@@ -671,7 +671,7 @@ reviewedProbeHashesByVersion['2.1.5'] = {
 // only the approved boot logo and unavailable-program UI are changed.
 reviewedProbeHashesByVersion['1.5.83'] = {
   ...reviewedProbeHashesByVersion['1.5.82'],
-  'brightsign/led-idle.png': '786a2eb5dbed12d3c461b1a9331bb4757e6e920d2dd4774dbfd582d6f1aecb58',
+  'brightsign/led-idle.png': '8433cfdc17bd5b9c936ac0a6448a65be6c23433fcc51cc3f5d30deaa19bdfd59',
   'src/components/home/DownloadProgressOverlay.tsx': 'f8dcb79c12ed3081a2605bb347939f752a9a0a04a2ee486c72be5220376b653e',
   'src/components/status/BootSplash.tsx': '9369110d2824ceba6ff5811b9d83b17345506a61656dd91ec2b28f49202d6486',
   'src/components/status/DeviceStatusOverlay.tsx': '7096f6239ee0b90c4c208062235fbe867a2fb2be44e74228dbf15d55a0ed4226',
@@ -696,7 +696,7 @@ reviewedProbeHashesByVersion['2.1.7'] = {
 const currentScheduleRuntimeHashes = {
   'brightsign/autorun.brs': '581f4963e6072d1fdf46651c217530b4b7ef21fddd393c8b4bf4653f353965d4',
   'brightsign/encryption-test/perform6-encrypted-probe.p6enc': '63ecf15060f348f9d6dc5ebf391b6cdcd0a672a2b4233acb2d43597e6ceba7c7',
-  'brightsign/led-idle.png': '786a2eb5dbed12d3c461b1a9331bb4757e6e920d2dd4774dbfd582d6f1aecb58',
+  'brightsign/led-idle.png': '8433cfdc17bd5b9c936ac0a6448a65be6c23433fcc51cc3f5d30deaa19bdfd59',
   'src/assets/Perform6-approved-chevron.png': '74c5a1f458ec4dcb23f360d4750f08c28706bdc02a0dbce3e81a367c0bd02d0e',
   'src/assets/Perform6-approved-clock.png': 'd2a78f15140935e020eeb40c07054c9554d0770f5d24f7881182b6f18ee9b277',
   'src/assets/Perform6-approved-logo.svg': 'ec2a03849ff6353a1827f7bdd65a2e88fd637ea7888e35f94ec7d3e738b2b84c',
@@ -763,7 +763,7 @@ reviewedProbeHashesByVersion['2.1.8'] = currentScheduleRuntimeHashes;
 const canonicalScheduleRuntimeHashes = {
   'brightsign/autorun.brs': '323703d4c8e89464619ad4eae6fa361ded629a2388bd7d7111cacd4c371f0d9d',
   'brightsign/encryption-test/perform6-encrypted-probe.p6enc': '63ecf15060f348f9d6dc5ebf391b6cdcd0a672a2b4233acb2d43597e6ceba7c7',
-  'brightsign/led-idle.png': '786a2eb5dbed12d3c461b1a9331bb4757e6e920d2dd4774dbfd582d6f1aecb58',
+  'brightsign/led-idle.png': '8433cfdc17bd5b9c936ac0a6448a65be6c23433fcc51cc3f5d30deaa19bdfd59',
   'src/assets/Perform6-approved-chevron.png': '74c5a1f458ec4dcb23f360d4750f08c28706bdc02a0dbce3e81a367c0bd02d0e',
   'src/assets/Perform6-approved-clock.png': 'd2a78f15140935e020eeb40c07054c9554d0770f5d24f7881182b6f18ee9b277',
   'src/assets/Perform6-approved-logo.svg': '7b5fe0d1c25c96c808fe385f9192cb6b92a63404a12ad1581ed46da784a36ead',

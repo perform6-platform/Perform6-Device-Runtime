@@ -40,6 +40,8 @@ let pendingSdFallback = false;
 let nativeTelemetrySignature = '';
 let nativeTelemetryStartedAt = 0;
 let nativeTelemetryScreenKey = '';
+/** Wall-clock position captured when the LED pauses, so reports do not keep advancing. */
+let nativeTelemetryPausedMs: number | null = null;
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
@@ -157,11 +159,23 @@ function reportNativeHdmiTelemetry(status: ReturnType<typeof readXtPlaybackStatu
   if (signature !== nativeTelemetrySignature) {
     nativeTelemetrySignature = signature;
     nativeTelemetryStartedAt = Date.now();
+    nativeTelemetryPausedMs = null;
   }
 
   const started = isLedStatusStarted(status);
   const ended = status.ended === '1' || status.state === 'ended';
   const failed = status.state === 'error' || status.ok === '0';
+  const paused = Boolean(state.displayPaused);
+  const wallMs =
+    nativeTelemetryStartedAt > 0 ? Date.now() - nativeTelemetryStartedAt : 0;
+  if (paused) {
+    if (nativeTelemetryPausedMs == null) nativeTelemetryPausedMs = wallMs;
+  } else if (nativeTelemetryPausedMs != null) {
+    // Resume continues from the frozen playhead, not the pause wall clock.
+    nativeTelemetryStartedAt = Date.now() - nativeTelemetryPausedMs;
+    nativeTelemetryPausedMs = null;
+  }
+  const positionMs = paused ? (nativeTelemetryPausedMs ?? wallMs) : wallMs;
   // XT2145 has two physical outputs. Program slots (Start Here, Phase 1,
   // Phase 2, Full Program) all play through the same LED output and must not
   // be reported as additional screens.
@@ -174,9 +188,9 @@ function reportNativeHdmiTelemetry(status: ReturnType<typeof readXtPlaybackStatu
     screenKey,
     mediaVersionId: meta?.mediaVersionId ?? null,
     title: meta?.title ?? null,
-    positionMs: nativeTelemetryStartedAt > 0 ? Date.now() - nativeTelemetryStartedAt : 0,
+    positionMs,
     durationMs: null,
-    isPlaying: started && !ended && !state.displayPaused,
+    isPlaying: started && !ended && !paused,
     output: 'HDMI-2 native (configured 3840x2160x60p)',
     source: 'NATIVE_HDMI',
     requestId: `xt-${nonce}`,

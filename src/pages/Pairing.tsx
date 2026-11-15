@@ -7,7 +7,7 @@ import { runtimeConfig } from '../config/runtime';
 import { getPostRegistrationRoute } from '../services/runtime';
 import { PrimaryOutputOnly } from '../layout/PrimaryOutputOnly';
 import {
-  clusterMemberShortLabel,
+  hdPairingAssignmentLabel,
   resolveNextHdClusterMember,
 } from '../simulator/hdClusterPairing';
 
@@ -214,7 +214,7 @@ export default function Pairing() {
         <p className="p6-body text-p6-text-muted">{statusLabel(registrationStatus)}</p>
         {isHdSimulator && deviceInfo?.clusterMember ? (
           <p className="mt-2 text-sm text-p6-cyan">
-            Pairing as {clusterMemberShortLabel(deviceInfo.clusterMember)} ({deviceInfo.clusterMember})
+            Pairing as {hdPairingAssignmentLabel(deviceInfo.clusterMember)}
           </p>
         ) : null}
       </div>
@@ -245,8 +245,8 @@ export default function Pairing() {
           </div>
           {deviceInfo.clusterMember ? (
             <div className="flex justify-between gap-4">
-              <dt className="text-slate-500">Cluster Member</dt>
-              <dd>{deviceInfo.clusterMember}</dd>
+              <dt className="text-slate-500">Assignment</dt>
+              <dd>{hdPairingAssignmentLabel(deviceInfo.clusterMember)}</dd>
             </div>
           ) : null}
           <div className="flex justify-between gap-4">
@@ -289,7 +289,7 @@ export default function Pairing() {
               >
                 <div>
                   <p className="font-medium text-slate-200">
-                    {clusterMemberShortLabel(entry.clusterMember)}
+                    {hdPairingAssignmentLabel(entry.clusterMember)}
                   </p>
                   <p className="font-mono text-[10px] text-slate-500">{entry.serialNumber}</p>
                 </div>
@@ -348,7 +348,7 @@ export default function Pairing() {
           >
             {pairingNext
               ? 'Pairing next…'
-              : `Pair next HD device (${clusterMemberShortLabel(nextHdMember!)})`}
+              : `Pair next HD device (${hdPairingAssignmentLabel(nextHdMember!)})`}
           </button>
         )}
 
