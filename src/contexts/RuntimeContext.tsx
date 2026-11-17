@@ -47,6 +47,7 @@ import {
 } from '../services/sdStoragePresence';
 import { getSdStorageForHeartbeat } from '../services/sdStorageInfo';
 import {
+  clearPlaybackManifestCache,
   loadPlaybackManifestCache,
   savePlaybackManifestCache,
 } from '../services/playbackManifestCache';
@@ -398,19 +399,38 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
             },
           });
         } else {
+          // Unattached (Disconnect) or no playable content: stop local playback.
+          // Attached sync always returns a manifest — this path must not run during
+          // normal 7-day cache / prefetch cycles.
+          const deploymentId =
+            result.syncData?.deployment?.id ??
+            result.syncData?.config?.deploymentId ??
+            null;
+          const unattached = !deploymentId;
+          if (unattached) {
+            setPlaybackManifest(null);
+            clearPlaybackManifestCache();
+            useRuntimeStore.getState().setDisplayVideoSrc(null);
+            useRuntimeStore.getState().setDisplayVideoEndedHandler(null);
+            useRuntimeStore.getState().resetDisplayControls();
+          }
           setSyncState({
             lastCheckAt: new Date().toISOString(),
             lastSyncAt: new Date().toISOString(),
             syncJobId: result.syncData?.syncJobId ?? null,
             inProgress: false,
-            error: 'Sync returned no playback content',
+            error: unattached
+              ? 'Disconnected — waiting for Attach'
+              : 'Sync returned no playback content',
             runtimePhase: 'ready',
           });
           setConnectionStatus('online');
           pushDebugLog({
             category: 'sync',
-            message: 'Sync OK but no playback manifest content',
-            data: { syncJobId: result.syncData?.syncJobId },
+            message: unattached
+              ? 'Unattached — playback stopped until Attach'
+              : 'Sync OK but no playback manifest content',
+            data: { syncJobId: result.syncData?.syncJobId, unattached },
           });
         }
         return;
