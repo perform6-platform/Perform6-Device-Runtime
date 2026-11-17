@@ -91,6 +91,9 @@ export function hdClusterMemberRoute(member: ClusterMember): string {
   return `/simulator/hd226/${member.toLowerCase()}`;
 }
 
-export function clusterMemberShortLabel(member: ClusterMember): string {
-  return member.replace('DEVICE_', 'Player ');
+/** Portal assignment shown on the HD pairing screen: Device 1 • Screen 1. */
+export function hdPairingAssignmentLabel(member: ClusterMember): string {
+  const index = CLUSTER_MEMBERS.indexOf(member);
+  const number = index >= 0 ? index + 1 : 1;
+  return `Device ${number} • Screen ${number}`;
 }

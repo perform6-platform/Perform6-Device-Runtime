@@ -1,5 +1,5 @@
 import type { ClusterMember } from '../../shared/types';
-import { clusterMemberShortLabel } from '../../simulator/hdClusterPairing';
+import { hdPairingAssignmentLabel } from '../../simulator/hdClusterPairing';
 
 interface PairingCodeDisplayProps {
   code: string;
@@ -43,7 +43,7 @@ export function PairingCodeDisplay({
         <p className="p6-caption text-p6-text-muted uppercase tracking-widest">Pairing Code</p>
         {clusterMember ? (
           <p className="text-sm font-semibold text-p6-cyan">
-            {clusterMemberShortLabel(clusterMember)} · {clusterMember}
+            {hdPairingAssignmentLabel(clusterMember)}
           </p>
         ) : null}
         <div className="p6-pairing-code__digits font-mono text-5xl font-bold tracking-[0.35em] text-p6-cyan">
@@ -66,7 +66,7 @@ export function PairingCodeDisplay({
       <h1 className="text-3xl font-semibold text-white sm:text-5xl">Pairing Code</h1>
       {clusterMember ? (
         <p className="text-lg font-semibold text-cyan-300">
-          {clusterMemberShortLabel(clusterMember)} · {clusterMember}
+          {hdPairingAssignmentLabel(clusterMember)}
         </p>
       ) : null}
       <div

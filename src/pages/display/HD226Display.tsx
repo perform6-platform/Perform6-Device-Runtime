@@ -2,7 +2,8 @@ import { DisplayVideoPlayer } from '../../display-ui';
 import { findScreenForClusterMember, getCurrentVideo } from '../../services/playback';
 import { useOfflineVideoSrc } from '../../hooks/useOfflineVideoSrc';
 import { runtimeConfig, CLUSTER_MEMBERS } from '../../config/runtime';
-import { useRuntime, useSync } from '../../hooks/useRuntime';
+import { useRuntime } from '../../hooks/useRuntime';
+import perform6Logo from '../../assets/Perform6-approved-logo.svg';
 
 /**
  * Production HD226 surface — fullscreen playback for the baked
@@ -10,7 +11,6 @@ import { useRuntime, useSync } from '../../hooks/useRuntime';
  */
 export default function HD226Display() {
   const { store } = useRuntime();
-  const { syncState } = useSync();
   const manifest = store.playbackState.manifest;
   const member = runtimeConfig.clusterMember;
 
@@ -20,7 +20,6 @@ export default function HD226Display() {
   const video = getCurrentVideo(screen);
   const offlineSrc = useOfflineVideoSrc(video?.id, video?.url);
   const videoSrc = offlineSrc;
-  const label = screen?.label ?? member;
   const screenKey =
     screen?.displayTarget ??
     `SCREEN_${CLUSTER_MEMBERS.indexOf(member) + 1}`;
@@ -31,7 +30,6 @@ export default function HD226Display() {
         <div className="min-h-0 flex-1">
           <DisplayVideoPlayer
             src={videoSrc}
-            label={label}
             loop
             screenKey={screenKey}
             mediaVersionId={video?.id ?? null}
@@ -39,13 +37,13 @@ export default function HD226Display() {
           />
         </div>
       ) : (
-        <section className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-          <p className="text-sm font-semibold text-slate-200">{label}</p>
-          <p className="max-w-md text-xs text-slate-500">
-            {manifest
-              ? `No video for ${member} yet. Phase: ${syncState.runtimePhase}`
-              : `Waiting for sync… Phase: ${syncState.runtimePhase}`}
-          </p>
+        <section className="flex h-full w-full items-center justify-center bg-black">
+          <img
+            src={perform6Logo}
+            alt="Perform6"
+            className="h-auto w-[min(44vw,1680px)] object-contain"
+            draggable={false}
+          />
         </section>
       )}
     </main>
