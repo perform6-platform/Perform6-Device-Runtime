@@ -133,14 +133,9 @@ export async function downloadMediaBatchToSd(
       totalFiles: items.length,
       completedFiles: 0,
     });
-    return {
-      succeeded: [],
-      downloaded: [],
-      failed: items.map((i) => i.mediaVersionId),
-      failureReasons: Object.fromEntries(
-        items.map((i) => [i.mediaVersionId, capacityError]),
-      ),
-    };
+    // Do not stamp every row FAILED. The fetch never started; the next sync
+    // shows those files as QUEUED again.
+    return { succeeded: [], downloaded: [], failed: [], failureReasons: {} };
   }
 
   if (!isMediaAssetPoolAvailable()) {
@@ -153,14 +148,7 @@ export async function downloadMediaBatchToSd(
       totalFiles: items.length,
       completedFiles: 0,
     });
-    return {
-      succeeded: [],
-      downloaded: [],
-      failed: items.map((i) => i.mediaVersionId),
-      failureReasons: Object.fromEntries(
-        items.map((i) => [i.mediaVersionId, reason]),
-      ),
-    };
+    return { succeeded: [], downloaded: [], failed: [], failureReasons: {} };
   }
 
   const result = await downloadMediaItemsViaAssetPool(items, onProgress, options);

@@ -339,29 +339,58 @@ export async function runSyncEngine(
     let failed: string[] = [];
 
     const progressLastSentMs = new Map<string, number>();
-    const PROGRESS_REPORT_INTERVAL_MS = 1000;
+    const PROGRESS_REPORT_INTERVAL_MS = 3_000;
+    const reportedSuccess = new Set<string>();
+    const reportedFailed = new Set<string>();
 
     if (mediaItems.length > 0) {
       // AssetPoolFetcher → AssetRealizer → extension-bearing local playback file.
-      // Report start (0 bytes) so Admin shows DOWNLOADING/QUEUED; byte progress
-      // still drives the bar. Does not change AssetPool / realize / OTA behavior.
+      // Byte posts mirror the touch card. They do not change AssetPool / realize / OTA.
       const batch = await downloadMediaBatchToSd(
         mediaItems,
         async (progress) => {
+          if (progress.status === 'done') {
+            try {
+              await reportDownloadCompleteWithRetry(auth, {
+                syncJobId: syncData.syncJobId,
+                mediaVersionId: progress.mediaVersionId,
+                status: 'SUCCESS',
+                bytesDownloaded:
+                  progress.totalBytes != null
+                    ? String(progress.totalBytes)
+                    : String(Math.max(0, progress.bytesDownloaded)),
+                durationMs: Date.now() - downloadStart,
+              });
+              reportedSuccess.add(progress.mediaVersionId);
+            } catch {
+              /* batch-end loop retries this one file */
+            }
+            return;
+          }
+          if (progress.status === 'failed') {
+            try {
+              await reportDownloadCompleteWithRetry(auth, {
+                syncJobId: syncData.syncJobId,
+                mediaVersionId: progress.mediaVersionId,
+                status: 'FAILED',
+                durationMs: Date.now() - downloadStart,
+                errorMessage:
+                  progress.errorMessage ??
+                  'Media download failed (asset pool / SD cache)',
+              });
+              reportedFailed.add(progress.mediaVersionId);
+            } catch {
+              /* batch-end loop retries this one file */
+            }
+            return;
+          }
           const bytes = progress.bytesDownloaded;
-          // Skip empty progress ticks; allow start/done/skip/failed always.
           if (progress.status === 'progress' && !(bytes > 0)) return;
           if (progress.status === 'progress') {
             const lastMs = progressLastSentMs.get(progress.mediaVersionId) ?? 0;
             if (Date.now() - lastMs < PROGRESS_REPORT_INTERVAL_MS) return;
           }
-          if (
-            progress.status !== 'progress' &&
-            progress.status !== 'start' &&
-            progress.status !== 'done' &&
-            progress.status !== 'skip' &&
-            progress.status !== 'failed'
-          ) {
+          if (progress.status !== 'progress' && progress.status !== 'start') {
             return;
           }
           progressLastSentMs.set(progress.mediaVersionId, Date.now());
@@ -374,8 +403,7 @@ export async function runSyncEngine(
                 progress.totalBytes != null
                   ? String(progress.totalBytes)
                   : undefined,
-              phase:
-                progress.status === 'start' ? 'START' : 'DOWNLOADING',
+              phase: progress.status === 'start' ? 'START' : 'DOWNLOADING',
               doneCount: progress.doneCount,
               totalCount: progress.totalCount,
             });
@@ -391,13 +419,17 @@ export async function runSyncEngine(
       const failureReasons = batch.failureReasons;
 
       for (const item of mediaItems) {
-        if (downloaded.includes(item.mediaVersionId)) {
-          addCachedMediaVersionId(item.mediaVersionId);
-          if (item.encryption) markEncryptedMediaCached(item.mediaVersionId);
+        const id = item.mediaVersionId;
+        const pooled =
+          downloaded.includes(id) || succeeded.includes(id);
+        if (pooled) {
+          addCachedMediaVersionId(id);
+          if (item.encryption) markEncryptedMediaCached(id);
+          if (reportedSuccess.has(id)) continue;
           try {
             await reportDownloadCompleteWithRetry(auth, {
               syncJobId: syncData.syncJobId,
-              mediaVersionId: item.mediaVersionId,
+              mediaVersionId: id,
               status: 'SUCCESS',
               bytesDownloaded:
                 item.fileSize != null ? String(item.fileSize) : '0',
@@ -406,30 +438,15 @@ export async function runSyncEngine(
           } catch {
             completeReportFailures += 1;
           }
-        } else if (succeeded.includes(item.mediaVersionId)) {
-          addCachedMediaVersionId(item.mediaVersionId);
-          if (item.encryption) markEncryptedMediaCached(item.mediaVersionId);
+        } else if (failed.includes(id) && !reportedFailed.has(id)) {
           try {
             await reportDownloadCompleteWithRetry(auth, {
               syncJobId: syncData.syncJobId,
-              mediaVersionId: item.mediaVersionId,
-              status: 'SUCCESS',
-              bytesDownloaded:
-                item.fileSize != null ? String(item.fileSize) : '0',
-              durationMs: Date.now() - downloadStart,
-            });
-          } catch {
-            completeReportFailures += 1;
-          }
-        } else if (failed.includes(item.mediaVersionId)) {
-          try {
-            await reportDownloadCompleteWithRetry(auth, {
-              syncJobId: syncData.syncJobId,
-              mediaVersionId: item.mediaVersionId,
+              mediaVersionId: id,
               status: 'FAILED',
               durationMs: Date.now() - downloadStart,
               errorMessage:
-                failureReasons[item.mediaVersionId] ??
+                failureReasons[id] ??
                 'Media download failed (asset pool / SD cache)',
             });
           } catch {

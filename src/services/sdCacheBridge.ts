@@ -701,6 +701,8 @@ export interface SdDownloadProgress {
   /** Optional batch counters for Admin (reporting only). */
   doneCount?: number;
   totalCount?: number;
+  /** Own fetch error. Reporting only — never used to fail the rest of the batch. */
+  errorMessage?: string;
 }
 
 function findPendingItem(

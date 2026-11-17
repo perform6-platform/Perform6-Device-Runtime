@@ -18,7 +18,7 @@ import {
 } from './ledPlaybackFile';
 import { toLedPlayableSrc } from '../services/playbackSrc';
 import { BridgeMsg } from '../services/bridgeProtocol';
-import { subscribeSdCacheProgress, hasSdCachedMedia } from '../services/sdCacheBridge';
+import { subscribeSdCacheProgress, getSdCachedUrl } from '../services/sdCacheBridge';
 import {
   clearScreenPlayback,
   reportScreenPlayback,
@@ -208,9 +208,10 @@ function postTouchPlayback(port: BrightSignMessagePort | null, force = false): v
   const payload = buildPayload();
   if (!payload.src) return;
 
-  // Never drive LED with a mediaVersionId that is not on SD (Clear Cache / refill gap).
-  if (payload.mediaVersionId && !hasSdCachedMedia(payload.mediaVersionId)) {
-    console.info('[Perform6] XT playback skipped — media not on SD yet', {
+  // PlayFile only after AssetRealizer has written the .mp4. A pool object is
+  // not a playable file and reasserting it flashes the idle logo.
+  if (payload.mediaVersionId && !getSdCachedUrl(payload.mediaVersionId)) {
+    console.info('[Perform6] XT playback skipped — realized file not ready', {
       mediaVersionId: payload.mediaVersionId,
     });
     return;
@@ -279,8 +280,8 @@ function pollPlaybackStatus(port: BrightSignMessagePort | null): void {
 
   const state = useRuntimeStore.getState();
   const mediaVersionId = state.displayPlaybackMeta?.mediaVersionId;
-  if (mediaVersionId && !hasSdCachedMedia(mediaVersionId)) {
-    // Media wiped / not refilled — do not hammer PlayFile on missing .mp4.
+  if (mediaVersionId && !getSdCachedUrl(mediaVersionId)) {
+    // Not realized yet — do not hammer PlayFile. Leave the idle logo static.
     return;
   }
   const want = nativePlayableSrc(
@@ -372,7 +373,7 @@ export function initXtOutputBridge(): void {
       (event.status === 'done' || event.status === 'skip') &&
       Boolean(event.mediaVersionId) &&
       event.mediaVersionId === currentMediaVersionId &&
-      hasSdCachedMedia(event.mediaVersionId!)
+      Boolean(getSdCachedUrl(event.mediaVersionId!))
     ) {
       postTouchPlayback(port);
     }

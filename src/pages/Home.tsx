@@ -3,6 +3,7 @@ import { HomeHeroVideo, DownloadProgressOverlay } from '../components/home';
 import { useDisplayPlayback, useSync } from '../hooks/useRuntime';
 import { useTouchVideos, getTouchSlotMedia } from '../hooks/useOfflineVideoSrc';
 import { useTouchProgramGate } from '../hooks/useTouchProgramGate';
+import { getSdCachedUrl } from '../services/sdCacheBridge';
 import { useRuntimeStore } from '../stores/runtimeStore';
 import { runtimeConfig } from '../config/runtime';
 import { BluefinMasterFrame } from '../layout/BluefinMasterFrame';
@@ -199,6 +200,13 @@ export default function Home() {
       setDisplayVideoSrc(null);
       return;
     }
+    if (
+      !runtimeConfig.isSimulator &&
+      (!idleMedia.mediaVersionId || !getSdCachedUrl(idleMedia.mediaVersionId))
+    ) {
+      setDisplayVideoSrc(null);
+      return;
+    }
     setDisplayVideoLoop(true);
     setDisplayPaused(false);
     setDisplayVideoSrc(touchVideos.idle, {
@@ -225,12 +233,19 @@ export default function Home() {
   // program overview modal is open or a session is active — that was the
   // Golf-Default stuck command while Start Here was selected.
   useEffect(() => {
-    if (sessionOpen || overviewOpen) return;
+    if (sessionOpen || overviewOpen || pendingDownloadSource) return;
+    const idleMedia = getTouchSlotMedia(playbackState.manifest, 'touch-default');
     if (!touchVideos.idle) {
       setDisplayVideoSrc(null);
       return;
     }
-    const idleMedia = getTouchSlotMedia(playbackState.manifest, 'touch-default');
+    if (
+      !runtimeConfig.isSimulator &&
+      (!idleMedia.mediaVersionId || !getSdCachedUrl(idleMedia.mediaVersionId))
+    ) {
+      setDisplayVideoSrc(null);
+      return;
+    }
     setDisplayVideoLoop(true);
     setDisplayPaused(false);
     setDisplayVideoSrc(touchVideos.idle, {
@@ -242,6 +257,7 @@ export default function Home() {
   }, [
     sessionOpen,
     overviewOpen,
+    pendingDownloadSource,
     playbackState.manifest,
     setDisplayPaused,
     setDisplayVideoLoop,
@@ -294,6 +310,12 @@ export default function Home() {
     if (!videoSrc) return;
     const slot = source as TouchPlaybackSlot;
     const media = getTouchSlotMedia(playbackState.manifest, slot);
+    if (
+      !runtimeConfig.isSimulator &&
+      (!media.mediaVersionId || !getSdCachedUrl(media.mediaVersionId))
+    ) {
+      return;
+    }
     const startedAt = Date.now();
     resetDisplayControls();
     // Full Program: start each session at 50% so playback is never unexpectedly loud.
