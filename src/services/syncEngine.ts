@@ -419,17 +419,14 @@ export async function runSyncEngine(
       const failureReasons = batch.failureReasons;
 
       for (const item of mediaItems) {
-        const id = item.mediaVersionId;
-        const pooled =
-          downloaded.includes(id) || succeeded.includes(id);
-        if (pooled) {
-          addCachedMediaVersionId(id);
-          if (item.encryption) markEncryptedMediaCached(id);
-          if (reportedSuccess.has(id)) continue;
+        if (downloaded.includes(item.mediaVersionId)) {
+          addCachedMediaVersionId(item.mediaVersionId);
+          if (item.encryption) markEncryptedMediaCached(item.mediaVersionId);
+          if (reportedSuccess.has(item.mediaVersionId)) continue;
           try {
             await reportDownloadCompleteWithRetry(auth, {
               syncJobId: syncData.syncJobId,
-              mediaVersionId: id,
+              mediaVersionId: item.mediaVersionId,
               status: 'SUCCESS',
               bytesDownloaded:
                 item.fileSize != null ? String(item.fileSize) : '0',
@@ -438,15 +435,34 @@ export async function runSyncEngine(
           } catch {
             completeReportFailures += 1;
           }
-        } else if (failed.includes(id) && !reportedFailed.has(id)) {
+        } else if (succeeded.includes(item.mediaVersionId)) {
+          addCachedMediaVersionId(item.mediaVersionId);
+          if (item.encryption) markEncryptedMediaCached(item.mediaVersionId);
+          if (reportedSuccess.has(item.mediaVersionId)) continue;
           try {
             await reportDownloadCompleteWithRetry(auth, {
               syncJobId: syncData.syncJobId,
-              mediaVersionId: id,
+              mediaVersionId: item.mediaVersionId,
+              status: 'SUCCESS',
+              bytesDownloaded:
+                item.fileSize != null ? String(item.fileSize) : '0',
+              durationMs: Date.now() - downloadStart,
+            });
+          } catch {
+            completeReportFailures += 1;
+          }
+        } else if (
+          failed.includes(item.mediaVersionId) &&
+          !reportedFailed.has(item.mediaVersionId)
+        ) {
+          try {
+            await reportDownloadCompleteWithRetry(auth, {
+              syncJobId: syncData.syncJobId,
+              mediaVersionId: item.mediaVersionId,
               status: 'FAILED',
               durationMs: Date.now() - downloadStart,
               errorMessage:
-                failureReasons[id] ??
+                failureReasons[item.mediaVersionId] ??
                 'Media download failed (asset pool / SD cache)',
             });
           } catch {
