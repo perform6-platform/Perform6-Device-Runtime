@@ -476,14 +476,11 @@ export async function runSyncEngine(
     const cachedCount = mediaItems.filter((item) =>
       downloaded.includes(item.mediaVersionId) || succeeded.includes(item.mediaVersionId),
     ).length;
-    const failedCount = mediaItems.filter((item) =>
-      failed.includes(item.mediaVersionId),
-    ).length;
 
     await reportSyncStatus(auth, {
       syncJobId: syncData.syncJobId,
       status:
-        expectedDownloads > 0 && cachedCount === 0 && failedCount > 0
+        expectedDownloads > 0 && cachedCount < expectedDownloads
           ? 'FAILED'
           : 'SUCCESS',
       message:

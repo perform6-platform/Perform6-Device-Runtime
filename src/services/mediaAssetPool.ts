@@ -808,10 +808,13 @@ export async function downloadMediaItemsViaAssetPool(
     : null;
   let progressTimer: number | undefined;
 
-  const commitPoolFile = async (item: SyncMediaItem, assetName: string) => {
-    if (poolMarkedIds.has(item.mediaVersionId)) return;
+  const commitPoolFile = async (
+    item: SyncMediaItem,
+    assetName: string,
+  ): Promise<boolean> => {
+    if (poolMarkedIds.has(item.mediaVersionId)) return true;
     const poolPath = await resolvePoolPath(assetList, assetName);
-    if (!poolPath) return;
+    if (!poolPath) return false;
     markMediaPoolPath(item.mediaVersionId, poolPath);
     markSdDownloadConfirmed(item.mediaVersionId);
     poolMarkedIds.add(item.mediaVersionId);
@@ -824,6 +827,17 @@ export async function downloadMediaItemsViaAssetPool(
       bytesDownloaded: item.fileSize != null ? Number(item.fileSize) : 0,
       bytesTotal: item.fileSize != null ? Number(item.fileSize) : undefined,
     });
+    return true;
+  };
+
+  const confirmPromises: Promise<void>[] = [];
+
+  const confirmCachedFile = async (item: SyncMediaItem, assetName: string) => {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (await commitPoolFile(item, assetName)) return true;
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+    }
+    return false;
   };
 
   const publishActiveBytes = () => {
@@ -953,52 +967,63 @@ export async function downloadMediaItemsViaAssetPool(
       const code = detail.responseCode;
       const ok = code === 200 || code === 226 || code === 0;
       if (ok) {
-        completedIds.add(item.mediaVersionId);
-        completedFiles += 1;
-        if (item.fileSize != null && Number(item.fileSize) > 0) {
-          batchBytesDownloaded += Number(item.fileSize);
-        }
         const finishedAsset = needFetch.find(
           (asset) => byName.get(asset.name)?.mediaVersionId === item.mediaVersionId,
         );
-        if (finishedAsset) void commitPoolFile(item, finishedAsset.name);
-        // done → portal SUCCESS. Do not also send a full-size progress tick.
-        void onProgress?.({
-          mediaVersionId: item.mediaVersionId,
-          bytesDownloaded: item.fileSize != null ? Number(item.fileSize) : 0,
-          totalBytes: item.fileSize != null ? Number(item.fileSize) : null,
-          status: 'done',
-          doneCount: completedFiles,
-          totalCount: items.length,
-        });
-        const nextNeedIdx = completedFiles - already.length;
-        const nextAsset =
-          nextNeedIdx >= 0 && nextNeedIdx < needFetch.length
-            ? needFetch[nextNeedIdx]
-            : undefined;
-        const nextItem = nextAsset ? byName.get(nextAsset.name) : null;
-        if (nextItem && !completedIds.has(nextItem.mediaVersionId)) {
-          activeFile = {
-            item: nextItem,
-            transferred: 0,
-            total: nextItem.fileSize != null ? Number(nextItem.fileSize) : null,
-            name: nextAsset?.name ?? '',
-          };
-          updateUi(nextItem, 0, activeFile.total, MEDIA_POOL_PATH);
-          if (!startedReportIds.has(nextItem.mediaVersionId)) {
-            startedReportIds.add(nextItem.mediaVersionId);
+        confirmPromises.push(
+          (async () => {
+            const verified = finishedAsset
+              ? await confirmCachedFile(item, finishedAsset.name)
+              : false;
+            if (!verified) {
+              // The fetch may still finish writing. Batch end checks the path
+              // and is the only place that reports this file as failed.
+              return;
+            }
+            if (completedIds.has(item.mediaVersionId)) return;
+            completedIds.add(item.mediaVersionId);
+            completedFiles += 1;
+            if (item.fileSize != null && Number(item.fileSize) > 0) {
+              batchBytesDownloaded += Number(item.fileSize);
+            }
+            // Portal SUCCESS only after the pool path exists.
             void onProgress?.({
-              mediaVersionId: nextItem.mediaVersionId,
-              bytesDownloaded: 0,
-              totalBytes: activeFile.total,
-              status: 'start',
+              mediaVersionId: item.mediaVersionId,
+              bytesDownloaded: item.fileSize != null ? Number(item.fileSize) : 0,
+              totalBytes: item.fileSize != null ? Number(item.fileSize) : null,
+              status: 'done',
               doneCount: completedFiles,
               totalCount: items.length,
             });
-          }
-        } else {
-          activeFile = null;
-        }
+            const nextAsset = needFetch.find((asset) => {
+              const nextId = byName.get(asset.name)?.mediaVersionId;
+              return Boolean(nextId && !completedIds.has(nextId));
+            });
+            const nextItem = nextAsset ? byName.get(nextAsset.name) : null;
+            if (nextItem && !completedIds.has(nextItem.mediaVersionId)) {
+              activeFile = {
+                item: nextItem,
+                transferred: 0,
+                total: nextItem.fileSize != null ? Number(nextItem.fileSize) : null,
+                name: nextAsset?.name ?? '',
+              };
+              updateUi(nextItem, 0, activeFile.total, MEDIA_POOL_PATH);
+              if (!startedReportIds.has(nextItem.mediaVersionId)) {
+                startedReportIds.add(nextItem.mediaVersionId);
+                void onProgress?.({
+                  mediaVersionId: nextItem.mediaVersionId,
+                  bytesDownloaded: 0,
+                  totalBytes: activeFile.total,
+                  status: 'start',
+                  doneCount: completedFiles,
+                  totalCount: items.length,
+                });
+              }
+            } else {
+              activeFile = null;
+            }
+          })(),
+        );
       } else {
         failureReasons[item.mediaVersionId] =
           detail.error || `Asset fetch failed (code ${String(code ?? '?')})`;
@@ -1085,6 +1110,8 @@ export async function downloadMediaItemsViaAssetPool(
       stallReject = null;
     }
 
+    await Promise.all(confirmPromises);
+
     for (const asset of needFetch) {
       const item = byName.get(asset.name)!;
       if (failureReasons[item.mediaVersionId]) {
@@ -1094,17 +1121,12 @@ export async function downloadMediaItemsViaAssetPool(
       }
       const poolPath = await resolvePoolPath(assetList, asset.name);
       if (!poolPath) {
-        if (completedIds.has(item.mediaVersionId)) {
-          if (!succeeded.includes(item.mediaVersionId)) {
-            succeeded.push(item.mediaVersionId);
-            downloaded.push(item.mediaVersionId);
-          }
-          continue;
-        }
         failed.push(item.mediaVersionId);
         failureReasons[item.mediaVersionId] =
+          failureReasons[item.mediaVersionId] ??
           'Asset pool fetch finished but path missing';
         clearSdCached([item.mediaVersionId]);
+        clearMediaPoolPathMarks([item.mediaVersionId]);
         continue;
       }
       // Record the backing object. media.ts realizes it under its .mp4 asset name
@@ -1143,28 +1165,32 @@ export async function downloadMediaItemsViaAssetPool(
       pool: MEDIA_POOL_PATH,
       origins: downloadOrigins(needFetch),
     });
+    await Promise.allSettled(confirmPromises);
     for (const asset of needFetch) {
       const item = byName.get(asset.name)!;
-      if (completedIds.has(item.mediaVersionId)) {
-        if (!poolMarkedIds.has(item.mediaVersionId)) {
-          const poolPath = await resolvePoolPath(assetList, asset.name);
-          if (poolPath) {
-            markMediaPoolPath(item.mediaVersionId, poolPath);
-            markSdDownloadConfirmed(item.mediaVersionId);
-            poolMarkedIds.add(item.mediaVersionId);
-          }
+      if (!poolMarkedIds.has(item.mediaVersionId)) {
+        const poolPath = await resolvePoolPath(assetList, asset.name);
+        if (poolPath) {
+          markMediaPoolPath(item.mediaVersionId, poolPath);
+          markSdDownloadConfirmed(item.mediaVersionId);
+          poolMarkedIds.add(item.mediaVersionId);
         }
+      }
+      if (poolMarkedIds.has(item.mediaVersionId)) {
         if (!succeeded.includes(item.mediaVersionId)) {
           succeeded.push(item.mediaVersionId);
           downloaded.push(item.mediaVersionId);
         }
         continue;
       }
-      if (!failureReasons[item.mediaVersionId]) continue;
+      if (!failureReasons[item.mediaVersionId]) {
+        failureReasons[item.mediaVersionId] = msg;
+      }
       if (!failed.includes(item.mediaVersionId)) failed.push(item.mediaVersionId);
       clearSdCached([item.mediaVersionId]);
+      clearMediaPoolPathMarks([item.mediaVersionId]);
     }
-    console.warn('[Perform6] Media asset pool fetch aborted — unfinished files stay queued', {
+    console.warn('[Perform6] Media asset pool fetch aborted — unfinished files marked failed', {
       reason: msg,
       completed: completedIds.size,
       ownErrors: failed.length,
