@@ -1,4 +1,5 @@
 import { apiFetchData, ApiError } from './api';
+import { isCardRecoveryRequiredError } from './deviceAuthRevoke';
 
 /** Response from POST /devices/pairings/credentials and POST /devices/credentials/resolve */
 export interface DeviceCredentialsData {
@@ -19,8 +20,22 @@ export class CredentialsNotReadyError extends Error {
   }
 }
 
+/** Blank card blocked until Portal → Allow card recovery. */
+export class CardRecoveryRequiredError extends Error {
+  constructor(
+    message = 'Recovery approval required. Ask an admin to allow card recovery for this device.',
+    public statusCode = 403,
+  ) {
+    super(message);
+    this.name = 'CardRecoveryRequiredError';
+  }
+}
+
 function wrapCredentialError(e: unknown): never {
   if (e instanceof ApiError) {
+    if (e.status === 403 && isCardRecoveryRequiredError(e.message)) {
+      throw new CardRecoveryRequiredError(e.message, e.status);
+    }
     if (e.status === 404 || e.status === 403 || e.status === 409) {
       throw new CredentialsNotReadyError(e.message, e.status);
     }
@@ -93,6 +108,8 @@ export async function acquireDeviceCredentials(
     try {
       return await fetchPairingCredentials(pairingId, serialNumber);
     } catch (e) {
+      // Recovery-required is definitive — do not fall through to resolve.
+      if (e instanceof CardRecoveryRequiredError) throw e;
       if (deviceId && e instanceof CredentialsNotReadyError) {
         return resolveDeviceCredentials(deviceId, serialNumber);
       }

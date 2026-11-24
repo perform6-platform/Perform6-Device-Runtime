@@ -75,10 +75,43 @@ function DevicePairingLcd() {
           model={deviceInfo?.model}
           serialNumber={deviceInfo?.serialNumber}
         />
+        {syncState.credentialsError ? (
+          <p className="max-w-xl text-center text-base text-amber-200/90">
+            {syncState.credentialsError}
+          </p>
+        ) : null}
         {needsCredentials && (
           <div className="w-full max-w-xl">
             <CredentialInjectionForm />
           </div>
+        )}
+      </main>
+    );
+  } else if (
+    Boolean(syncState.credentialsError) ||
+    (registrationStatus === 'registered' && !pairingCode)
+  ) {
+    const errLower = (syncState.credentialsError ?? '').toLowerCase();
+    const recoveryPending =
+      errLower.includes('recovery approval') ||
+      errLower.includes('card recovery') ||
+      errLower.includes('card_recovery_required');
+    body = (
+      <main className="flex h-full flex-col items-center justify-center gap-8 bg-black px-10 py-12 text-center text-white">
+        <p className="text-sm font-bold uppercase tracking-[0.4em] text-cyan-400">Perform6</p>
+        <h1 className="text-4xl font-semibold sm:text-5xl">
+          {recoveryPending ? 'Recovery approval required' : 'Waiting for credentials'}
+        </h1>
+        <p className="max-w-2xl text-xl text-white/80">
+          {syncState.credentialsError ||
+            (recoveryPending
+              ? 'Ask an admin to click Allow card recovery in Portal → Devices, then reboot this player.'
+              : 'Waiting for the admin to finish registration so this player can receive its API token.')}
+        </p>
+        {deviceInfo && (
+          <p className="font-mono text-base text-white/45">
+            {deviceInfo.model} · {deviceInfo.serialNumber}
+          </p>
         )}
       </main>
     );

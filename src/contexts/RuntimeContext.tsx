@@ -37,6 +37,7 @@ import { probeBrightSignAssetPool } from '../services/assetPoolProbe';
 import {
   handleDeviceRevoked,
   isDeviceAuthFailure,
+  isCardRecoveryRequiredError,
   isDeviceDisabledCredentialError,
 } from '../services/deviceAuthRevoke';
 import { clearLocalDeviceState } from '../services/deviceLocalReset';
@@ -569,7 +570,16 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         }
       } catch (e) {
         if (e instanceof PairingConflictError) {
-          setRegistrationStatus('registered');
+          try {
+            const resolved = await resolvePairingIdentity(info);
+            setPairing({
+              pairingId: resolved.pairingId,
+              pairingCode: resolved.pairingCode,
+              registrationStatus: 'registered',
+            });
+          } catch {
+            setRegistrationStatus('registered');
+          }
           setSyncState({ runtimePhase: 'waiting_credentials', error: null });
           pushBootLine('Already registered (409) — credentials');
           console.info('[Perform6] Already registered (409) — fetching credentials');
@@ -774,6 +784,20 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    if (isCardRecoveryRequiredError(errText)) {
+      setSyncState({
+        credentialsFetching: false,
+        credentialsError:
+          'Recovery approval required. In Portal → Devices, open this player and click Allow card recovery, then reboot.',
+        runtimePhase: 'waiting_credentials',
+      });
+      pushDebugLog({
+        category: 'pairing',
+        message: 'Card recovery approval required before credentials',
+      });
+      return;
+    }
+
     setSyncState({
       credentialsFetching: false,
       credentialsError: result.notReady
@@ -812,12 +836,27 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      const resolveErr = result.error ?? 'Resolve failed';
+      if (isCardRecoveryRequiredError(resolveErr)) {
+        setSyncState({
+          credentialsFetching: false,
+          credentialsError:
+            'Recovery approval required. In Portal → Devices, open this player and click Allow card recovery, then reboot.',
+          runtimePhase: 'waiting_credentials',
+        });
+        pushDebugLog({
+          category: 'pairing',
+          message: 'Card recovery approval required before credentials (resolve)',
+        });
+        return;
+      }
+
       setSyncState({
         credentialsFetching: false,
-        credentialsError: result.error ?? 'Resolve failed',
+        credentialsError: resolveErr,
         runtimePhase: 'waiting_credentials',
       });
-      throw new Error(result.error ?? 'Resolve failed');
+      throw new Error(resolveErr);
     },
     [deviceInfo, pushDebugLog, runSyncNow, setSyncState],
   );
