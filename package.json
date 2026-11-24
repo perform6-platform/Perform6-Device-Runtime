@@ -16,6 +16,7 @@
     "assert:clean-card-media": "node scripts/assert-clean-card-media.mjs",
     "assert:bluefin-ui": "node scripts/assert-bluefin-ui.mjs",
     "assert:offline-boot": "node --test scripts/encryption-lab/offline-persistence.test.mjs",
+    "validate:production-runtime": "node scripts/validate-production-runtime.mjs",
     "audit:bluefin-package": "node scripts/capture-bluefin-package-ui.mjs",
     "assert:xt-ota-candidate": "node scripts/assert-xt-ota-candidate.mjs",
     "assert:playback": "node scripts/assert-led-playback.mjs && node scripts/assert-program-led-command.mjs",
