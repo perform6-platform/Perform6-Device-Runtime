@@ -476,16 +476,22 @@ export async function runSyncEngine(
     const cachedCount = mediaItems.filter((item) =>
       downloaded.includes(item.mediaVersionId) || succeeded.includes(item.mediaVersionId),
     ).length;
+    const hasIncompleteDownloads =
+      expectedDownloads > 0 && cachedCount < expectedDownloads;
+    const hasUnreportedCompletions = completeReportFailures > 0;
 
     await reportSyncStatus(auth, {
       syncJobId: syncData.syncJobId,
       status:
-        expectedDownloads > 0 && cachedCount < expectedDownloads
+        hasIncompleteDownloads || hasUnreportedCompletions
           ? 'FAILED'
           : 'SUCCESS',
       message:
         expectedDownloads > 0
-          ? `Cached ${cachedCount}/${expectedDownloads} media files`
+          ? `Cached ${cachedCount}/${expectedDownloads} media files` +
+            (hasUnreportedCompletions
+              ? `; ${completeReportFailures} completion report(s) failed`
+              : '')
           : undefined,
     });
 
