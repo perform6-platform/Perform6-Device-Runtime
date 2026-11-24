@@ -849,6 +849,9 @@ const cardRecoveryRuntimeHashes = {
     '34ceb7f8cb32c72476c8d4715f1d79d5ee04877b6c869e988ea930797571e33f',
   'src/services/registrationWatcher.ts':
     '1e94eaa00097aeca524358d716283cb20fa8a7b1e95894bb23277b1f5daa3baf',
+  // Content-sync completion gate (same body as 1.5.87 / 2.1.12).
+  'src/services/syncEngine.ts':
+    '9c2e44e7f5fbc538472ab8d8ec53c192c3ae04d944ea6bc85e3172f56103967a',
 };
 reviewedProbeHashesByVersion['1.5.86'] = cardRecoveryRuntimeHashes;
 reviewedProbeHashesByVersion['2.1.11'] = cardRecoveryRuntimeHashes;
