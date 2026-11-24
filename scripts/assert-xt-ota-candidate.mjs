@@ -836,10 +836,24 @@ const syncProgressRuntimeHashes = {
   'src/services/mediaAssetPool.ts': 'f5354cb49cf058a8a5f46d91cbc06c8f3403e57832402778ccf50c8d423eebfa',
   'src/services/syncEngine.ts': '15aefe5a3a218285717931dd9ac97b61a627aa1bbf8a218e843ae9f3c9d6fd67',
 };
-reviewedProbeHashesByVersion['1.5.86'] = syncProgressRuntimeHashes;
-reviewedProbeHashesByVersion['2.1.11'] = syncProgressRuntimeHashes;
-const syncCompletionRuntimeHashes = {
+// Card recovery: blank SD needs admin Allow card recovery before token rotate.
+const cardRecoveryRuntimeHashes = {
   ...syncProgressRuntimeHashes,
+  'src/contexts/RuntimeContext.tsx':
+    '2f9b75a63f2c0f2d5a1fbdd9c176135e9139e9cdc7f8e846a3791733c1f09e3a',
+  'src/pages/Pairing.tsx':
+    'f53ffa6a25603879beec6c5c5d5ff8634831b02c8af8fa5d8112f35eb7c002ae',
+  'src/services/credentials.ts':
+    'f5f1f43f6f31c6217b07a09f72860f5306c1b9febb7aebb7961a359ce26cf3c0',
+  'src/services/deviceAuthRevoke.ts':
+    '34ceb7f8cb32c72476c8d4715f1d79d5ee04877b6c869e988ea930797571e33f',
+  'src/services/registrationWatcher.ts':
+    '1e94eaa00097aeca524358d716283cb20fa8a7b1e95894bb23277b1f5daa3baf',
+};
+reviewedProbeHashesByVersion['1.5.86'] = cardRecoveryRuntimeHashes;
+reviewedProbeHashesByVersion['2.1.11'] = cardRecoveryRuntimeHashes;
+const syncCompletionRuntimeHashes = {
+  ...cardRecoveryRuntimeHashes,
   'src/services/syncEngine.ts': '9c2e44e7f5fbc538472ab8d8ec53c192c3ae04d944ea6bc85e3172f56103967a',
 };
 reviewedProbeHashesByVersion['1.5.87'] = syncCompletionRuntimeHashes;
