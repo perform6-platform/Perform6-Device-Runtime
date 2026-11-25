@@ -63,9 +63,9 @@ jobs:
         env:
           SKIP_R2_UPLOAD: '1'
         run: |
-          node scripts/build-profile-zip.mjs XT2145 1.5.87 FITNESS
-          node scripts/build-profile-zip.mjs XT2145 2.1.12 GOLF
-          node scripts/build-profile-zip.mjs HD226 1.2.5
+          node scripts/build-profile-zip.mjs XT2145 1.5.88 FITNESS
+          node scripts/build-profile-zip.mjs XT2145 2.1.13 GOLF
+          node scripts/build-profile-zip.mjs HD226 1.2.6
 
   docker:
     name: Docker Build

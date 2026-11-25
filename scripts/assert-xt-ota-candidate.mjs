@@ -836,9 +836,19 @@ const syncProgressRuntimeHashes = {
   'src/services/mediaAssetPool.ts': 'f5354cb49cf058a8a5f46d91cbc06c8f3403e57832402778ccf50c8d423eebfa',
   'src/services/syncEngine.ts': '15aefe5a3a218285717931dd9ac97b61a627aa1bbf8a218e843ae9f3c9d6fd67',
 };
+// Historical: sync-progress only — must not accept later recovery source.
+reviewedProbeHashesByVersion['1.5.86'] = syncProgressRuntimeHashes;
+reviewedProbeHashesByVersion['2.1.11'] = syncProgressRuntimeHashes;
+const syncCompletionRuntimeHashes = {
+  ...syncProgressRuntimeHashes,
+  'src/services/syncEngine.ts': '9c2e44e7f5fbc538472ab8d8ec53c192c3ae04d944ea6bc85e3172f56103967a',
+};
+// Historical: sync-completion only — must not accept later recovery source.
+reviewedProbeHashesByVersion['1.5.87'] = syncCompletionRuntimeHashes;
+reviewedProbeHashesByVersion['2.1.12'] = syncCompletionRuntimeHashes;
 // Card recovery: blank SD needs admin Allow card recovery before token rotate.
 const cardRecoveryRuntimeHashes = {
-  ...syncProgressRuntimeHashes,
+  ...syncCompletionRuntimeHashes,
   'src/contexts/RuntimeContext.tsx':
     '2f9b75a63f2c0f2d5a1fbdd9c176135e9139e9cdc7f8e846a3791733c1f09e3a',
   'src/pages/Pairing.tsx':
@@ -849,25 +859,16 @@ const cardRecoveryRuntimeHashes = {
     '34ceb7f8cb32c72476c8d4715f1d79d5ee04877b6c869e988ea930797571e33f',
   'src/services/registrationWatcher.ts':
     '1e94eaa00097aeca524358d716283cb20fa8a7b1e95894bb23277b1f5daa3baf',
-  // Content-sync completion gate (same body as 1.5.87 / 2.1.12).
-  'src/services/syncEngine.ts':
-    '9c2e44e7f5fbc538472ab8d8ec53c192c3ae04d944ea6bc85e3172f56103967a',
 };
-reviewedProbeHashesByVersion['1.5.86'] = cardRecoveryRuntimeHashes;
-reviewedProbeHashesByVersion['2.1.11'] = cardRecoveryRuntimeHashes;
-const syncCompletionRuntimeHashes = {
-  ...cardRecoveryRuntimeHashes,
-  'src/services/syncEngine.ts': '9c2e44e7f5fbc538472ab8d8ec53c192c3ae04d944ea6bc85e3172f56103967a',
-};
-reviewedProbeHashesByVersion['1.5.87'] = syncCompletionRuntimeHashes;
-reviewedProbeHashesByVersion['2.1.12'] = syncCompletionRuntimeHashes;
+reviewedProbeHashesByVersion['1.5.88'] = cardRecoveryRuntimeHashes;
+reviewedProbeHashesByVersion['2.1.13'] = cardRecoveryRuntimeHashes;
 const reviewedProbeHashes = reviewedProbeHashesByVersion[version];
 const dormantProbe = reviewedProbeHashes != null;
 const allowedRuntimeDelta = new Set(dormantProbe ? Object.keys(reviewedProbeHashes) : [
   'src/services/assetPoolBootstrap.ts',
   'src/services/mediaAssetPool.ts',
 ]);
-const canonicalSourceHash = version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '1.5.87' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '2.1.12';
+const canonicalSourceHash = version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '1.5.87' || version === '1.5.88' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '2.1.12' || version === '2.1.13';
 function sourceDigest(file) {
   const body = fs.readFileSync(path.join(root, file));
   if (!canonicalSourceHash || /\.(png|woff2|p6enc|jpg|jpeg|gif|webp|mp4|zip)$/i.test(file)) {
@@ -879,7 +880,7 @@ if (dormantProbe) {
   for (const [file, expected] of Object.entries(reviewedProbeHashes)) {
     if (sourceDigest(file) !== expected) fail(`unreviewed dormant source: ${file}`);
   }
-  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.59' && version !== '1.5.61' && version !== '1.5.62' && version !== '1.5.63' && version !== '1.5.64' && version !== '1.5.68' && version !== '1.5.70' && version !== '1.5.71' && version !== '1.5.72' && version !== '1.5.73' && version !== '1.5.74' && version !== '1.5.76' && version !== '1.5.77' && version !== '1.5.78' && version !== '1.5.79' && version !== '1.5.80' && version !== '1.5.81' && version !== '1.5.82' && version !== '1.5.83' && version !== '1.5.84' && version !== '1.5.85' && version !== '2.1.3' && version !== '2.1.4' && version !== '2.1.5' && version !== '2.1.6' && version !== '2.1.7' && version !== '2.1.8' && version !== '2.1.9' && version !== '2.1.10' && version !== '1.5.86' && version !== '2.1.11' && version !== '1.5.87' && version !== '2.1.12') {
+  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.59' && version !== '1.5.61' && version !== '1.5.62' && version !== '1.5.63' && version !== '1.5.64' && version !== '1.5.68' && version !== '1.5.70' && version !== '1.5.71' && version !== '1.5.72' && version !== '1.5.73' && version !== '1.5.74' && version !== '1.5.76' && version !== '1.5.77' && version !== '1.5.78' && version !== '1.5.79' && version !== '1.5.80' && version !== '1.5.81' && version !== '1.5.82' && version !== '1.5.83' && version !== '1.5.84' && version !== '1.5.85' && version !== '2.1.3' && version !== '2.1.4' && version !== '2.1.5' && version !== '2.1.6' && version !== '2.1.7' && version !== '2.1.8' && version !== '2.1.9' && version !== '2.1.10' && version !== '1.5.86' && version !== '2.1.11' && version !== '1.5.87' && version !== '1.5.88' && version !== '2.1.12' && version !== '2.1.13') {
     execFileSync(
       process.execPath,
       ['--test', 'scripts/encryption-lab/dormant-integration.test.mjs'],
@@ -919,7 +920,7 @@ if (dormantProbe) {
     'scripts/encryption-lab/encrypted-playback-candidate.test.mjs',
     'scripts/encryption-lab/ota-replacement.test.mjs',
   ], { cwd: root, stdio: 'inherit' });
-  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.59' || version === '1.5.61' || version === '1.5.62' || version === '1.5.63' || version === '1.5.64' || version === '1.5.68' || version === '1.5.70' || version === '1.5.71' || version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' || version === '1.5.82' || version === '1.5.83' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '2.1.12') execFileSync(process.execPath, ['--test',
+  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.59' || version === '1.5.61' || version === '1.5.62' || version === '1.5.63' || version === '1.5.64' || version === '1.5.68' || version === '1.5.70' || version === '1.5.71' || version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' || version === '1.5.82' || version === '1.5.83' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '1.5.88' || version === '2.1.12' || version === '2.1.13') execFileSync(process.execPath, ['--test',
     'scripts/encryption-lab/bridge-diagnostic.test.mjs',
     'scripts/encryption-lab/bridge-observability.test.mjs',
     'scripts/encryption-lab/widget-port-binding.test.mjs',
@@ -984,30 +985,30 @@ if (!failedUnresolved.some((name) => name.toLowerCase() === 'jsonescape')) {
 const expectedFiles = new Set([
   'README-SD.txt',
   'assets/Inter-Bold-Sckx8rpT.woff2',
-  ...(version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' || version === '1.5.82' || version === '1.5.83' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '2.1.12' ? ['assets/Inter-Light-14LG-y7V.woff2'] : []),
+  ...(version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' || version === '1.5.82' || version === '1.5.83' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '1.5.88' || version === '2.1.12' || version === '2.1.13' ? ['assets/Inter-Light-14LG-y7V.woff2'] : []),
   'assets/Inter-Medium-D2bGa7uu.woff2',
   'assets/Inter-Regular-BOOGhInR.woff2',
   'assets/Inter-SemiBold-D273HNI0.woff2',
-  ...(version === '1.5.82' || version === '1.5.83' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '2.1.12' ? [] : ['assets/Perform_6_trademark-ClFD9aGP.png']),
-  ...(version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' || version === '1.5.82' || version === '1.5.83' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '2.1.12' ? [
+  ...(version === '1.5.82' || version === '1.5.83' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '1.5.88' || version === '2.1.12' || version === '2.1.13' ? [] : ['assets/Perform_6_trademark-ClFD9aGP.png']),
+  ...(version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' || version === '1.5.82' || version === '1.5.83' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '1.5.88' || version === '2.1.12' || version === '2.1.13' ? [
     'assets/Perform6-approved-chevron-B3fE6BGP.png',
     'assets/Perform6-approved-clock-CEGklWTx.png',
     version === '1.5.82' || version === '2.1.8'
       ? 'assets/Perform6-approved-logo-CTiBQMFD.svg'
-      : version === '1.5.81' || version === '1.5.83' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '2.1.12'
+      : version === '1.5.81' || version === '1.5.83' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '1.5.88' || version === '2.1.12' || version === '2.1.13'
       ? 'assets/Perform6-approved-logo-Cnk2bSRp.svg'
       : 'assets/Perform6-approved-logo-NZjhE405.svg',
   ] : []),
   ...(version === '1.5.82' || version === '2.1.8'
     ? ['assets/pre-golf-icon-BvdIvTc0.svg']
-    : version === '1.5.81' || version === '1.5.83' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '2.1.12'
+    : version === '1.5.81' || version === '1.5.83' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '1.5.88' || version === '2.1.12' || version === '2.1.13'
       ? ['assets/pre-golf-icon-CYdrIKvT.svg']
       : []),
   'assets/app.js',
   'assets/style.css',
   'autorun.brs',
   'index.html',
-  ...(version === '1.5.82' || version === '1.5.83' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '2.1.12' ? ['images/perform6-approved-logo.svg'] : []),
+  ...(version === '1.5.82' || version === '1.5.83' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '1.5.88' || version === '2.1.12' || version === '2.1.13' ? ['images/perform6-approved-logo.svg'] : []),
   'led-idle.png',
   'perform6-display.txt',
   'perform6-ops.emergency.json',
@@ -1037,9 +1038,9 @@ const manifest = JSON.parse(
 if (manifest.profile !== 'XT2145' || manifest.version !== version) {
   fail(`manifest identity mismatch: ${manifest.profile ?? '?'} ${manifest.version ?? '?'}`);
 }
-const expectedEdition = version === '1.5.81' || version === '1.5.82' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '1.5.87'
+const expectedEdition = version === '1.5.81' || version === '1.5.82' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '1.5.87' || version === '1.5.88'
   ? 'fitness'
-  : version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.8' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '2.1.12'
+  : version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.8' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '2.1.12' || version === '2.1.13'
     ? 'golf'
     : null;
 if (expectedEdition && manifest.edition !== expectedEdition) {
