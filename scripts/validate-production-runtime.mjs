@@ -15,6 +15,7 @@ run(process.execPath, [
   '--test',
   'scripts/encryption-lab/offline-persistence.test.mjs',
   'scripts/encryption-lab/production-media-encryption.test.mjs',
+  'scripts/encryption-lab/card-recovery.test.mjs',
   'scripts/sync-completion-regression.test.mjs',
 ]);
 run(process.execPath, [
