@@ -862,13 +862,15 @@ const cardRecoveryRuntimeHashes = {
 };
 reviewedProbeHashesByVersion['1.5.88'] = cardRecoveryRuntimeHashes;
 reviewedProbeHashesByVersion['2.1.13'] = cardRecoveryRuntimeHashes;
+reviewedProbeHashesByVersion['1.5.89'] = cardRecoveryRuntimeHashes;
+reviewedProbeHashesByVersion['2.1.14'] = cardRecoveryRuntimeHashes;
 const reviewedProbeHashes = reviewedProbeHashesByVersion[version];
 const dormantProbe = reviewedProbeHashes != null;
 const allowedRuntimeDelta = new Set(dormantProbe ? Object.keys(reviewedProbeHashes) : [
   'src/services/assetPoolBootstrap.ts',
   'src/services/mediaAssetPool.ts',
 ]);
-const canonicalSourceHash = version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '1.5.87' || version === '1.5.88' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '2.1.12' || version === '2.1.13';
+const canonicalSourceHash = version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '1.5.87' || version === '1.5.88' || version === '1.5.89' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '2.1.12' || version === '2.1.13' || version === '2.1.14';
 function sourceDigest(file) {
   const body = fs.readFileSync(path.join(root, file));
   if (!canonicalSourceHash || /\.(png|woff2|p6enc|jpg|jpeg|gif|webp|mp4|zip)$/i.test(file)) {
@@ -880,7 +882,7 @@ if (dormantProbe) {
   for (const [file, expected] of Object.entries(reviewedProbeHashes)) {
     if (sourceDigest(file) !== expected) fail(`unreviewed dormant source: ${file}`);
   }
-  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.59' && version !== '1.5.61' && version !== '1.5.62' && version !== '1.5.63' && version !== '1.5.64' && version !== '1.5.68' && version !== '1.5.70' && version !== '1.5.71' && version !== '1.5.72' && version !== '1.5.73' && version !== '1.5.74' && version !== '1.5.76' && version !== '1.5.77' && version !== '1.5.78' && version !== '1.5.79' && version !== '1.5.80' && version !== '1.5.81' && version !== '1.5.82' && version !== '1.5.83' && version !== '1.5.84' && version !== '1.5.85' && version !== '2.1.3' && version !== '2.1.4' && version !== '2.1.5' && version !== '2.1.6' && version !== '2.1.7' && version !== '2.1.8' && version !== '2.1.9' && version !== '2.1.10' && version !== '1.5.86' && version !== '2.1.11' && version !== '1.5.87' && version !== '1.5.88' && version !== '2.1.12' && version !== '2.1.13') {
+  if (version !== '1.5.47' && version !== '1.5.48' && version !== '1.5.49' && version !== '1.5.50' && version !== '1.5.51' && version !== '1.5.52' && version !== '1.5.53' && version !== '1.5.54' && version !== '1.5.55' && version !== '1.5.59' && version !== '1.5.61' && version !== '1.5.62' && version !== '1.5.63' && version !== '1.5.64' && version !== '1.5.68' && version !== '1.5.70' && version !== '1.5.71' && version !== '1.5.72' && version !== '1.5.73' && version !== '1.5.74' && version !== '1.5.76' && version !== '1.5.77' && version !== '1.5.78' && version !== '1.5.79' && version !== '1.5.80' && version !== '1.5.81' && version !== '1.5.82' && version !== '1.5.83' && version !== '1.5.84' && version !== '1.5.85' && version !== '2.1.3' && version !== '2.1.4' && version !== '2.1.5' && version !== '2.1.6' && version !== '2.1.7' && version !== '2.1.8' && version !== '2.1.9' && version !== '2.1.10' && version !== '1.5.86' && version !== '2.1.11' && version !== '1.5.87' && version !== '1.5.88' && version !== '1.5.89' && version !== '2.1.12' && version !== '2.1.13' && version !== '2.1.14') {
     execFileSync(
       process.execPath,
       ['--test', 'scripts/encryption-lab/dormant-integration.test.mjs'],
@@ -920,7 +922,7 @@ if (dormantProbe) {
     'scripts/encryption-lab/encrypted-playback-candidate.test.mjs',
     'scripts/encryption-lab/ota-replacement.test.mjs',
   ], { cwd: root, stdio: 'inherit' });
-  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.59' || version === '1.5.61' || version === '1.5.62' || version === '1.5.63' || version === '1.5.64' || version === '1.5.68' || version === '1.5.70' || version === '1.5.71' || version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' || version === '1.5.82' || version === '1.5.83' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '1.5.88' || version === '2.1.12' || version === '2.1.13') execFileSync(process.execPath, ['--test',
+  if (version === '1.5.52' || version === '1.5.53' || version === '1.5.54' || version === '1.5.55' || version === '1.5.59' || version === '1.5.61' || version === '1.5.62' || version === '1.5.63' || version === '1.5.64' || version === '1.5.68' || version === '1.5.70' || version === '1.5.71' || version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' || version === '1.5.82' || version === '1.5.83' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '1.5.88' || version === '1.5.89' || version === '2.1.12' || version === '2.1.13' || version === '2.1.14') execFileSync(process.execPath, ['--test',
     'scripts/encryption-lab/bridge-diagnostic.test.mjs',
     'scripts/encryption-lab/bridge-observability.test.mjs',
     'scripts/encryption-lab/widget-port-binding.test.mjs',
@@ -985,30 +987,30 @@ if (!failedUnresolved.some((name) => name.toLowerCase() === 'jsonescape')) {
 const expectedFiles = new Set([
   'README-SD.txt',
   'assets/Inter-Bold-Sckx8rpT.woff2',
-  ...(version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' || version === '1.5.82' || version === '1.5.83' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '1.5.88' || version === '2.1.12' || version === '2.1.13' ? ['assets/Inter-Light-14LG-y7V.woff2'] : []),
+  ...(version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' || version === '1.5.82' || version === '1.5.83' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '1.5.88' || version === '1.5.89' || version === '2.1.12' || version === '2.1.13' || version === '2.1.14' ? ['assets/Inter-Light-14LG-y7V.woff2'] : []),
   'assets/Inter-Medium-D2bGa7uu.woff2',
   'assets/Inter-Regular-BOOGhInR.woff2',
   'assets/Inter-SemiBold-D273HNI0.woff2',
-  ...(version === '1.5.82' || version === '1.5.83' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '1.5.88' || version === '2.1.12' || version === '2.1.13' ? [] : ['assets/Perform_6_trademark-ClFD9aGP.png']),
-  ...(version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' || version === '1.5.82' || version === '1.5.83' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '1.5.88' || version === '2.1.12' || version === '2.1.13' ? [
+  ...(version === '1.5.82' || version === '1.5.83' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '1.5.88' || version === '1.5.89' || version === '2.1.12' || version === '2.1.13' || version === '2.1.14' ? [] : ['assets/Perform_6_trademark-ClFD9aGP.png']),
+  ...(version === '1.5.72' || version === '1.5.73' || version === '1.5.74' || version === '1.5.76' || version === '1.5.77' || version === '1.5.78' || version === '1.5.79' || version === '1.5.80' || version === '1.5.81' || version === '1.5.82' || version === '1.5.83' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '1.5.88' || version === '1.5.89' || version === '2.1.12' || version === '2.1.13' || version === '2.1.14' ? [
     'assets/Perform6-approved-chevron-B3fE6BGP.png',
     'assets/Perform6-approved-clock-CEGklWTx.png',
     version === '1.5.82' || version === '2.1.8'
       ? 'assets/Perform6-approved-logo-CTiBQMFD.svg'
-      : version === '1.5.81' || version === '1.5.83' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '1.5.88' || version === '2.1.12' || version === '2.1.13'
+      : version === '1.5.81' || version === '1.5.83' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '1.5.88' || version === '1.5.89' || version === '2.1.12' || version === '2.1.13' || version === '2.1.14'
       ? 'assets/Perform6-approved-logo-Cnk2bSRp.svg'
       : 'assets/Perform6-approved-logo-NZjhE405.svg',
   ] : []),
   ...(version === '1.5.82' || version === '2.1.8'
     ? ['assets/pre-golf-icon-BvdIvTc0.svg']
-    : version === '1.5.81' || version === '1.5.83' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '1.5.88' || version === '2.1.12' || version === '2.1.13'
+    : version === '1.5.81' || version === '1.5.83' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.6' || version === '2.1.7' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '1.5.88' || version === '1.5.89' || version === '2.1.12' || version === '2.1.13' || version === '2.1.14'
       ? ['assets/pre-golf-icon-CYdrIKvT.svg']
       : []),
   'assets/app.js',
   'assets/style.css',
   'autorun.brs',
   'index.html',
-  ...(version === '1.5.82' || version === '1.5.83' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '1.5.88' || version === '2.1.12' || version === '2.1.13' ? ['images/perform6-approved-logo.svg'] : []),
+  ...(version === '1.5.82' || version === '1.5.83' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '2.1.6' || version === '2.1.7' || version === '2.1.8' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '1.5.87' || version === '1.5.88' || version === '1.5.89' || version === '2.1.12' || version === '2.1.13' || version === '2.1.14' ? ['images/perform6-approved-logo.svg'] : []),
   'led-idle.png',
   'perform6-display.txt',
   'perform6-ops.emergency.json',
@@ -1038,9 +1040,9 @@ const manifest = JSON.parse(
 if (manifest.profile !== 'XT2145' || manifest.version !== version) {
   fail(`manifest identity mismatch: ${manifest.profile ?? '?'} ${manifest.version ?? '?'}`);
 }
-const expectedEdition = version === '1.5.81' || version === '1.5.82' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '1.5.87' || version === '1.5.88'
+const expectedEdition = version === '1.5.81' || version === '1.5.82' || version === '1.5.84' || version === '1.5.85' || version === '1.5.86' || version === '1.5.87' || version === '1.5.88' || version === '1.5.89'
   ? 'fitness'
-  : version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.8' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '2.1.12' || version === '2.1.13'
+  : version === '2.1.3' || version === '2.1.4' || version === '2.1.5' || version === '2.1.8' || version === '2.1.9' || version === '2.1.10' || version === '2.1.11' || version === '2.1.12' || version === '2.1.13' || version === '2.1.14'
     ? 'golf'
     : null;
 if (expectedEdition && manifest.edition !== expectedEdition) {
