@@ -21,10 +21,24 @@ export function isDeviceDisabledCredentialError(error: unknown): boolean {
     error instanceof Error
       ? error.message.toLowerCase()
       : String(error ?? '').toLowerCase();
+  if (isCardRecoveryRequiredError(msg)) return false;
   return (
     msg.includes('device is disabled') ||
     msg.includes('re-pair') ||
     msg.includes('not active')
+  );
+}
+
+/** Blank card needs Admin → Allow card recovery before a token is issued. */
+export function isCardRecoveryRequiredError(error: unknown): boolean {
+  const msg =
+    error instanceof Error
+      ? error.message.toLowerCase()
+      : String(error ?? '').toLowerCase();
+  return (
+    msg.includes('recovery approval required') ||
+    msg.includes('card recovery') ||
+    msg.includes('card_recovery_required')
   );
 }
 

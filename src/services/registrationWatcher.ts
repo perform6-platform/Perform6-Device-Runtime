@@ -1,6 +1,7 @@
 import { saveCredentials } from './credentialStore';
 import {
   acquireDeviceCredentials,
+  CardRecoveryRequiredError,
   CredentialsNotReadyError,
   type DeviceCredentialsData,
 } from './credentials';
@@ -99,6 +100,9 @@ export async function fetchAndStoreCredentials(
       resolvedPairingId: ids.pairingId,
     };
   } catch (e) {
+    if (e instanceof CardRecoveryRequiredError) {
+      return { success: false, error: e.message };
+    }
     if (e instanceof CredentialsNotReadyError) {
       return { success: false, notReady: true, error: e.message };
     }

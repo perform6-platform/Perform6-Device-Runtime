@@ -7,7 +7,7 @@ import { runtimeConfig } from '../config/runtime';
 import { getPostRegistrationRoute } from '../services/runtime';
 import { PrimaryOutputOnly } from '../layout/PrimaryOutputOnly';
 import {
-  clusterMemberShortLabel,
+  hdPairingAssignmentLabel,
   resolveNextHdClusterMember,
 } from '../simulator/hdClusterPairing';
 
@@ -75,10 +75,43 @@ function DevicePairingLcd() {
           model={deviceInfo?.model}
           serialNumber={deviceInfo?.serialNumber}
         />
+        {syncState.credentialsError ? (
+          <p className="max-w-xl text-center text-base text-amber-200/90">
+            {syncState.credentialsError}
+          </p>
+        ) : null}
         {needsCredentials && (
           <div className="w-full max-w-xl">
             <CredentialInjectionForm />
           </div>
+        )}
+      </main>
+    );
+  } else if (
+    Boolean(syncState.credentialsError) ||
+    (registrationStatus === 'registered' && !pairingCode)
+  ) {
+    const errLower = (syncState.credentialsError ?? '').toLowerCase();
+    const recoveryPending =
+      errLower.includes('recovery approval') ||
+      errLower.includes('card recovery') ||
+      errLower.includes('card_recovery_required');
+    body = (
+      <main className="flex h-full flex-col items-center justify-center gap-8 bg-black px-10 py-12 text-center text-white">
+        <p className="text-sm font-bold uppercase tracking-[0.4em] text-cyan-400">Perform6</p>
+        <h1 className="text-4xl font-semibold sm:text-5xl">
+          {recoveryPending ? 'Recovery approval required' : 'Waiting for credentials'}
+        </h1>
+        <p className="max-w-2xl text-xl text-white/80">
+          {syncState.credentialsError ||
+            (recoveryPending
+              ? 'Ask an admin to click Allow card recovery in Portal → Devices, then reboot this player.'
+              : 'Waiting for the admin to finish registration so this player can receive its API token.')}
+        </p>
+        {deviceInfo && (
+          <p className="font-mono text-base text-white/45">
+            {deviceInfo.model} · {deviceInfo.serialNumber}
+          </p>
         )}
       </main>
     );
@@ -214,7 +247,7 @@ export default function Pairing() {
         <p className="p6-body text-p6-text-muted">{statusLabel(registrationStatus)}</p>
         {isHdSimulator && deviceInfo?.clusterMember ? (
           <p className="mt-2 text-sm text-p6-cyan">
-            Pairing as {clusterMemberShortLabel(deviceInfo.clusterMember)} ({deviceInfo.clusterMember})
+            Pairing as {hdPairingAssignmentLabel(deviceInfo.clusterMember)}
           </p>
         ) : null}
       </div>
@@ -245,8 +278,8 @@ export default function Pairing() {
           </div>
           {deviceInfo.clusterMember ? (
             <div className="flex justify-between gap-4">
-              <dt className="text-slate-500">Cluster Member</dt>
-              <dd>{deviceInfo.clusterMember}</dd>
+              <dt className="text-slate-500">Assignment</dt>
+              <dd>{hdPairingAssignmentLabel(deviceInfo.clusterMember)}</dd>
             </div>
           ) : null}
           <div className="flex justify-between gap-4">
@@ -289,7 +322,7 @@ export default function Pairing() {
               >
                 <div>
                   <p className="font-medium text-slate-200">
-                    {clusterMemberShortLabel(entry.clusterMember)}
+                    {hdPairingAssignmentLabel(entry.clusterMember)}
                   </p>
                   <p className="font-mono text-[10px] text-slate-500">{entry.serialNumber}</p>
                 </div>
@@ -348,7 +381,7 @@ export default function Pairing() {
           >
             {pairingNext
               ? 'Pairing next…'
-              : `Pair next HD device (${clusterMemberShortLabel(nextHdMember!)})`}
+              : `Pair next HD device (${hdPairingAssignmentLabel(nextHdMember!)})`}
           </button>
         )}
 

@@ -28,11 +28,13 @@ export interface SyncCheckResponseData {
     updateAvailable?: boolean;
   };
   deployment?: {
+    id?: string;
     deploymentType?: string;
     fieldCategory?: string;
     exerciseVariant?: string;
-  };
+  } | null;
   config?: {
+    deploymentId?: string | null;
     resolutionMode?: 'legacy' | 'logical' | string;
     runtimeContext?: {
       displayTarget?: string;

@@ -288,7 +288,11 @@ function main() {
   run(process.execPath, [
     '--test',
     path.join(root, 'scripts', 'encryption-lab', 'offline-persistence.test.mjs'),
+    path.join(root, 'scripts', 'encryption-lab', 'production-media-encryption.test.mjs'),
+    path.join(root, 'scripts', 'encryption-lab', 'card-recovery.test.mjs'),
     path.join(root, 'scripts', 'posix-zip.test.mjs'),
+    path.join(root, 'scripts', 'sync-completion-regression.test.mjs'),
+    path.join(root, 'scripts', 'hd226-pairing-slot.test.mjs'),
   ]);
   run(process.execPath, [
     '--experimental-strip-types',

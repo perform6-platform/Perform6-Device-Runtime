@@ -1,6 +1,6 @@
 import type { PlaybackManifest } from '../shared/types';
 import { findTouchScreen, getCurrentVideo, type TouchPlaybackSlot } from './playback';
-import { hasSdCachedMedia } from './sdCacheBridge';
+import { getSdCachedUrl } from './sdCacheBridge';
 
 /** Touch slots that must be on SD before hiding the download overlay. */
 export const TOUCH_DOWNLOAD_SLOTS: TouchPlaybackSlot[] = [
@@ -44,7 +44,7 @@ export function listTouchProgramSlots(
     const video = getCurrentVideo(screen);
     const mediaVersionId = video?.id ?? null;
     const assigned = Boolean(mediaVersionId && video?.url);
-    const cached = mediaVersionId ? hasSdCachedMedia(mediaVersionId) : true;
+    const cached = mediaVersionId ? Boolean(getSdCachedUrl(mediaVersionId)) : true;
     return {
       slot,
       label: video?.title?.trim() || TOUCH_SLOT_LABELS[slot],
@@ -86,7 +86,7 @@ export function isTouchProgramSlotReady(
   const screen = manifest ? findTouchScreen(manifest, slot) : undefined;
   const video = getCurrentVideo(screen);
   if (!video?.id || !video.url) return true;
-  return hasSdCachedMedia(video.id);
+  return Boolean(getSdCachedUrl(video.id));
 }
 
 export function touchProgramMediaVersionIds(

@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRuntimeStore } from '../stores/runtimeStore';
 import { useVideoPlaybackTelemetry } from '../hooks/useVideoPlaybackTelemetry';
 import { safeHtmlVideoSrc } from '../services/playbackSrc';
+import { htmlPlaybackEncryption } from '../services/mediaEncryption';
 
 interface DisplayVideoPlayerProps {
   src: string | null;
@@ -24,6 +25,7 @@ export function DisplayVideoPlayer({
   mediaTitle,
 }: DisplayVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [, refreshEncryption] = useState(0);
   const paused = useRuntimeStore((s) => s.displayPaused);
   const muted = useRuntimeStore((s) => s.displayMuted);
   const volume = useRuntimeStore((s) => s.displayVolume);
@@ -38,6 +40,22 @@ export function DisplayVideoPlayer({
   const resolvedMediaVersionId =
     mediaVersionId ?? storeMeta?.mediaVersionId ?? null;
   const resolvedTitle = mediaTitle ?? storeMeta?.title ?? label ?? null;
+  const encryption = htmlPlaybackEncryption(resolvedMediaVersionId);
+
+  useEffect(() => {
+    const refreshForMedia = (event: Event) => {
+      const detail = (event as CustomEvent<{ mediaVersionId?: string }>).detail;
+      if (detail?.mediaVersionId === resolvedMediaVersionId) {
+        refreshEncryption((value) => value + 1);
+      }
+    };
+    window.addEventListener('perform6-encryption-key-staged', refreshForMedia);
+    window.addEventListener('perform6-encrypted-media-ready', refreshForMedia);
+    return () => {
+      window.removeEventListener('perform6-encryption-key-staged', refreshForMedia);
+      window.removeEventListener('perform6-encrypted-media-ready', refreshForMedia);
+    };
+  }, [resolvedMediaVersionId]);
 
   useVideoPlaybackTelemetry(
     videoRef,
@@ -53,7 +71,38 @@ export function DisplayVideoPlayer({
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !playSrc) return;
+
+    // BrightSign reads these attributes only before src is assigned.
+    // The key stays in process memory and is cleared when the source changes.
+    video.removeAttribute('src');
+    if (encryption) {
+      video.setAttribute('EncryptionAlgorithm', encryption.algorithm);
+      video.setAttribute('EncryptionKey', encryption.keyAndIvHex);
+    } else {
+      video.removeAttribute('EncryptionAlgorithm');
+      video.removeAttribute('EncryptionKey');
+    }
+    video.src = playSrc;
+    const playback = useRuntimeStore.getState();
+    video.muted = playback.displayMuted;
+    video.volume = playback.displayVolume;
+    video.load();
+    if (playback.displayPaused) video.pause();
+    else void video.play().catch(() => {});
+
+    return () => {
+      video.pause();
+      video.removeAttribute('src');
+      video.removeAttribute('EncryptionAlgorithm');
+      video.removeAttribute('EncryptionKey');
+      video.load();
+    };
+  }, [encryption?.algorithm, encryption?.keyAndIvHex, playSrc]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !playSrc) return;
 
     if (paused) video.pause();
     else void video.play().catch(() => {});
@@ -92,16 +141,10 @@ export function DisplayVideoPlayer({
 
   return (
     <div className={`p6-display-player relative h-full min-h-[12rem] overflow-hidden bg-black ${className}`}>
-      {label && (
-        <div className="absolute left-2 top-2 z-10 rounded bg-black/60 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-white">
-          {label}
-        </div>
-      )}
       {playSrc ? (
         <video
           ref={videoRef}
           key={playSrc}
-          src={playSrc}
           className="h-full w-full object-cover"
           autoPlay
           muted={muted}

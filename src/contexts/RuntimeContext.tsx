@@ -37,6 +37,7 @@ import { probeBrightSignAssetPool } from '../services/assetPoolProbe';
 import {
   handleDeviceRevoked,
   isDeviceAuthFailure,
+  isCardRecoveryRequiredError,
   isDeviceDisabledCredentialError,
 } from '../services/deviceAuthRevoke';
 import { clearLocalDeviceState } from '../services/deviceLocalReset';
@@ -47,6 +48,7 @@ import {
 } from '../services/sdStoragePresence';
 import { getSdStorageForHeartbeat } from '../services/sdStorageInfo';
 import {
+  clearPlaybackManifestCache,
   loadPlaybackManifestCache,
   savePlaybackManifestCache,
 } from '../services/playbackManifestCache';
@@ -398,19 +400,38 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
             },
           });
         } else {
+          // Unattached (Disconnect) or no playable content: stop local playback.
+          // Attached sync always returns a manifest — this path must not run during
+          // normal 7-day cache / prefetch cycles.
+          const deploymentId =
+            result.syncData?.deployment?.id ??
+            result.syncData?.config?.deploymentId ??
+            null;
+          const unattached = !deploymentId;
+          if (unattached) {
+            setPlaybackManifest(null);
+            clearPlaybackManifestCache();
+            useRuntimeStore.getState().setDisplayVideoSrc(null);
+            useRuntimeStore.getState().setDisplayVideoEndedHandler(null);
+            useRuntimeStore.getState().resetDisplayControls();
+          }
           setSyncState({
             lastCheckAt: new Date().toISOString(),
             lastSyncAt: new Date().toISOString(),
             syncJobId: result.syncData?.syncJobId ?? null,
             inProgress: false,
-            error: 'Sync returned no playback content',
+            error: unattached
+              ? 'Disconnected — waiting for Attach'
+              : 'Sync returned no playback content',
             runtimePhase: 'ready',
           });
           setConnectionStatus('online');
           pushDebugLog({
             category: 'sync',
-            message: 'Sync OK but no playback manifest content',
-            data: { syncJobId: result.syncData?.syncJobId },
+            message: unattached
+              ? 'Unattached — playback stopped until Attach'
+              : 'Sync OK but no playback manifest content',
+            data: { syncJobId: result.syncData?.syncJobId, unattached },
           });
         }
         return;
@@ -549,7 +570,16 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         }
       } catch (e) {
         if (e instanceof PairingConflictError) {
-          setRegistrationStatus('registered');
+          try {
+            const resolved = await resolvePairingIdentity(info);
+            setPairing({
+              pairingId: resolved.pairingId,
+              pairingCode: resolved.pairingCode,
+              registrationStatus: 'registered',
+            });
+          } catch {
+            setRegistrationStatus('registered');
+          }
           setSyncState({ runtimePhase: 'waiting_credentials', error: null });
           pushBootLine('Already registered (409) — credentials');
           console.info('[Perform6] Already registered (409) — fetching credentials');
@@ -754,6 +784,20 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    if (isCardRecoveryRequiredError(errText)) {
+      setSyncState({
+        credentialsFetching: false,
+        credentialsError:
+          'Recovery approval required. In Portal → Devices, open this player and click Allow card recovery, then reboot.',
+        runtimePhase: 'waiting_credentials',
+      });
+      pushDebugLog({
+        category: 'pairing',
+        message: 'Card recovery approval required before credentials',
+      });
+      return;
+    }
+
     setSyncState({
       credentialsFetching: false,
       credentialsError: result.notReady
@@ -792,12 +836,27 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      const resolveErr = result.error ?? 'Resolve failed';
+      if (isCardRecoveryRequiredError(resolveErr)) {
+        setSyncState({
+          credentialsFetching: false,
+          credentialsError:
+            'Recovery approval required. In Portal → Devices, open this player and click Allow card recovery, then reboot.',
+          runtimePhase: 'waiting_credentials',
+        });
+        pushDebugLog({
+          category: 'pairing',
+          message: 'Card recovery approval required before credentials (resolve)',
+        });
+        return;
+      }
+
       setSyncState({
         credentialsFetching: false,
-        credentialsError: result.error ?? 'Resolve failed',
+        credentialsError: resolveErr,
         runtimePhase: 'waiting_credentials',
       });
-      throw new Error(result.error ?? 'Resolve failed');
+      throw new Error(resolveErr);
     },
     [deviceInfo, pushDebugLog, runSyncNow, setSyncState],
   );
